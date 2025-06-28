@@ -110,7 +110,6 @@ TransactionSchema.index({ userId: 1 });
 TransactionSchema.index({ type: 1 });
 TransactionSchema.index({ status: 1 });
 TransactionSchema.index({ createdAt: -1 });
-TransactionSchema.index({ transactionId: 1 });
 TransactionSchema.index({ gateway: 1 });
 
 export const Transaction = mongoose.models.Transaction || mongoose.model<ITransaction>('Transaction', TransactionSchema);

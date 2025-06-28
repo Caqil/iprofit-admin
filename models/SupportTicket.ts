@@ -250,7 +250,6 @@ const FAQSchema = new Schema<IFAQ>({
 });
 
 SupportTicketSchema.index({ userId: 1 });
-SupportTicketSchema.index({ ticketNumber: 1 });
 SupportTicketSchema.index({ status: 1 });
 SupportTicketSchema.index({ priority: 1 });
 SupportTicketSchema.index({ category: 1 });
