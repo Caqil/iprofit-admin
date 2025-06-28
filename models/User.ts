@@ -41,14 +41,16 @@ const UserSchema = new Schema<IUser>({
   name: {
     type: String,
     required: true,
-    trim: true
+    trim: true,
+    index: true // Remove this line to fix duplicate index warning
   },
   email: {
     type: String,
     required: true,
-    unique: true,
+    unique: true, // This creates an index automatically
     lowercase: true,
     trim: true
+    // Remove the separate index: true to fix duplicate index warning
   },
   phone: {
     type: String,
@@ -90,8 +92,9 @@ const UserSchema = new Schema<IUser>({
   },
   referralCode: {
     type: String,
-    unique: true,
+    unique: true, // This creates an index automatically
     required: true
+    // Remove the separate index: true to fix duplicate index warning
   },
   referredBy: {
     type: Schema.Types.ObjectId,
@@ -101,7 +104,8 @@ const UserSchema = new Schema<IUser>({
   deviceId: {
     type: String,
     required: true,
-    unique: true
+    unique: true // This creates an index automatically
+    // Remove the separate index: true to fix duplicate index warning
   },
   profilePicture: {
     type: String,
@@ -152,12 +156,14 @@ const UserSchema = new Schema<IUser>({
   collection: 'users'
 });
 
-UserSchema.index({ email: 1 });
 UserSchema.index({ phone: 1 });
-UserSchema.index({ referralCode: 1 });
-UserSchema.index({ deviceId: 1 });
 UserSchema.index({ planId: 1 });
 UserSchema.index({ kycStatus: 1 });
 UserSchema.index({ status: 1 });
+UserSchema.index({ createdAt: -1 });
+
+// Compound indexes for better performance
+UserSchema.index({ status: 1, kycStatus: 1 });
+UserSchema.index({ planId: 1, status: 1 });
 
 export const User = mongoose.models.User || mongoose.model<IUser>('User', UserSchema);

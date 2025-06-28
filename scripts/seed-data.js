@@ -116,7 +116,7 @@ class DatabaseSeeder {
     const adminData = [
       {
         email: 'admin@iprofit.com',
-        password: 'Admin123!@#',
+        password: 'Admin123',
         name: 'System Administrator',
         role: 'SuperAdmin',
         permissions: ['*'],

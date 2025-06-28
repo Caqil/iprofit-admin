@@ -20,9 +20,10 @@ const AdminSchema = new Schema<IAdmin>({
   email: {
     type: String,
     required: true,
-    unique: true,
+    unique: true, // This creates an index automatically
     lowercase: true,
     trim: true
+    // Remove the separate index: true to fix duplicate index warning
   },
   passwordHash: {
     type: String,
@@ -38,6 +39,7 @@ const AdminSchema = new Schema<IAdmin>({
     type: String,
     required: true,
     trim: true
+    // Remove the separate index: true to fix duplicate index warning
   },
   avatar: {
     type: String,
@@ -67,7 +69,10 @@ const AdminSchema = new Schema<IAdmin>({
   collection: 'admins'
 });
 
-AdminSchema.index({ email: 1 });
+// Create indexes manually to avoid duplicates
+// email already has an index from unique: true
 AdminSchema.index({ role: 1 });
+AdminSchema.index({ isActive: 1 });
+AdminSchema.index({ createdAt: -1 });
 
 export const Admin = mongoose.models.Admin || mongoose.model<IAdmin>('Admin', AdminSchema);

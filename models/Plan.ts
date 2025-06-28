@@ -31,8 +31,9 @@ const PlanSchema = new Schema<IPlan>({
   name: {
     type: String,
     required: true,
-    unique: true,
+    unique: true, // This creates an index automatically
     trim: true
+    // Remove the separate index: true to fix duplicate index warning
   },
   description: {
     type: String,
@@ -115,8 +116,10 @@ const PlanSchema = new Schema<IPlan>({
   collection: 'plans'
 });
 
-PlanSchema.index({ name: 1 });
+// Create indexes manually to avoid duplicates
+// name already has an index from unique: true, so don't create another one
 PlanSchema.index({ isActive: 1 });
 PlanSchema.index({ priority: -1 });
+PlanSchema.index({ createdAt: -1 });
 
 export const Plan = mongoose.models.Plan || mongoose.model<IPlan>('Plan', PlanSchema);

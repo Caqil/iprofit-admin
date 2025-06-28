@@ -53,6 +53,7 @@ const TaskSchema = new Schema<ITask>({
     type: String,
     required: true,
     trim: true
+    // Remove any index: true to avoid potential duplicates
   },
   description: {
     type: String,
@@ -192,11 +193,18 @@ const TaskSubmissionSchema = new Schema<ITaskSubmission>({
   collection: 'task_submissions'
 });
 
+// Create indexes manually to avoid duplicates
 TaskSchema.index({ status: 1 });
 TaskSchema.index({ category: 1 });
+TaskSchema.index({ difficulty: 1 });
 TaskSchema.index({ validFrom: 1, validUntil: 1 });
+TaskSchema.index({ createdAt: -1 });
+
+// Task submission indexes
 TaskSubmissionSchema.index({ taskId: 1, userId: 1 });
 TaskSubmissionSchema.index({ status: 1 });
+TaskSubmissionSchema.index({ userId: 1 });
+TaskSubmissionSchema.index({ createdAt: -1 });
 
 export const Task = mongoose.models.Task || mongoose.model<ITask>('Task', TaskSchema);
 export const TaskSubmission = mongoose.models.TaskSubmission || mongoose.model<ITaskSubmission>('TaskSubmission', TaskSubmissionSchema);

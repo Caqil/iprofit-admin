@@ -40,8 +40,9 @@ const NewsSchema = new Schema<INews>({
   slug: {
     type: String,
     required: true,
-    unique: true,
+    unique: true, // This creates an index automatically
     lowercase: true
+    // Remove any separate index: true to fix duplicate index warning
   },
   author: {
     type: Schema.Types.ObjectId,
@@ -86,10 +87,13 @@ const NewsSchema = new Schema<INews>({
   collection: 'news'
 });
 
-NewsSchema.index({ slug: 1 });
+// Create indexes manually to avoid duplicates
+// slug already has an index from unique: true
 NewsSchema.index({ status: 1 });
 NewsSchema.index({ category: 1 });
 NewsSchema.index({ publishedAt: -1 });
 NewsSchema.index({ isSticky: -1, publishedAt: -1 });
+NewsSchema.index({ author: 1 });
+NewsSchema.index({ createdAt: -1 });
 
 export const News = mongoose.models.News || mongoose.model<INews>('News', NewsSchema);

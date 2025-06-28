@@ -204,10 +204,13 @@ const LoanSchema = new Schema<ILoan>({
   collection: 'loans'
 });
 
+// Create indexes manually to avoid duplicates
 LoanSchema.index({ userId: 1 });
 LoanSchema.index({ status: 1 });
-LoanSchema.index({ createdAt: -1 });
 LoanSchema.index({ creditScore: 1 });
+LoanSchema.index({ createdAt: -1 });
 LoanSchema.index({ 'repaymentSchedule.dueDate': 1 });
+LoanSchema.index({ amount: 1 });
+LoanSchema.index({ approvedBy: 1 });
 
 export const Loan = mongoose.models.Loan || mongoose.model<ILoan>('Loan', LoanSchema);
