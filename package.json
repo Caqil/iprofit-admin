@@ -6,7 +6,11 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "check-env": "node scripts/check-env.js",
+    "migrate-db": "node scripts/migrate-db.js",
+    "migrate-db:sample": "node scripts/migrate-db.js --sample",
+    "seed-data": "node scripts/seed-data.js"
   },
   "dependencies": {
     "@fingerprintjs/fingerprintjs": "^4.6.2",
@@ -45,6 +49,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
+    "dotenv": "^17.0.0",
     "embla-carousel-react": "^8.6.0",
     "input-otp": "^1.4.2",
     "jsonwebtoken": "^9.0.2",
@@ -77,7 +82,8 @@
     "eslint": "^9",
     "eslint-config-next": "15.3.4",
     "tailwindcss": "^4",
+    "ts-node": "^10.9.2",
     "tw-animate-css": "^1.3.4",
-    "typescript": "^5"
+    "typescript": "^5.8.3"
   }
 }

@@ -65,7 +65,7 @@ const clientPromise = client.connect();
 
 export const authConfig: NextAuthOptions = {
   adapter: MongoDBAdapter(clientPromise, {
-    databaseName: process.env.MONGODB_DB_NAME || "financial_app",
+    databaseName: process.env.MONGODB_DB_NAME || "iprofit",
     collections: {
       Users: "auth_users",
       Accounts: "auth_accounts", 

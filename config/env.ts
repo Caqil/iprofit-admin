@@ -13,7 +13,7 @@ const envSchema = z.object({
   
   // Database
   MONGODB_URI: z.string().min(1),
-  MONGODB_DB_NAME: z.string().default('financial_app'),
+  MONGODB_DB_NAME: z.string().default('iprofit'),
   DB_MAX_POOL_SIZE: z.string().transform(Number).default('10'),
   DB_SERVER_TIMEOUT: z.string().transform(Number).default('5000'),
   DB_SOCKET_TIMEOUT: z.string().transform(Number).default('45000'),
