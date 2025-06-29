@@ -1,6 +1,11 @@
 import { BaseEntity } from './index';
-
-export type AdminRole = 'SuperAdmin' | 'Moderator';
+export type AdminRole = 
+  | 'SuperAdmin' 
+  | 'Admin' 
+  | 'Manager' 
+  | 'Moderator' 
+  | 'Support' 
+  | 'Viewer';
 
 export interface AdminUser extends BaseEntity {
   email: string;

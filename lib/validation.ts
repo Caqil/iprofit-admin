@@ -43,7 +43,7 @@ export const adminCreateSchema = z.object({
   name: z.string().min(2).max(100),
   email: z.string().email(),
   password: z.string().min(8),
-  role: z.enum(['SuperAdmin', 'Admin', 'Moderator', 'Support'] as const),
+  role: z.enum(['SuperAdmin', 'Admin', 'Manager', 'Moderator', 'Support', 'Viewer'] as const).optional(),
   permissions: z.array(z.string()).optional(),
   isActive: z.boolean().default(true)
 });
@@ -51,7 +51,7 @@ export const adminCreateSchema = z.object({
 export const adminUpdateSchema = z.object({
   name: z.string().min(2).max(100).optional(),
   email: z.string().email().optional(),
-  role: z.enum(['SuperAdmin', 'Admin', 'Moderator', 'Support'] as const).optional(),
+  role: z.enum(['SuperAdmin', 'Admin', 'Manager', 'Moderator', 'Support', 'Viewer'] as const).optional(),
   permissions: z.array(z.string()).optional(),
   isActive: z.boolean().optional(),
   password: z.string().min(8).optional()
@@ -209,8 +209,6 @@ export const ticketResponseSchema = z.object({
   })).optional()
 });
 
-// FIXED: Pagination and filtering schemas for URL query parameters
-// URL parameters are always strings, so we need to transform them
 export const paginationSchema = z.object({
   page: z.string().transform(Number).pipe(z.number().positive()).default('1').or(z.number().positive().default(1)),
   limit: z.string().transform(Number).pipe(z.number().positive().max(100)).default('10').or(z.number().positive().max(100).default(10)),

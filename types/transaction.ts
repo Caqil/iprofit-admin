@@ -1,8 +1,8 @@
 import { BaseEntity, Currency } from './index';
 
 export type TransactionType = 'deposit' | 'withdrawal' | 'bonus' | 'profit' | 'penalty';
-export type TransactionStatus = 'Pending' | 'Approved' | 'Rejected' | 'Processing' | 'Failed';
-export type PaymentGateway = 'CoinGate' | 'UddoktaPay' | 'Manual' | 'System';
+export type TransactionStatus = 'Pending' | 'Approved' | 'Rejected' | 'Processing' | 'Failed' | 'Cancelled';
+export type PaymentGateway = 'CoinGate' | 'UddoktaPay' | 'Manual' | 'System' | 'Bank' | 'Mobile';
 
 export interface Transaction extends BaseEntity {
   userId: string;
@@ -16,28 +16,59 @@ export interface Transaction extends BaseEntity {
   gatewayTransactionId?: string;
   gatewayResponse?: any;
   approvedBy?: string;
+  rejectedBy?: string;
   rejectionReason?: string;
   fees: number;
   netAmount: number;
   metadata?: TransactionMetadata;
   processedAt?: Date;
+  balanceBefore?: number;
+  balanceAfter?: number;
+  adminNotes?: string;
+  userNotes?: string;
+  attachments?: string[];
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  riskScore?: number;
+  flagged?: boolean;
+  flagReason?: string;
 }
 
 export interface TransactionMetadata {
   ipAddress?: string;
   userAgent?: string;
   location?: string;
+  deviceInfo?: string;
   riskScore?: number;
   fraudFlags?: string[];
+  verificationLevel?: 'basic' | 'enhanced' | 'manual';
+  complianceChecks?: {
+    aml: boolean;
+    sanctionsList: boolean;
+    pep: boolean;
+  };
 }
 
 export interface TransactionSummary {
+  totalCount: number;
   totalDeposits: number;
   totalWithdrawals: number;
   totalFees: number;
   pendingAmount: number;
+  approvedAmount: number;
+  rejectedAmount: number;
   successRate: number;
   averageProcessingTime: number;
+  averageAmount: number;
+  byStatus: Record<TransactionStatus, { count: number; amount: number }>;
+  byType: Record<TransactionType, { count: number; amount: number }>;
+  byGateway: Record<PaymentGateway, { count: number; amount: number }>;
+  byCurrency: Record<Currency, { count: number; amount: number }>;
+  timeMetrics: {
+    lastHour: { count: number; amount: number };
+    last24Hours: { count: number; amount: number };
+    last7Days: { count: number; amount: number };
+    last30Days: { count: number; amount: number };
+  };
 }
 
 export interface TransactionFilter {
@@ -50,50 +81,25 @@ export interface TransactionFilter {
   amountMax?: number;
   dateFrom?: string;
   dateTo?: string;
+  search?: string;
+  flagged?: boolean;
+  riskScoreMin?: number;
+  riskScoreMax?: number;
+  priority?: string;
+  approvedBy?: string;
 }
 
 export interface TransactionApproval {
   transactionId: string;
-  action: 'approve' | 'reject';
+  action: 'approve' | 'reject' | 'cancel';
   reason?: string;
   adminNotes?: string;
+  notifyUser?: boolean;
 }
 
-export interface DepositRequest {
-  userId: string;
-  amount: number;
-  currency: Currency;
-  gateway: PaymentGateway;
-  gatewayData?: any;
-}
-
-export interface WithdrawalRequest {
-  userId: string;
-  amount: number;
-  currency: Currency;
-  withdrawalMethod: string;
-  accountDetails: {
-    accountNumber?: string;
-    routingNumber?: string;
-    bankName?: string;
-    walletAddress?: string;
-  };
-}
-
-export interface GatewayConfig {
-  name: string;
-  isActive: boolean;
-  currencies: Currency[];
-  minAmount: number;
-  maxAmount: number;
-  fees: {
-    percentage: number;
-    fixed: number;
-  };
-  settings: {
-    apiKey?: string;
-    secretKey?: string;
-    webhookUrl?: string;
-    testMode?: boolean;
-  };
+export interface BulkTransactionAction {
+  transactionIds: string[];
+  action: 'approve' | 'reject' | 'flag' | 'unflag' | 'export';
+  reason?: string;
+  adminNotes?: string;
 }

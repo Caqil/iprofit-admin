@@ -10,8 +10,8 @@ import { AuditLog } from '@/models/AuditLog';
 import { verifyPassword } from '@/lib/encryption';
 import { checkDeviceLimit } from '@/lib/device-detection';
 import speakeasy from 'speakeasy';
+import { AdminRole } from '@/types';
 
-type AdminRole = 'SuperAdmin' | 'Moderator';
 
 declare module "next-auth" {
   interface User {

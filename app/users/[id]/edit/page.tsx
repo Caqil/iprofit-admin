@@ -40,11 +40,10 @@ import { hasPermission } from "@/lib/permissions";
 import { toast } from "sonner";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
 
+import { z } from "zod";
 type EditUserFormData = UserUpdateRequest & {
   notes?: string;
 };
-
-import { z } from "zod";
 
 const editUserSchema = userUpdateSchema.extend({
   notes: z.string().optional(),
