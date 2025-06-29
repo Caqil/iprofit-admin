@@ -15,7 +15,7 @@ import {
   Monitor,
   Menu,
 } from "lucide-react";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/providers/theme-provider"; // Fixed import
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,7 +31,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
@@ -46,10 +45,10 @@ interface HeaderProps {
 export function Header({
   className,
   showSearch = true,
-  showBreadcrumbs = true,
+  showBreadcrumbs = false,
 }: HeaderProps) {
   const { user, logout } = useAuth();
-  const { setTheme, theme } = useTheme();
+  const { setTheme, theme, actualTheme } = useTheme(); // Fixed destructuring
   const pathname = usePathname();
 
   const handleLogout = async () => {
@@ -69,7 +68,7 @@ export function Header({
       .slice(0, 2);
   };
 
-  const unreadNotifications = 3; // This would come from your notification state
+  const unreadNotifications = 3;
 
   return (
     <header
@@ -78,126 +77,70 @@ export function Header({
         className
       )}
     >
-      <div className="container flex h-16 items-center justify-between">
+      <div className="container flex h-16 items-center justify-between px-4">
         {/* Left Side */}
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-2 md:space-x-4">
           <SidebarTrigger />
 
           {/* Logo for mobile when sidebar is collapsed */}
-          <Link href="/dashboard" className="md:hidden">
-            <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                <span className="text-primary-foreground font-bold text-sm">
-                  IP
-                </span>
-              </div>
-              <span className="font-bold">IProfit</span>
+          <Link
+            href="/dashboard"
+            className="md:hidden flex items-center space-x-2"
+          >
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <span className="text-sm font-bold">FA</span>
             </div>
+            <span className="font-semibold text-sm">FinAdmin</span>
           </Link>
 
-          {/* Search */}
+          {/* Search - Hidden on mobile */}
           {showSearch && (
-            <div className="hidden md:flex relative w-96 max-w-sm">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+            <div className="relative hidden md:block w-64 lg:w-80">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Search..."
-                className="pl-10 pr-4"
-                type="search"
+                className="pl-10 bg-muted/50 border-0 focus-visible:bg-background"
               />
             </div>
           )}
         </div>
 
         {/* Right Side */}
-        <div className="flex items-center space-x-2">
-          {/* Mobile Search */}
+        <div className="flex items-center space-x-2 md:space-x-4">
+          {/* Search button for mobile */}
           {showSearch && (
-            <Sheet>
-              <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="md:hidden">
-                  <Search className="h-4 w-4" />
-                  <span className="sr-only">Search</span>
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="top" className="h-20">
-                <div className="flex items-center space-x-2 mt-4">
-                  <Search className="h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search..."
-                    className="flex-1"
-                    type="search"
-                    autoFocus
-                  />
-                </div>
-              </SheetContent>
-            </Sheet>
+            <Button variant="ghost" size="icon" className="md:hidden">
+              <Search className="h-5 w-5" />
+              <span className="sr-only">Search</span>
+            </Button>
           )}
 
           {/* Notifications */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="relative">
-                <Bell className="h-4 w-4" />
-                {unreadNotifications > 0 && (
-                  <Badge
-                    variant="destructive"
-                    className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-xs"
-                  >
-                    {unreadNotifications > 9 ? "9+" : unreadNotifications}
-                  </Badge>
-                )}
-                <span className="sr-only">Notifications</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-80">
-              <DropdownMenuLabel>Notifications</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <div className="max-h-64 overflow-y-auto">
-                {/* Sample notifications */}
-                <DropdownMenuItem className="flex flex-col items-start space-y-1">
-                  <div className="font-medium">New user registration</div>
-                  <div className="text-sm text-muted-foreground">
-                    John Doe joined the platform
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    2 minutes ago
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem className="flex flex-col items-start space-y-1">
-                  <div className="font-medium">Transaction completed</div>
-                  <div className="text-sm text-muted-foreground">
-                    $1,250 deposit processed
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    5 minutes ago
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem className="flex flex-col items-start space-y-1">
-                  <div className="font-medium">System maintenance</div>
-                  <div className="text-sm text-muted-foreground">
-                    Scheduled for tonight at 2 AM
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    1 hour ago
-                  </div>
-                </DropdownMenuItem>
-              </div>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link href="/notifications" className="w-full text-center">
-                  View All Notifications
-                </Link>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Button variant="ghost" size="icon" className="relative">
+            <Bell className="h-5 w-5" />
+            {unreadNotifications > 0 && (
+              <Badge
+                variant="destructive"
+                className="absolute -top-2 -right-2 h-5 w-5 p-0 text-xs flex items-center justify-center"
+              >
+                {unreadNotifications > 9 ? "9+" : unreadNotifications}
+              </Badge>
+            )}
+            <span className="sr-only">
+              {unreadNotifications} unread notifications
+            </span>
+          </Button>
 
           {/* User Menu */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-                <Avatar className="h-8 w-8">
+              <Button
+                variant="ghost"
+                className="relative h-9 w-9 rounded-full p-0"
+              >
+                <Avatar className="h-9 w-9">
                   <AvatarImage src={user?.avatar} alt={user?.name || "User"} />
-                  <AvatarFallback>
+                  <AvatarFallback className="text-sm">
                     {user?.name ? getUserInitials(user.name) : "U"}
                   </AvatarFallback>
                 </Avatar>
@@ -247,21 +190,28 @@ export function Header({
               {/* Theme Selector */}
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>
-                  <Monitor className="mr-2 h-4 w-4" />
+                  {actualTheme === "dark" ? (
+                    <Moon className="mr-2 h-4 w-4" />
+                  ) : (
+                    <Sun className="mr-2 h-4 w-4" />
+                  )}
                   <span>Theme</span>
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent>
                   <DropdownMenuItem onClick={() => setTheme("light")}>
                     <Sun className="mr-2 h-4 w-4" />
                     <span>Light</span>
+                    {theme === "light" && <span className="ml-auto">✓</span>}
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setTheme("dark")}>
                     <Moon className="mr-2 h-4 w-4" />
                     <span>Dark</span>
+                    {theme === "dark" && <span className="ml-auto">✓</span>}
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setTheme("system")}>
                     <Monitor className="mr-2 h-4 w-4" />
                     <span>System</span>
+                    {theme === "system" && <span className="ml-auto">✓</span>}
                   </DropdownMenuItem>
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
@@ -280,7 +230,7 @@ export function Header({
       {/* Breadcrumbs */}
       {showBreadcrumbs && (
         <div className="border-t">
-          <div className="container py-3">
+          <div className="container py-3 px-4">
             <LayoutBreadcrumb />
           </div>
         </div>

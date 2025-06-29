@@ -25,6 +25,7 @@ export interface User extends BaseEntity {
   emailVerified: boolean;
   phoneVerified: boolean;
   twoFactorEnabled: boolean;
+  plan?: Plan;
 }
 
 export interface UserAddress {
@@ -42,8 +43,8 @@ export interface KYCDocument {
 }
 
 export interface UserProfile {
-  user: User;
-  plan: Plan;
+  user: User & { plan?: Plan };
+  plan?: Plan; 
   statistics: UserStatistics;
   recentTransactions: Transaction[];
   referrals: UserReferral[];

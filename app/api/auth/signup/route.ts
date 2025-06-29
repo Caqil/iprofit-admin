@@ -118,7 +118,7 @@ async function signupHandler(request: NextRequest): Promise<NextResponse> {
     }
 
     // Validate referral code if provided
-    let referrerUser = null;
+   let referrerUser: any = null;
     if (referralCode) {
       referrerUser = await User.findOne({ 
         referralCode: referralCode.toUpperCase(),
