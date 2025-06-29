@@ -80,17 +80,50 @@ const userListQuerySchema = z.object({
 });
 
 // Enhanced user creation schema with additional fields
-const userCreateExtendedSchema = userCreateSchema.extend({
-  address: z.object({
-    street: z.string().min(5).max(200),
-    city: z.string().min(2).max(100),
-    state: z.string().min(2).max(100),
-    country: z.string().min(2).max(100),
-    zipCode: z.string().min(3).max(20)
-  }).optional(),
-  dateOfBirth: z.string().datetime().optional(),
-  initialBalance: z.number().min(0).optional().default(0)
-});
+const userCreateExtendedSchema = z.discriminatedUnion("isAdminCreated", [
+  // Admin creation - password is optional (auto-generated)
+  z.object({
+    isAdminCreated: z.literal(true),
+    name: z.string().min(2, 'Name must be at least 2 characters').max(100),
+    email: z.string().email('Invalid email address'),
+    phone: z.string().min(10, 'Phone number must be at least 10 digits').max(20),
+    planId: z.string().min(1, 'Plan is required'),
+    deviceId: z.string().min(1, 'Device ID is required'),
+    referralCode: z.string().optional(),
+    generatePassword: z.boolean().optional().default(true),
+    password: z.string().min(8).optional(), // Optional for admin creation
+    initialBalance: z.number().min(0).optional().default(0),
+    address: z.object({
+      street: z.string().min(5).max(200),
+      city: z.string().min(2).max(100),
+      state: z.string().min(2).max(100),
+      country: z.string().min(2).max(100),
+      zipCode: z.string().min(3).max(20)
+    }).optional(),
+    dateOfBirth: z.string().datetime().optional(),
+  }),
+  // User registration - password is required
+  z.object({
+    isAdminCreated: z.literal(false).optional(),
+    name: z.string().min(2, 'Name must be at least 2 characters').max(100),
+    email: z.string().email('Invalid email address'),
+    phone: z.string().min(10, 'Phone number must be at least 10 digits').max(20),
+    password: z.string().min(8, 'Password must be at least 8 characters'), // Required for user registration
+    planId: z.string().optional(),
+    referredBy: z.string().optional(),
+    deviceId: z.string().min(1, 'Device ID is required'),
+    fingerprint: z.string().min(1, 'Device fingerprint is required'),
+    initialBalance: z.number().min(0).optional().default(0),
+    address: z.object({
+      street: z.string().min(5).max(200),
+      city: z.string().min(2).max(100),
+      state: z.string().min(2).max(100),
+      country: z.string().min(2).max(100),
+      zipCode: z.string().min(3).max(20)
+    }).optional(),
+    dateOfBirth: z.string().datetime().optional(),
+  })
+]);
 
 // GET /api/users - List all users with filtering and pagination
 async function getUsersHandler(request: NextRequest): Promise<NextResponse> {
@@ -384,11 +417,13 @@ async function createUserHandler(request: NextRequest): Promise<NextResponse> {
       phone,
       password,
       planId,
-      referredBy,
       address,
       dateOfBirth,
       initialBalance
     } = validationResult.data;
+
+    // Only get referredBy if it exists on the data object
+    const referredBy = 'referredBy' in validationResult.data ? validationResult.data.referredBy : undefined;
 
     // Check for existing user
     const existingUser = await User.findOne({

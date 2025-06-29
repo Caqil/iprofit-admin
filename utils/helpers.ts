@@ -2,6 +2,7 @@ import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { CURRENCY, LOAN_CONFIG, REFERRAL_CONFIG } from './constants';
 import { Currency } from '@/types';
+import { User } from '@/models/User';
 
 /**
  * Merge Tailwind CSS classes with proper precedence
@@ -424,3 +425,37 @@ export async  function generateRepaymentSchedule(
     return schedule;
 }
 
+export function generateSecurePassword(): string {
+  const length = 12;
+  const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+  let password = "";
+  
+  // Ensure at least one of each required character type
+  password += "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[Math.floor(Math.random() * 26)]; // uppercase
+  password += "abcdefghijklmnopqrstuvwxyz"[Math.floor(Math.random() * 26)]; // lowercase
+  password += "0123456789"[Math.floor(Math.random() * 10)]; // number
+  password += "!@#$%^&*"[Math.floor(Math.random() * 8)]; // special
+  
+  // Fill the rest randomly
+  for (let i = 4; i < length; i++) {
+    password += charset[Math.floor(Math.random() * charset.length)];
+  }
+  
+  // Shuffle the password
+  return password.split('').sort(() => Math.random() - 0.5).join('');
+}
+
+export async function generateUniqueReferralCode(): Promise<string> {
+  let referralCode: string;
+  let isUnique = false;
+  
+  while (!isUnique) {
+    referralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const existing = await User.findOne({ referralCode });
+    if (!existing) {
+      isUnique = true;
+    }
+  }
+  
+  return referralCode!;
+}

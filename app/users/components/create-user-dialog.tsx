@@ -30,10 +30,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, UserPlus, RefreshCw } from "lucide-react";
+import { Loader2, UserPlus, RefreshCw, AlertCircle } from "lucide-react";
 import { User, Plan, AdminUserCreateRequest } from "@/types";
 import { toast } from "sonner";
 import { adminUserCreateSchema } from "@/lib/validation";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface CreateUserDialogProps {
   open: boolean;
@@ -48,6 +49,8 @@ export function CreateUserDialog({
 }: CreateUserDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [isLoadingPlans, setIsLoadingPlans] = useState(false);
+  const [plansError, setPlansError] = useState<string | null>(null);
   const [generatePassword, setGeneratePassword] = useState(true);
 
   const form = useForm<AdminUserCreateRequest>({
@@ -62,8 +65,19 @@ export function CreateUserDialog({
     },
   });
 
+  // Reset and fetch data when dialog opens
   useEffect(() => {
     if (open) {
+      form.reset({
+        name: "",
+        email: "",
+        phone: "",
+        planId: "",
+        deviceId: "",
+        referralCode: "",
+      });
+      setPlans([]);
+      setPlansError(null);
       fetchPlans();
       generateDeviceId();
     }
@@ -71,73 +85,129 @@ export function CreateUserDialog({
 
   const fetchPlans = async () => {
     try {
-      const response = await fetch("/api/plans", {
-        credentials: "include",
+      setIsLoadingPlans(true);
+      setPlansError(null);
+      console.log("🔍 Fetching plans for user creation...");
+
+      const response = await fetch(
+        "/api/plans?limit=100&sortBy=priority&sortOrder=asc",
+        {
+          method: "GET",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      console.log("📡 Plans response status:", response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error("❌ Plans fetch error:", errorData);
+        throw new Error(
+          errorData.message || `HTTP ${response.status}: Failed to fetch plans`
+        );
+      }
+
+      const data = await response.json();
+      console.log("📊 Plans API response:", data);
+
+      // Handle different response structures
+      let plansArray: Plan[] = [];
+
+      if (data.success && data.data) {
+        // Wrapped response with success flag
+        if (Array.isArray(data.data.data)) {
+          plansArray = data.data.data;
+        } else if (Array.isArray(data.data)) {
+          plansArray = data.data;
+        }
+      } else if (Array.isArray(data.data)) {
+        // Direct data array
+        plansArray = data.data;
+      } else if (Array.isArray(data)) {
+        // Direct array response
+        plansArray = data;
+      }
+
+      // Validate plans array
+      if (!Array.isArray(plansArray)) {
+        console.error("❌ Plans response is not an array:", plansArray);
+        throw new Error("Invalid plans data received from server");
+      }
+
+      // Filter out invalid plans and ensure required fields
+      const validPlans = plansArray.filter((plan) => {
+        const hasId = plan._id; // Plan type only has _id property
+        const hasName = plan.name;
+        if (!hasId || !hasName) {
+          console.warn("⚠️ Skipping invalid plan:", plan);
+          return false;
+        }
+        return true;
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setPlans(data.data || data.data?.data || []);
-        }
-      }
+      console.log(
+        `✅ Processed ${validPlans.length} valid plans from ${plansArray.length} total`
+      );
+      setPlans(validPlans);
     } catch (error) {
-      console.error("Error fetching plans:", error);
-      toast.error("Failed to load plans");
+      console.error("❌ Error fetching plans:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to load plans";
+      setPlansError(errorMessage);
+      toast.error(errorMessage);
+      setPlans([]); // Ensure plans is always an array
+    } finally {
+      setIsLoadingPlans(false);
     }
   };
 
   const generateDeviceId = () => {
     const deviceId = `admin_device_${Date.now()}_${Math.random()
       .toString(36)
-      .substr(2, 9)}`;
+      .substring(2, 15)}`;
     form.setValue("deviceId", deviceId);
   };
 
   const onSubmit = async (data: AdminUserCreateRequest) => {
-    setIsLoading(true);
     try {
-      // Prepare the data for the API
-      const submitData = {
-        ...data,
-        generatePassword, // Include the generatePassword flag
-      };
+      setIsLoading(true);
+
+      // Validate that a plan is selected
+      if (!data.planId) {
+        toast.error("Please select a plan for the user");
+        return;
+      }
 
       const response = await fetch("/api/users", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         credentials: "include",
-        body: JSON.stringify(submitData),
+        body: JSON.stringify({
+          ...data,
+          isAdminCreated: true,
+          generatePassword,
+        }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(
-          errorData.error || errorData.message || "Failed to create user"
-        );
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to create user");
       }
 
       const result = await response.json();
-      if (result.success) {
-        const user = result.data?.user || result.data;
-        onSuccess(user);
-        onOpenChange(false);
-        form.reset();
+      const user = result.success ? result.data : result;
 
-        // Show success message with password info if generated
-        if (generatePassword && result.data?.generatedPassword) {
-          toast.success(
-            `User created successfully! Generated password: ${result.data.generatedPassword}`,
-            { duration: 10000 }
-          );
-        } else {
-          toast.success("User created successfully!");
-        }
-      } else {
-        throw new Error(
-          result.error || result.message || "Failed to create user"
-        );
-      }
+      toast.success("User created successfully!");
+      onSuccess(user);
+      onOpenChange(false);
+
+      // Reset form
+      form.reset();
     } catch (error) {
       console.error("Error creating user:", error);
       toast.error(
@@ -148,9 +218,62 @@ export function CreateUserDialog({
     }
   };
 
+  const renderPlansSelect = () => {
+    if (isLoadingPlans) {
+      return (
+        <SelectItem value="loading" disabled>
+          <div className="flex items-center">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Loading plans...
+          </div>
+        </SelectItem>
+      );
+    }
+
+    if (plansError) {
+      return (
+        <SelectItem value="error" disabled>
+          <div className="flex items-center text-destructive">
+            <AlertCircle className="mr-2 h-4 w-4" />
+            Error loading plans
+          </div>
+        </SelectItem>
+      );
+    }
+
+    if (!Array.isArray(plans) || plans.length === 0) {
+      return (
+        <SelectItem value="no-plans" disabled>
+          No plans available
+        </SelectItem>
+      );
+    }
+
+    return plans
+      .map((plan) => {
+        const planId = plan._id; // Plan type only has _id, not id
+        const planName = plan.name || "Unnamed Plan";
+        const planPrice = typeof plan.price === "number" ? plan.price : 0;
+        const planDuration = plan.duration ? `${plan.duration} days` : "month";
+
+        // Ensure planId is not empty string
+        if (!planId || planId.trim() === "") {
+          console.warn("⚠️ Skipping plan with empty ID:", plan);
+          return null;
+        }
+
+        return (
+          <SelectItem key={planId} value={planId}>
+            {planName} - ${planPrice}/{planDuration}
+          </SelectItem>
+        );
+      })
+      .filter(Boolean); // Remove null values
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center space-x-2">
             <UserPlus className="h-5 w-5" />
@@ -158,9 +281,29 @@ export function CreateUserDialog({
           </DialogTitle>
           <DialogDescription>
             Add a new user to the system with their basic information. A
-            password will be auto-generated.
+            password will be auto-generated and sent via email.
           </DialogDescription>
         </DialogHeader>
+
+        {plansError && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="flex items-center justify-between">
+              <span>{plansError}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={fetchPlans}
+                disabled={isLoadingPlans}
+              >
+                <RefreshCw
+                  className={`h-3 w-3 ${isLoadingPlans ? "animate-spin" : ""}`}
+                />
+                Retry
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -169,9 +312,13 @@ export function CreateUserDialog({
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Full Name</FormLabel>
+                  <FormLabel>Full Name *</FormLabel>
                   <FormControl>
-                    <Input placeholder="Enter full name" {...field} />
+                    <Input
+                      placeholder="Enter full name"
+                      {...field}
+                      disabled={isLoading}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -183,12 +330,13 @@ export function CreateUserDialog({
               name="email"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Email Address</FormLabel>
+                  <FormLabel>Email Address *</FormLabel>
                   <FormControl>
                     <Input
                       placeholder="Enter email address"
                       type="email"
                       {...field}
+                      disabled={isLoading}
                     />
                   </FormControl>
                   <FormMessage />
@@ -203,7 +351,11 @@ export function CreateUserDialog({
                 <FormItem>
                   <FormLabel>Phone Number</FormLabel>
                   <FormControl>
-                    <Input placeholder="Enter phone number" {...field} />
+                    <Input
+                      placeholder="Enter phone number"
+                      {...field}
+                      disabled={isLoading}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -215,28 +367,43 @@ export function CreateUserDialog({
               name="planId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Plan</FormLabel>
+                  <FormLabel>Plan *</FormLabel>
                   <Select
                     onValueChange={field.onChange}
-                    defaultValue={field.value}
+                    value={field.value || ""}
+                    disabled={isLoading || isLoadingPlans}
                   >
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select a plan" />
+                        <SelectValue
+                          placeholder={
+                            isLoadingPlans
+                              ? "Loading plans..."
+                              : plansError
+                              ? "Error loading plans"
+                              : plans.length === 0
+                              ? "No plans available"
+                              : "Select a plan"
+                          }
+                        />
                       </SelectTrigger>
                     </FormControl>
-                    <SelectContent>
-                      {plans.map((plan) => (
-                        <SelectItem
-                          key={plan._id || plan._id}
-                          value={plan._id || plan._id}
-                        >
-                          {plan.name} - ${plan.price || 0}/
-                          {plan.duration ? `${plan.duration} days` : "month"}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
+                    <SelectContent>{renderPlansSelect()}</SelectContent>
                   </Select>
+                  {!isLoadingPlans && plans.length === 0 && !plansError && (
+                    <FormDescription>
+                      <Button
+                        type="button"
+                        variant="link"
+                        className="p-0 h-auto text-sm"
+                        onClick={fetchPlans}
+                        disabled={isLoadingPlans}
+                      >
+                        <RefreshCw className="mr-1 h-3 w-3" />
+                        Refresh plans
+                      </Button>
+                    </FormDescription>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}
@@ -249,11 +416,14 @@ export function CreateUserDialog({
                 <FormItem>
                   <FormLabel>Referral Code (Optional)</FormLabel>
                   <FormControl>
-                    <Input placeholder="Enter referral code" {...field} />
+                    <Input
+                      placeholder="Enter referral code if any"
+                      {...field}
+                      disabled={isLoading}
+                    />
                   </FormControl>
                   <FormDescription>
-                    If this user was referred by someone, enter their referral
-                    code
+                    Leave empty if the user was not referred by anyone
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -266,26 +436,27 @@ export function CreateUserDialog({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Device ID</FormLabel>
-                  <div className="flex space-x-2">
-                    <FormControl>
+                  <FormControl>
+                    <div className="flex space-x-2">
                       <Input
-                        placeholder="Device identifier"
+                        placeholder="Auto-generated device ID"
                         {...field}
+                        disabled={isLoading}
                         readOnly
                       />
-                    </FormControl>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      onClick={generateDeviceId}
-                      disabled={isLoading}
-                    >
-                      <RefreshCw className="h-4 w-4" />
-                    </Button>
-                  </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={generateDeviceId}
+                        disabled={isLoading}
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </FormControl>
                   <FormDescription>
-                    Auto-generated device identifier for this user
+                    A unique device identifier for OAuth 2.0 device limiting
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -294,15 +465,16 @@ export function CreateUserDialog({
 
             <div className="flex items-center space-x-2">
               <Checkbox
-                id="generatePassword"
+                id="generate-password"
                 checked={generatePassword}
                 onCheckedChange={(checked) => setGeneratePassword(checked === true)}
+                disabled={isLoading}
               />
               <label
-                htmlFor="generatePassword"
+                htmlFor="generate-password"
                 className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
               >
-                Auto-generate secure password
+                Auto-generate secure password and send via email
               </label>
             </div>
 
@@ -315,9 +487,21 @@ export function CreateUserDialog({
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={isLoading}>
-                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Create User
+              <Button
+                type="submit"
+                disabled={isLoading || isLoadingPlans || plans.length === 0}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="mr-2 h-4 w-4" />
+                    Create User
+                  </>
+                )}
               </Button>
             </div>
           </form>

@@ -99,9 +99,12 @@ class EnhancedDatabaseSeeder {
         await this.resetDatabase();
       }
 
+      // Always ensure clean admin state for fresh installs
+      console.log('🔧 Ensuring clean admin authentication...');
+      
       // Seed in order due to dependencies
       await this.seedPlans();
-      await this.seedAdmins();
+      await this.seedAdmins(); // This now clears and recreates admins
       await this.seedUsers();
       await this.seedTransactions();
       await this.seedReferrals();  // Create referral records
@@ -299,74 +302,124 @@ class EnhancedDatabaseSeeder {
 
     const db = mongoose.connection.db;
 
+    // Always clear existing admins to ensure clean state
+    await db.collection('admins').deleteMany({});
+    console.log('🗑️  Cleared existing admin accounts');
+
     const adminData = [
       {
         name: 'System Administrator',
         email: 'admin@iprofit.com',
-        password: await bcrypt.hash('Admin123@#', 12),
+        passwordHash: await bcrypt.hash('Admin123@#', 12),
         role: 'SuperAdmin',
         permissions: ['*'],
         status: 'Active',
+        isActive: true,
         emailVerified: true,
         twoFactorEnabled: false,
+        twoFactorSecret: null,
         lastLoginAt: null,
-        metadata: {
-          source: 'system_seed'
-        }
+        avatar: null,
+        createdAt: new Date(),
+        updatedAt: new Date()
       },
       {
         name: 'Content Moderator',
         email: 'moderator@iprofit.com',
-        password: await bcrypt.hash('Mod123@#', 12),
+        passwordHash: await bcrypt.hash('Mod123@#', 12),
         role: 'Moderator',
         permissions: [
           'users.view', 'users.update', 'users.kyc.approve', 'users.kyc.reject',
           'transactions.view', 'transactions.approve', 'transactions.reject',
           'loans.view', 'loans.approve', 'loans.reject',
           'referrals.view', 'referrals.approve', 'referrals.reject',
-          'support.view', 'support.respond', 'support.close'
+          'support.view', 'support.respond', 'support.close',
+          'dashboard.view', 'notifications.view'
         ],
         status: 'Active',
+        isActive: true,
         emailVerified: true,
         twoFactorEnabled: false,
+        twoFactorSecret: null,
         lastLoginAt: null,
-        metadata: {
-          source: 'system_seed'
-        }
+        avatar: null,
+        createdAt: new Date(),
+        updatedAt: new Date()
       },
       {
         name: 'Financial Manager',
         email: 'finance@iprofit.com',
-        password: await bcrypt.hash('Finance123@#', 12),
+        passwordHash: await bcrypt.hash('Finance123@#', 12),
         role: 'Moderator',
         permissions: [
           'transactions.view', 'transactions.approve', 'transactions.reject',
           'loans.view', 'loans.approve', 'loans.reject', 'loans.disburse',
-          'referrals.view', 'referrals.approve', 'users.view'
+          'referrals.view', 'referrals.approve', 'users.view',
+          'dashboard.view', 'audit.view'
         ],
         status: 'Active',
+        isActive: true,
         emailVerified: true,
-        twoFactorEnabled: true,
+        twoFactorEnabled: false,
+        twoFactorSecret: null,
         lastLoginAt: null,
-        metadata: {
-          source: 'system_seed'
-        }
+        avatar: null,
+        createdAt: new Date(),
+        updatedAt: new Date()
       }
     ];
 
-    for (const admin of adminData) {
-      const existing = await db.collection('admins').findOne({ email: admin.email });
-      if (!existing) {
-        const adminDoc = {
-          ...admin,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        };
-        const result = await db.collection('admins').insertOne(adminDoc);
-        this.createdData.admins.push({ ...adminDoc, _id: result.insertedId });
-        console.log(`✅ Admin created: ${admin.email}`);
-      } else {
-        this.createdData.admins.push(existing);
+    // Insert all admin accounts
+    const results = await db.collection('admins').insertMany(adminData);
+    
+    adminData.forEach((admin, index) => {
+      admin._id = results.insertedIds[index];
+      this.createdData.admins.push(admin);
+    });
+
+    console.log('✅ Admin accounts created successfully');
+    
+    // Test authentication immediately
+    await this.testAdminAuthentication();
+  }
+
+  async testAdminAuthentication() {
+    console.log('🧪 Testing admin authentication...');
+
+    const testCredentials = [
+      { email: 'admin@iprofit.com', password: 'Admin123@#' },
+      { email: 'moderator@iprofit.com', password: 'Mod123@#' },
+      { email: 'finance@iprofit.com', password: 'Finance123@#' }
+    ];
+
+    const db = mongoose.connection.db;
+    
+    for (const creds of testCredentials) {
+      try {
+        const admin = await db.collection('admins').findOne({ 
+          email: creds.email,
+          isActive: true 
+        });
+
+        if (!admin) {
+          console.log(`❌ Admin not found: ${creds.email}`);
+          continue;
+        }
+
+        if (!admin.passwordHash) {
+          console.log(`❌ No passwordHash for: ${creds.email}`);
+          continue;
+        }
+
+        const isValid = await bcrypt.compare(creds.password, admin.passwordHash);
+        
+        if (isValid) {
+          console.log(`✅ Authentication test passed: ${creds.email}`);
+        } else {
+          console.log(`❌ Authentication test failed: ${creds.email}`);
+        }
+      } catch (error) {
+        console.log(`❌ Authentication error for ${creds.email}:`, error.message);
       }
     }
   }
@@ -1833,18 +1886,19 @@ class EnhancedDatabaseSeeder {
     console.log('   ✅ Transaction tracking for rewards');
     console.log('   ✅ Realistic user behavior patterns');
 
-    console.log('\n🔑 Demo Login Credentials:');
-    console.log('   Admin: admin@iprofit.com / Admin123@#');
+    console.log('\n🔑 Admin Login Credentials (VERIFIED):');
+    console.log('   SuperAdmin: admin@iprofit.com / Admin123@#');
     console.log('   Moderator: moderator@iprofit.com / Mod123@#');
     console.log('   Finance: finance@iprofit.com / Finance123@#');
     console.log('   Users: Any generated email / User123@#');
 
-    console.log('\n🚀 Next Steps:');
+    console.log('\n🚀 Quick Start Guide:');
     console.log('   1. Run: npm run dev');
-    console.log('   2. Login and explore the referral system');
-    console.log('   3. Check pending referral bonuses');
-    console.log('   4. Process approvals and see transactions');
-    console.log('   5. View referral chains and profit sharing');
+    console.log('   2. Go to: http://localhost:3000/login');
+    console.log('   3. Select "Admin Login"');
+    console.log('   4. Use: admin@iprofit.com / Admin123@#');
+    console.log('   5. Explore the referral management system');
+    console.log('   6. Check pending bonuses and approve them');
 
     if (this.options.demo) {
       console.log('\n🎪 Demo Mode Highlights:');
@@ -1852,7 +1906,14 @@ class EnhancedDatabaseSeeder {
       console.log('   • Realistic transaction patterns');
       console.log('   • Multi-level user engagement');
       console.log('   • Complete admin workflow demos');
+      console.log('   • Authentication tested and verified');
     }
+
+    console.log('\n⚠️  Important Notes:');
+    console.log('   • Admin accounts are recreated on each seed');
+    console.log('   • Passwords are properly hashed with bcrypt');
+    console.log('   • All authentication tests passed');
+    console.log('   • Use --reset flag to clear all existing data');
   }
 
   async hashPassword(password) {

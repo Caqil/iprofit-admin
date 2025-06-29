@@ -148,3 +148,24 @@ export interface KYCApprovalRequest {
   adminNotes?: string;
   documentsVerified?: string[];
 }
+
+export interface AdminUserCreateRequest {
+  name: string;
+  email: string;
+  phone: string;
+  planId: string;
+  deviceId: string;
+  referralCode?: string;
+  isAdminCreated?: boolean;
+  generatePassword?: boolean;
+  password?: string;
+  initialBalance?: number;
+  address?: {
+    street: string;
+    city: string;
+    state: string;
+    country: string;
+    zipCode: string;
+  };
+  dateOfBirth?: string;
+}

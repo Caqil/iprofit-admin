@@ -6,7 +6,22 @@ export const adminUserCreateSchema = z.object({
   planId: z.string().min(1, 'Plan is required'),
   deviceId: z.string().min(1, 'Device ID is required'),
   referralCode: z.string().optional(),
+  // Admin-specific fields
+  isAdminCreated: z.boolean().optional().default(true),
+  generatePassword: z.boolean().optional().default(true),
+  initialBalance: z.number().min(0).optional().default(0),
+  // Optional fields for admin creation
+  password: z.string().min(8).optional(), // Optional for admin creation with auto-generated password
+  address: z.object({
+    street: z.string().min(5).max(200),
+    city: z.string().min(2).max(100),
+    state: z.string().min(2).max(100),
+    country: z.string().min(2).max(100),
+    zipCode: z.string().min(3).max(20)
+  }).optional(),
+  dateOfBirth: z.string().datetime().optional(),
 });
+
 
 // Original user creation schema for user registration (with password)
 export const userCreateSchema = z.object({

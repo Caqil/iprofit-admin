@@ -255,7 +255,10 @@ async function getPlansHandler(request: NextRequest): Promise<NextResponse> {
 
       // Log audit (optional, skip if it fails)
       try {
-        const adminId = request.headers.get('x-user-id') || 'system';
+        const adminIdHeader = request.headers.get('x-user-id');
+         const adminId = adminIdHeader && adminIdHeader !== 'system' 
+    ? new mongoose.Types.ObjectId(adminIdHeader)
+    : null;
         await AuditLog.create({
           adminId,
           action: 'plans.list',
