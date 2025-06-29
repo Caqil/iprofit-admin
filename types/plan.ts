@@ -97,3 +97,21 @@ export interface PlanUpdateRequest {
   isActive?: boolean;
   priority?: number;
 }
+export interface PlanWithStats extends Plan {
+  userCount?: number;
+  userStats?: {
+    total: number;
+    active: number;
+    suspended: number;
+    banned: number;
+    kycApproved: number;
+  };
+}
+
+// Plan filter type for the plans page
+export interface PlanFilter {
+  search?: string;
+  isActive?: boolean;
+  minPrice?: number;
+  maxPrice?: number;
+}

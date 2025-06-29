@@ -13,6 +13,26 @@ export interface Referral extends BaseEntity {
   transactionId?: string;
   metadata?: ReferralMetadata;
   paidAt?: Date;
+  // Extended fields for API responses with populated data
+  referrer?: {
+    id: string;
+    name: string;
+    email: string;
+    referralCode: string;
+  };
+  referee?: {
+    id: string;
+    name: string;
+    email: string;
+    kycStatus: string;
+    status: string;
+  };
+  transaction?: {
+    id: string;
+    transactionId: string;
+    status: string;
+    processedAt?: Date;
+  };
 }
 
 export interface ReferralMetadata {
@@ -38,6 +58,21 @@ export interface TopReferrer {
   totalReferrals: number;
   totalEarnings: number;
   conversionRate: number;
+}
+
+// MISSING TYPE - Add ReferralFilter interface
+export interface ReferralFilter {
+  status?: ReferralStatus;
+  bonusType?: BonusType;
+  referrerId?: string;
+  refereeId?: string;
+  amountMin?: number;
+  amountMax?: number;
+  startDate?: string;
+  endDate?: string;
+  search?: string;
+  dateFrom?: string;
+  dateTo?: string;
 }
 
 export interface ReferralCommission {
@@ -78,4 +113,27 @@ export interface ReferralHistory {
   totalProfit: number;
   bonusEarned: number;
   status: string;
+}
+
+// Additional types for referral management
+export interface ReferralBulkAction {
+  referralIds: string[];
+  action: 'approve' | 'reject' | 'recalculate';
+  reason?: string;
+  adjustedAmount?: number;
+  newProfitAmount?: number;
+}
+
+export interface ReferralApprovalRequest {
+  referralIds: string[];
+  action: 'approve' | 'reject';
+  reason?: string;
+  adminNotes?: string;
+  adjustedAmount?: number;
+}
+
+export interface ReferralRecalculationRequest {
+  refereeId: string;
+  newProfitAmount: number;
+  profitSharePercentage?: number;
 }
