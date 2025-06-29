@@ -1,28 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Users,
   DollarSign,
   CreditCard,
   TrendingUp,
   Activity,
-  UserCheck,
-  AlertTriangle,
-  CheckCircle,
-  Clock,
-  BarChart3,
-  PieChart,
-  LineChart,
-  RefreshCw,
-  Download,
-  Filter,
   Calendar,
-  Bell,
-  Settings,
+  Download,
+  RefreshCw,
+  SquaresExcludeIcon,
 } from "lucide-react";
 
-import { useDashboard } from "@/hooks/use-dashboard";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,7 +22,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Select,
@@ -42,62 +31,218 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-// Recharts imports for charts
+// Recharts imports
 import {
-  LineChart as RechartsLineChart,
+  LineChart,
   AreaChart,
   BarChart,
-  PieChart as RechartsPieChart,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
   Area,
   Bar,
   Line,
-  Cell,
-  Pie,
 } from "recharts";
 
+// Types
+interface DashboardMetrics {
+  users: {
+    total: number;
+    active: number;
+    newToday: number;
+    newThisWeek: number;
+    newThisMonth: number;
+    kycPending: number;
+    kycApproved: number;
+    suspended: number;
+    growthRate: number;
+  };
+  transactions: {
+    totalVolume: number;
+    totalFees: number;
+    depositsToday: number;
+    withdrawalsToday: number;
+    pendingApprovals: number;
+    successRate: number;
+    averageAmount: number;
+    growthRate: number;
+  };
+  loans: {
+    totalLoans: number;
+    activeLoans: number;
+    totalDisbursed: number;
+    totalCollected: number;
+    overdueAmount: number;
+    pendingApplications: number;
+    approvalRate: number;
+    defaultRate: number;
+  };
+  referrals: {
+    totalReferrals: number;
+    activeReferrals: number;
+    totalBonusPaid: number;
+    pendingBonuses: number;
+    conversionRate: number;
+    averageBonusPerReferral: number;
+  };
+  support: {
+    openTickets: number;
+    resolvedToday: number;
+    averageResponseTime: number;
+    satisfactionScore: number;
+    escalatedTickets: number;
+    agentsOnline: number;
+  };
+  revenue: {
+    totalRevenue: number;
+    monthlyRevenue: number;
+    revenueGrowth?: number;
+    monthlyGrowth?: number;
+    revenueBySource?: Array<{
+      source: string;
+      amount: number;
+      percentage: number;
+      growth: number;
+    }>;
+    projectedRevenue?: number;
+    profitMargin?: number;
+  };
+}
+
+interface ChartData {
+  userGrowth?: Array<{ date: string; value: number; label?: string }>;
+  transactionVolume?: Array<{ date: string; value: number; label?: string }>;
+  revenueChart?: Array<{ date: string; value: number; label?: string }>;
+  loanPerformance?: Array<{ date: string; value: number; label?: string }>;
+  supportMetrics?: Array<{ date: string; value: number; label?: string }>;
+}
+
+interface RecentActivity {
+  id: string;
+  user: string;
+  action: string;
+  amount: number;
+  time: string;
+  status: "success" | "pending" | "failed";
+}
+
 export default function DashboardPage() {
-  const { user, hasPermission } = useAuth();
-  const {
-    metrics,
-    chartData,
-    alerts,
-    isLoading,
-    error,
-    filters,
-    setFilters,
-    refreshData,
-    isRefreshing,
-  } = useDashboard();
+  const { user } = useAuth();
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [chartData, setChartData] = useState<ChartData | null>(null);
+  const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [filters, setFilters] = useState({
+    dateRange: "month",
+    currency: "BDT",
+  });
 
-  const [selectedTab, setSelectedTab] = useState("overview");
+  // Fetch dashboard data
+  const fetchDashboardData = async () => {
+    try {
+      setError(null);
 
-  const handleFilterChange = (key: string, value: string) => {
-    setFilters({ [key]: value });
+      // Build query parameters
+      const params = new URLSearchParams();
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value) params.append(key, value.toString());
+      });
+
+      // Fetch metrics and charts in parallel
+      const [metricsResponse, chartsResponse] = await Promise.all([
+        fetch(`/api/dashboard/metrics?${params}`, {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+        }),
+        fetch(`/api/dashboard/charts?${params}`, {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+        }),
+      ]);
+
+      if (!metricsResponse.ok) {
+        throw new Error(`Metrics API error: ${metricsResponse.status}`);
+      }
+
+      const metricsData = await metricsResponse.json();
+      if (metricsData.success && metricsData.data?.metrics) {
+        setMetrics(metricsData.data.metrics);
+      } else {
+        throw new Error(metricsData.error || "Failed to fetch metrics");
+      }
+
+      // Handle charts (non-blocking)
+      if (chartsResponse.ok) {
+        const chartsData = await chartsResponse.json();
+        if (chartsData.success && chartsData.data?.chartData) {
+          setChartData(chartsData.data.chartData);
+        }
+      } else {
+        console.warn("Charts API failed, continuing without charts");
+      }
+
+      // Fetch recent activity
+      try {
+        const activityResponse = await fetch(
+          "/api/dashboard/activity?limit=5",
+          {
+            credentials: "include",
+          }
+        );
+        if (activityResponse.ok) {
+          const activityData = await activityResponse.json();
+          if (activityData.success) {
+            setRecentActivity(activityData.data || []);
+          }
+        }
+      } catch (activityError) {
+        console.warn("Activity fetch failed:", activityError);
+      }
+    } catch (err) {
+      console.error("Dashboard fetch error:", err);
+      setError(err instanceof Error ? err.message : "Failed to load dashboard");
+      toast.error("Failed to load dashboard data");
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
   };
 
-  const handleExportData = async () => {
+  // Initial load
+  useEffect(() => {
+    fetchDashboardData();
+  }, [filters]);
+
+  // Refresh handler
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await fetchDashboardData();
+    toast.success("Dashboard refreshed");
+  };
+
+  // Filter change handler
+  const handleFilterChange = (key: string, value: string) => {
+    setFilters((prev) => ({ ...prev, [key]: value }));
+  };
+
+  // Export handler
+  const handleExport = async () => {
     try {
       const response = await fetch("/api/dashboard/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filters, format: "xlsx" }),
+        credentials: "include",
       });
 
       if (response.ok) {
@@ -105,54 +250,105 @@ export default function DashboardPage() {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `dashboard-report-${
+        a.download = `dashboard-export-${
           new Date().toISOString().split("T")[0]
         }.xlsx`;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
-        toast.success("Report exported successfully");
+        toast.success("Dashboard exported successfully");
       } else {
-        throw new Error("Failed to export report");
+        throw new Error("Export failed");
       }
     } catch (error) {
-      toast.error("Failed to export report");
+      toast.error("Failed to export dashboard data");
     }
   };
 
-  if (error) {
+  // Safe data access
+  const safeMetrics = metrics || {
+    users: {
+      total: 0,
+      active: 0,
+      newToday: 0,
+      newThisWeek: 0,
+      newThisMonth: 0,
+      kycPending: 0,
+      kycApproved: 0,
+      suspended: 0,
+      growthRate: 0,
+    },
+    transactions: {
+      totalVolume: 0,
+      totalFees: 0,
+      depositsToday: 0,
+      withdrawalsToday: 0,
+      pendingApprovals: 0,
+      successRate: 0,
+      averageAmount: 0,
+      growthRate: 0,
+    },
+    loans: {
+      totalLoans: 0,
+      activeLoans: 0,
+      totalDisbursed: 0,
+      totalCollected: 0,
+      overdueAmount: 0,
+      pendingApplications: 0,
+      approvalRate: 0,
+      defaultRate: 0,
+    },
+    referrals: {
+      totalReferrals: 0,
+      activeReferrals: 0,
+      totalBonusPaid: 0,
+      pendingBonuses: 0,
+      conversionRate: 0,
+      averageBonusPerReferral: 0,
+    },
+    support: {
+      openTickets: 0,
+      resolvedToday: 0,
+      averageResponseTime: 0,
+      satisfactionScore: 0,
+      escalatedTickets: 0,
+      agentsOnline: 0,
+    },
+    revenue: {
+      totalRevenue: 0,
+      monthlyRevenue: 0,
+      revenueGrowth: 0,
+      monthlyGrowth: 0,
+      revenueBySource: [],
+      projectedRevenue: 0,
+      profitMargin: 0,
+    },
+  };
+
+  // Loading state
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <Alert className="max-w-md">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>
-            Failed to load dashboard data: {error}
-          </AlertDescription>
-        </Alert>
+        <div className="text-center">
+          <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4" />
+          <h2 className="text-lg font-semibold mb-2">Loading Dashboard</h2>
+          <p className="text-muted-foreground">Fetching your latest data...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 space-y-6 p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground">
-            Welcome back, {user?.name}. Here's what's happening with your
-            platform.
-          </p>
-        </div>
-
+    <div className="flex-1 space-y-4 p-8 pt-6">
+      <div className="flex items-center justify-between space-y-2">
+        <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
         <div className="flex items-center space-x-2">
-          {/* Date Range Selector */}
           <Select
             value={filters.dateRange}
             onValueChange={(value) => handleFilterChange("dateRange", value)}
           >
-            <SelectTrigger className="w-[140px]">
+            <SelectTrigger className="w-[180px]">
               <Calendar className="mr-2 h-4 w-4" />
               <SelectValue />
             </SelectTrigger>
@@ -164,98 +360,38 @@ export default function DashboardPage() {
               <SelectItem value="year">This Year</SelectItem>
             </SelectContent>
           </Select>
-
-          {/* Currency Selector */}
-          <Select
-            value={filters.currency || "BDT"}
-            onValueChange={(value) => handleFilterChange("currency", value)}
-          >
-            <SelectTrigger className="w-[100px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="BDT">BDT</SelectItem>
-              <SelectItem value="USD">USD</SelectItem>
-            </SelectContent>
-          </Select>
-
-          {/* Actions */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={refreshData}
-            disabled={isRefreshing}
-          >
+          <Button variant="outline" size="sm" onClick={handleExport}>
+            <Download className="mr-2 h-4 w-4" />
+            Download
+          </Button>
+          <Button size="sm" onClick={handleRefresh} disabled={isRefreshing}>
             <RefreshCw
               className={cn("mr-2 h-4 w-4", isRefreshing && "animate-spin")}
             />
             Refresh
           </Button>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Download className="mr-2 h-4 w-4" />
-                Export
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuLabel>Export Options</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleExportData}>
-                Excel Report
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => toast.info("PDF export coming soon")}
-              >
-                PDF Report
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </div>
 
-      {/* System Alerts */}
-      {alerts.length > 0 && (
-        <div className="space-y-3">
-          {alerts.slice(0, 3).map((alert) => (
-            <Alert
-              key={alert.id}
-              className={cn(
-                alert.type === "error" &&
-                  "border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950",
-                alert.type === "warning" &&
-                  "border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-950",
-                alert.type === "info" &&
-                  "border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950"
-              )}
-            >
-              <Bell className="h-4 w-4" />
-              <AlertDescription>
-                <span className="font-medium">{alert.title}:</span>{" "}
-                {alert.message}
-              </AlertDescription>
-            </Alert>
-          ))}
-        </div>
+      {/* Error Alert */}
+      {error && (
+        <Alert>
+          <SquaresExcludeIcon className="h-4 w-4" />
+          <AlertDescription>
+            {error} - Some data may not be current.
+          </AlertDescription>
+        </Alert>
       )}
 
-      {/* Tabs */}
-      <Tabs
-        value={selectedTab}
-        onValueChange={setSelectedTab}
-        className="space-y-6"
-      >
+      <Tabs defaultValue="overview" className="space-y-4">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
-          <TabsTrigger value="users">Users</TabsTrigger>
-          <TabsTrigger value="finance">Finance</TabsTrigger>
+          <TabsTrigger value="reports">Reports</TabsTrigger>
         </TabsList>
 
-        {/* Overview Tab */}
-        <TabsContent value="overview" className="space-y-6">
-          {/* KPI Cards */}
+        <TabsContent value="overview" className="space-y-4">
+          {/* Key Metrics */}
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -266,13 +402,11 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {isLoading ? "..." : metrics?.users.total.toLocaleString()}
+                  {safeMetrics.users.total.toLocaleString()}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  <span className="text-green-600">
-                    +{metrics?.users.newThisMonth || 0}
-                  </span>{" "}
-                  from last month
+                  +{safeMetrics.users.growthRate?.toFixed(1) || "0"}% from last
+                  month
                 </p>
               </CardContent>
             </Card>
@@ -280,23 +414,19 @@ export default function DashboardPage() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">
-                  Total Revenue
+                  Transaction Volume
                 </CardTitle>
                 <DollarSign className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {isLoading
-                    ? "..."
-                    : `${
-                        filters.currency
-                      } ${metrics?.revenue.totalRevenue.toLocaleString()}`}
+                  {filters.currency}{" "}
+                  {safeMetrics.transactions.totalVolume?.toLocaleString() ||
+                    "0"}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  <span className="text-green-600">
-                    +{metrics?.revenue.revenueGrowth || 0}%
-                  </span>{" "}
-                  from last month
+                  {safeMetrics.transactions.successRate?.toFixed(1) || "0"}%
+                  success rate
                 </p>
               </CardContent>
             </Card>
@@ -310,67 +440,69 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {isLoading
-                    ? "..."
-                    : metrics?.loans.activeLoans.toLocaleString()}
+                  {safeMetrics.loans.activeLoans?.toLocaleString() || "0"}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  <span className="text-blue-600">
-                    {metrics?.loans.pendingApplications || 0}
-                  </span>{" "}
-                  pending applications
+                  {safeMetrics.loans.approvalRate?.toFixed(1) || "0"}% approval
+                  rate
                 </p>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  Transaction Volume
-                </CardTitle>
+                <CardTitle className="text-sm font-medium">Revenue</CardTitle>
                 <TrendingUp className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {isLoading
-                    ? "..."
-                    : `${
-                        filters.currency
-                      } ${metrics?.transactions.totalVolume.toLocaleString()}`}
+                  {filters.currency}{" "}
+                  {safeMetrics.revenue.totalRevenue?.toLocaleString() || "0"}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  <span className="text-green-600">
-                    +{metrics?.transactions.growthRate || 0}%
-                  </span>{" "}
-                  from last month
+                  +
+                  {(
+                    safeMetrics.revenue.monthlyGrowth ||
+                    safeMetrics.revenue.revenueGrowth ||
+                    0
+                  ).toFixed(1)}
+                  % from last month
                 </p>
               </CardContent>
             </Card>
           </div>
 
-          {/* Charts Row */}
+          {/* Charts Grid */}
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
             <Card className="col-span-4">
               <CardHeader>
-                <CardTitle>User Growth</CardTitle>
-                <CardDescription>
-                  User registration trends over time
-                </CardDescription>
+                <CardTitle>Overview</CardTitle>
               </CardHeader>
               <CardContent className="pl-2">
                 <ResponsiveContainer width="100%" height={350}>
-                  <AreaChart data={chartData?.userGrowth || []}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip />
+                  <AreaChart data={chartData?.transactionVolume || []}>
+                    <XAxis
+                      dataKey="date"
+                      stroke="#888888"
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      stroke="#888888"
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(value) => `${value}`}
+                    />
                     <Area
                       type="monotone"
                       dataKey="value"
-                      stroke="#8884d8"
-                      fill="#8884d8"
-                      fillOpacity={0.6}
+                      stroke="hsl(var(--primary))"
+                      fill="hsl(var(--primary))"
+                      fillOpacity={0.2}
                     />
+                    <Tooltip />
                   </AreaChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -378,82 +510,71 @@ export default function DashboardPage() {
 
             <Card className="col-span-3">
               <CardHeader>
-                <CardTitle>Recent Activity</CardTitle>
-                <CardDescription>Latest platform activities</CardDescription>
+                <CardTitle>Recent Sales</CardTitle>
+                <CardDescription>
+                  You made {safeMetrics.transactions.pendingApprovals || 0}{" "}
+                  sales this month.
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  <div className="flex items-center">
-                    <UserCheck className="mr-2 h-4 w-4 text-green-600" />
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium leading-none">
-                        New user registered
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        2 minutes ago
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center">
-                    <CheckCircle className="mr-2 h-4 w-4 text-blue-600" />
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium leading-none">
-                        KYC document approved
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        5 minutes ago
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center">
-                    <Clock className="mr-2 h-4 w-4 text-yellow-600" />
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium leading-none">
-                        Loan application pending
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        10 minutes ago
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center">
-                    <Activity className="mr-2 h-4 w-4 text-green-600" />
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium leading-none">
-                        Transaction completed
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        15 minutes ago
+                <div className="space-y-8">
+                  {recentActivity.length > 0 ? (
+                    recentActivity.slice(0, 5).map((activity, index) => (
+                      <div key={activity.id} className="flex items-center">
+                        <Avatar className="h-9 w-9">
+                          <AvatarFallback>
+                            {activity.user
+                              .split(" ")
+                              .map((n) => n[0])
+                              .join("")}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="ml-4 space-y-1">
+                          <p className="text-sm font-medium leading-none">
+                            {activity.user}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {activity.action}
+                          </p>
+                        </div>
+                        <div className="ml-auto font-medium">
+                          {activity.amount > 0
+                            ? `+${
+                                filters.currency
+                              }${activity.amount.toLocaleString()}`
+                            : "-"}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-6">
+                      <p className="text-sm text-muted-foreground">
+                        No recent activity
                       </p>
                     </div>
-                  </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
 
-          {/* Status Cards */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <TabsContent value="analytics" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">
-                  KYC Status
+                  KYC Pending
                 </CardTitle>
-                <UserCheck className="h-4 w-4 text-muted-foreground" />
+                <Users className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
-              <CardContent className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Pending</span>
-                  <Badge variant="outline">
-                    {metrics?.users.kycPending || 0}
-                  </Badge>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {safeMetrics.users.kycPending?.toLocaleString() || "0"}
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Approved</span>
-                  <Badge variant="default">
-                    {metrics?.users.kycApproved || 0}
-                  </Badge>
-                </div>
+                <p className="text-xs text-muted-foreground">
+                  Awaiting verification
+                </p>
               </CardContent>
             </Card>
 
@@ -464,67 +585,84 @@ export default function DashboardPage() {
                 </CardTitle>
                 <Activity className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
-              <CardContent className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Open</span>
-                  <Badge variant="destructive">
-                    {metrics?.support.openTickets || 0}
-                  </Badge>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {safeMetrics.support.openTickets?.toLocaleString() || "0"}
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Resolved Today</span>
-                  <Badge variant="default">
-                    {metrics?.support.resolvedToday || 0}
-                  </Badge>
-                </div>
+                <p className="text-xs text-muted-foreground">
+                  {safeMetrics.support.resolvedToday || 0} resolved today
+                </p>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">
-                  Transaction Status
+                  Loan Applications
+                </CardTitle>
+                <CreditCard className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {safeMetrics.loans.pendingApplications?.toLocaleString() ||
+                    "0"}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Pending approval
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  Total Referrals
                 </CardTitle>
                 <TrendingUp className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
-              <CardContent className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Pending Approvals</span>
-                  <Badge variant="outline">
-                    {metrics?.transactions.pendingApprovals || 0}
-                  </Badge>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {safeMetrics.referrals?.totalReferrals?.toLocaleString() ||
+                    "0"}
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Success Rate</span>
-                  <Badge variant="default">
-                    {metrics?.transactions.successRate || 0}%
-                  </Badge>
-                </div>
+                <p className="text-xs text-muted-foreground">
+                  {safeMetrics.referrals?.activeReferrals || 0} active
+                </p>
               </CardContent>
             </Card>
           </div>
-        </TabsContent>
 
-        {/* Analytics Tab */}
-        <TabsContent value="analytics" className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>Transaction Volume</CardTitle>
+                <CardTitle>User Growth</CardTitle>
                 <CardDescription>
-                  Daily transaction volume over time
+                  New user registrations over time
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
-                  <RechartsLineChart data={chartData?.transactionVolume || []}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
+                  <BarChart data={chartData?.userGrowth || []}>
+                    <XAxis
+                      dataKey="date"
+                      stroke="hsl(var(--muted-foreground))"
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      stroke="hsl(var(--muted-foreground))"
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <Bar
+                      dataKey="value"
+                      fill="hsl(var(--chart-2))"
+                      radius={[4, 4, 0, 0]}
+                    />
                     <Tooltip />
-                    <Legend />
-                    <Line type="monotone" dataKey="value" stroke="#8884d8" />
-                  </RechartsLineChart>
+                  </BarChart>
                 </ResponsiveContainer>
               </CardContent>
             </Card>
@@ -536,197 +674,72 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={chartData?.revenueChart || []}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip />
-                    <Bar dataKey="value" fill="#82ca9d" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Loan Performance</CardTitle>
-                <CardDescription>
-                  Loan disbursement and collection trends
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <AreaChart data={chartData?.loanPerformance || []}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip />
-                    <Area
+                  <LineChart data={chartData?.revenueChart || []}>
+                    <XAxis
+                      dataKey="date"
+                      stroke="hsl(var(--muted-foreground))"
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      stroke="hsl(var(--muted-foreground))"
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <Line
                       type="monotone"
                       dataKey="value"
-                      stroke="#ffc658"
-                      fill="#ffc658"
+                      stroke="hsl(var(--chart-3))"
+                      strokeWidth={2}
+                      dot={false}
                     />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Support Metrics</CardTitle>
-                <CardDescription>
-                  Support ticket resolution trends
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <RechartsLineChart data={chartData?.supportMetrics || []}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
                     <Tooltip />
-                    <Line type="monotone" dataKey="value" stroke="#ff7300" />
-                  </RechartsLineChart>
+                  </LineChart>
                 </ResponsiveContainer>
               </CardContent>
             </Card>
           </div>
         </TabsContent>
 
-        {/* Users Tab */}
-        <TabsContent value="users" className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-3">
-            <Card>
-              <CardHeader>
-                <CardTitle>User Distribution</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span>Active Users</span>
-                    <Badge>{metrics?.users.active || 0}</Badge>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span>Suspended Users</span>
-                    <Badge variant="destructive">
-                      {metrics?.users.suspended || 0}
-                    </Badge>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span>KYC Pending</span>
-                    <Badge variant="outline">
-                      {metrics?.users.kycPending || 0}
-                    </Badge>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="col-span-2">
-              <CardHeader>
-                <CardTitle>User Registration Trends</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={200}>
-                  <RechartsLineChart data={chartData?.userGrowth || []}>
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip />
-                    <Line type="monotone" dataKey="value" stroke="#8884d8" />
-                  </RechartsLineChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        {/* Finance Tab */}
-        <TabsContent value="finance" className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">
-                  Total Deposits
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {filters.currency}{" "}
-                  {metrics?.transactions.depositsToday.toLocaleString() || 0}
-                </div>
-                <p className="text-xs text-muted-foreground">Today</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">
-                  Total Withdrawals
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {filters.currency}{" "}
-                  {metrics?.transactions.withdrawalsToday.toLocaleString() || 0}
-                </div>
-                <p className="text-xs text-muted-foreground">Today</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">
-                  Loan Disbursed
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {filters.currency}{" "}
-                  {metrics?.loans.totalDisbursed.toLocaleString() || 0}
-                </div>
-                <p className="text-xs text-muted-foreground">Total</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">
-                  Revenue Growth
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  +{metrics?.revenue.revenueGrowth || 0}%
-                </div>
-                <p className="text-xs text-muted-foreground">This month</p>
-              </CardContent>
-            </Card>
-          </div>
-
+        <TabsContent value="reports" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Financial Overview</CardTitle>
-              <CardDescription>Revenue and transaction trends</CardDescription>
+              <CardTitle>System Performance</CardTitle>
+              <CardDescription>
+                Key performance indicators and system health
+              </CardDescription>
             </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={400}>
-                <AreaChart data={chartData?.revenueChart || []}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Area
-                    type="monotone"
-                    dataKey="value"
-                    stroke="#8884d8"
-                    fill="#8884d8"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">System Uptime</p>
+                  <p className="text-2xl font-bold">99.9%</p>
+                  <p className="text-xs text-muted-foreground">Last 30 days</p>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Average Response Time</p>
+                  <p className="text-2xl font-bold">
+                    {safeMetrics.support.averageResponseTime?.toFixed(1) || "0"}
+                    h
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Support tickets
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Satisfaction Score</p>
+                  <p className="text-2xl font-bold">
+                    {safeMetrics.support.satisfactionScore?.toFixed(1) || "0"}/5
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Customer feedback
+                  </p>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

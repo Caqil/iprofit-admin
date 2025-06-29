@@ -1,3 +1,4 @@
+// models/AuditLog.ts
 import mongoose, { Document, Schema, Types } from 'mongoose';
 
 export interface IAuditLog extends Document {
@@ -34,7 +35,8 @@ const AuditLogSchema = new Schema<IAuditLog>({
   adminId: {
     type: Schema.Types.ObjectId,
     ref: 'Admin',
-    required: true
+    required: false,  // FIXED: Changed from true to false
+    default: null
   },
   action: {
     type: String,

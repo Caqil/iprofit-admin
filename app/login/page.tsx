@@ -43,7 +43,7 @@ const loginSchema = z.object({
   password: z.string().min(1, "Password is required"),
   userType: z.enum(["admin", "user"]),
   twoFactorToken: z.string().optional(),
-  rememberMe: z.boolean().optional().default(false),
+  rememberMe: z.boolean().optional(),
   deviceId: z.string().optional(),
   fingerprint: z.string().optional(),
 });

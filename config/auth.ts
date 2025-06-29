@@ -1,26 +1,20 @@
-import { NextAuthOptions } from "next-auth";
-import { MongoDBAdapter } from "@next-auth/mongodb-adapter";
-import CredentialsProvider from "next-auth/providers/credentials";
-import GoogleProvider from "next-auth/providers/google";
-import FacebookProvider from "next-auth/providers/facebook";
-import { MongoClient } from "mongodb";
-import { Admin } from "@/models/Admin";
-import { User } from "@/models/User";
-import { Plan } from "@/models/Plan";
-import { AuditLog } from "@/models/AuditLog";
-import { connectToDatabase } from "@/lib/db";
-import { verifyPassword } from "@/lib/encryption";
-import { checkDeviceLimit } from "@/lib/device-detection";
-import { generateReferralCode } from "@/utils/helpers";
-import { AdminRole } from "@/types";
-import speakeasy from "speakeasy";
+// config/auth.ts
+import { NextAuthOptions } from 'next-auth';
+import CredentialsProvider from 'next-auth/providers/credentials';
+import { MongoDBAdapter } from '@next-auth/mongodb-adapter';
+import { MongoClient } from 'mongodb';
+import { connectToDatabase } from '@/lib/db';
+import { Admin } from '@/models/Admin';
+import { User } from '@/models/User';
+import { AuditLog } from '@/models/AuditLog';
+import { verifyPassword } from '@/lib/encryption';
+import { checkDeviceLimit } from '@/lib/device-detection';
+import speakeasy from 'speakeasy';
 
-// Extend NextAuth types
+type AdminRole = 'SuperAdmin' | 'Moderator';
+
 declare module "next-auth" {
   interface User {
-    id: string;
-    email: string;
-    name: string;
     userType: 'admin' | 'user';
     role?: AdminRole;
     avatar?: string;
@@ -34,7 +28,7 @@ declare module "next-auth" {
     user: {
       id: string;
       email: string;
-      name: string;
+      name?: string;
       userType: 'admin' | 'user';
       role?: AdminRole;
       avatar?: string;
@@ -101,8 +95,25 @@ export const authConfig: NextAuthOptions = {
               throw new Error("Invalid credentials");
             }
 
+            // Handle passwordHash object/string conversion
+            let passwordHashString = admin.passwordHash;
+            if (typeof admin.passwordHash === 'object' && admin.passwordHash) {
+              if (Buffer.isBuffer(admin.passwordHash)) {
+                passwordHashString = admin.passwordHash.toString('utf8');
+              } else if (admin.passwordHash.buffer) {
+                passwordHashString = admin.passwordHash.buffer.toString('utf8');
+              } else if (admin.passwordHash.toString) {
+                passwordHashString = admin.passwordHash.toString();
+              }
+            }
+
+            if (!passwordHashString || typeof passwordHashString !== 'string') {
+              await logAuthAttempt(email, userType, false, 'Invalid password hash', clientIP, userAgent);
+              throw new Error("Invalid credentials");
+            }
+
             // Verify password
-            const isValidPassword = await verifyPassword(password, admin.passwordHash);
+            const isValidPassword = await verifyPassword(password, passwordHashString);
             if (!isValidPassword) {
               await logAuthAttempt(email, userType, false, 'Invalid password', clientIP, userAgent);
               throw new Error("Invalid credentials");
@@ -111,50 +122,48 @@ export const authConfig: NextAuthOptions = {
             // Check 2FA if enabled
             if (admin.twoFactorEnabled) {
               if (!twoFactorToken) {
-                throw new Error("TwoFactorRequired");
+                await logAuthAttempt(email, userType, false, '2FA token required', clientIP, userAgent);
+                throw new Error("2FA token required");
               }
 
-              const isValidToken = speakeasy.totp.verify({
-                secret: admin.twoFactorSecret,
+              const isValid2FA = speakeasy.totp.verify({
+                secret: admin.twoFactorSecret!,
+                encoding: 'base32',
                 token: twoFactorToken,
                 window: 2
               });
 
-              if (!isValidToken) {
+              if (!isValid2FA) {
                 await logAuthAttempt(email, userType, false, 'Invalid 2FA token', clientIP, userAgent);
-                throw new Error("Invalid two-factor authentication code");
+                throw new Error("Invalid 2FA token");
               }
             }
 
             // Update last login
-            await Admin.findByIdAndUpdate(admin._id, { 
-              lastLogin: new Date() 
-            });
-
-            await logAuthAttempt(email, userType, true, 'Successful admin login', clientIP, userAgent);
+            await Admin.findByIdAndUpdate(admin._id, { lastLogin: new Date() });
+            await logAuthAttempt(email, userType, true, 'Successful login', clientIP, userAgent);
 
             return {
               id: admin._id.toString(),
               email: admin.email,
               name: admin.name,
-              userType: 'admin' as const,
+              userType: 'admin',
               role: admin.role,
-              avatar: admin.avatar,
               permissions: admin.permissions
             };
-          } 
-          
-          else if (userType === 'user') {
-            // User authentication
+
+          } else if (userType === 'user') {
+            // User authentication with device limiting
             if (!deviceId || !fingerprint) {
-              throw new Error("Device identification required for user login");
+              await logAuthAttempt(email, userType, false, 'Device information required', clientIP, userAgent);
+              throw new Error("Device information required");
             }
 
             // Check device limit
             const deviceCheck = await checkDeviceLimit(deviceId, fingerprint);
             if (!deviceCheck.isAllowed) {
-              await logAuthAttempt(email, userType, false, deviceCheck.reason || 'Device limit exceeded', clientIP, userAgent);
-              throw new Error("DeviceLimitExceeded");
+              await logAuthAttempt(email, userType, false, 'Multiple accounts detected', clientIP, userAgent);
+              throw new Error("Multiple accounts detected. Contact support.");
             }
 
             const user = await User.findOne({ 
@@ -167,12 +176,26 @@ export const authConfig: NextAuthOptions = {
               throw new Error("Invalid credentials");
             }
 
-            // For OAuth users, password might not be set
-            if (password && user.passwordHash) {
-              const isValidPassword = await verifyPassword(password, user.passwordHash);
-              if (!isValidPassword) {
-                await logAuthAttempt(email, userType, false, 'Invalid password', clientIP, userAgent);
-                throw new Error("Invalid credentials");
+            // Verify password if it exists (for credential-based users)
+            if (user.passwordHash) {
+              // Handle user passwordHash object/string conversion
+              let userPasswordHashString = user.passwordHash;
+              if (typeof user.passwordHash === 'object' && user.passwordHash) {
+                if (Buffer.isBuffer(user.passwordHash)) {
+                  userPasswordHashString = user.passwordHash.toString('utf8');
+                } else if (user.passwordHash.buffer) {
+                  userPasswordHashString = user.passwordHash.buffer.toString('utf8');
+                } else if (user.passwordHash.toString) {
+                  userPasswordHashString = user.passwordHash.toString();
+                }
+              }
+
+              if (userPasswordHashString && typeof userPasswordHashString === 'string') {
+                const isValidPassword = await verifyPassword(password, userPasswordHashString);
+                if (!isValidPassword) {
+                  await logAuthAttempt(email, userType, false, 'Invalid password', clientIP, userAgent);
+                  throw new Error("Invalid credentials");
+                }
               }
             }
 
@@ -182,16 +205,16 @@ export const authConfig: NextAuthOptions = {
               lastLogin: new Date() 
             });
 
-            await logAuthAttempt(email, userType, true, 'Successful user login', clientIP, userAgent);
+            await logAuthAttempt(email, userType, true, 'Successful login', clientIP, userAgent);
 
             return {
               id: user._id.toString(),
               email: user.email,
               name: user.name,
-              userType: 'user' as const,
-              phone: user.phone,
+              userType: 'user',
               planId: user.planId?._id?.toString(),
-              kycStatus: user.kycStatus
+              kycStatus: user.kycStatus,
+              phone: user.phone
             };
           }
 
@@ -199,44 +222,23 @@ export const authConfig: NextAuthOptions = {
 
         } catch (error) {
           console.error('Auth error:', error);
-          if (error instanceof Error) {
-            throw error;
-          }
-          throw new Error("Authentication failed");
+          throw error;
         }
       }
-    }),
-
-    // OAuth providers for users
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      authorization: {
-        params: {
-          scope: "openid email profile"
-        }
-      }
-    }),
-
-    FacebookProvider({
-      clientId: process.env.FACEBOOK_CLIENT_ID!,
-      clientSecret: process.env.FACEBOOK_CLIENT_SECRET!
     })
   ],
 
   session: {
     strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60, // 30 days
-    updateAge: 24 * 60 * 60, // 24 hours
+    maxAge: 30 * 60, // 30 minutes
   },
 
   jwt: {
-    maxAge: 30 * 24 * 60 * 60, // 30 days
+    maxAge: 30 * 60, // 30 minutes
   },
 
   callbacks: {
-    async jwt({ token, user, account }) {
-      // Initial sign in
+    async jwt({ token, user }) {
       if (user) {
         token.userType = user.userType;
         token.role = user.role;
@@ -245,13 +247,11 @@ export const authConfig: NextAuthOptions = {
         token.planId = user.planId;
         token.kycStatus = user.kycStatus;
       }
-
       return token;
     },
 
     async session({ session, token }) {
-      // Send properties to the client
-      if (token && session.user) {
+      if (token) {
         session.user.id = token.sub!;
         session.user.userType = token.userType as 'admin' | 'user';
         session.user.role = token.role as AdminRole;
@@ -282,9 +282,13 @@ export const authConfig: NextAuthOptions = {
           return `${baseUrl}${callbackUrl}`;
         }
         // Only allow redirects to the same domain
-        const callbackUrlObj = new URL(callbackUrl);
-        if (callbackUrlObj.origin === baseUrl) {
-          return callbackUrl;
+        try {
+          const callbackUrlObj = new URL(callbackUrl);
+          if (callbackUrlObj.origin === baseUrl) {
+            return callbackUrl;
+          }
+        } catch {
+          // Invalid URL, fallback to default
         }
       }
 
@@ -303,55 +307,6 @@ export const authConfig: NextAuthOptions = {
 
       // Default fallback
       return baseUrl;
-    },
-
-    async signIn({ user, account, profile }) {
-      try {
-        // For OAuth providers, create user account if it doesn't exist
-        if (account?.provider && account.provider !== 'credentials') {
-          await connectToDatabase();
-          
-          const existingUser = await User.findOne({ 
-            email: user.email?.toLowerCase() 
-          });
-
-          if (!existingUser) {
-            // Get default plan for new users
-            const defaultPlan = await Plan.findOne({ isDefault: true });
-            
-            const newUser = await User.create({
-              name: user.name,
-              email: user.email?.toLowerCase(),
-              phone: '', // Will be updated in profile completion
-              planId: defaultPlan?._id,
-              balance: 0,
-              kycStatus: 'Pending',
-              kycDocuments: [],
-              referralCode: generateReferralCode(),
-              deviceId: '', // Will be updated on first app access
-              status: 'Active',
-              emailVerified: true, // OAuth users are pre-verified
-              phoneVerified: false,
-              twoFactorEnabled: false
-            });
-
-            // Log successful OAuth registration
-            await logAuthAttempt(
-              user.email!,
-              'user',
-              true,
-              `New user registered via ${account.provider}`,
-              '127.0.0.1',
-              'OAuth Provider'
-            );
-          }
-        }
-
-        return true;
-      } catch (error) {
-        console.error('SignIn callback error:', error);
-        return false;
-      }
     }
   },
 
@@ -418,8 +373,8 @@ async function logAuthAttempt(
   userType: string, 
   success: boolean, 
   reason: string,
-  ipAddress: string,
-  userAgent: string
+  ipAddress: string = '127.0.0.1',
+  userAgent: string = 'Unknown'
 ) {
   try {
     await connectToDatabase();
