@@ -121,7 +121,7 @@ async function processKYCHandler(
       );
     }
 
-    const { action, rejectionReason } = validationResult.data;
+    const { status, rejectionReason } = validationResult.data;
 
     const user = await User.findById(id);
     if (!user) {
@@ -133,13 +133,13 @@ async function processKYCHandler(
     }
 
     const updateData: any = {
-      kycStatus: action === 'approve' ? 'Approved' : 'Rejected',
+      kycStatus: status,
       updatedAt: new Date()
     };
 
-    if (action === 'reject' && rejectionReason) {
+    if (status === 'Rejected' && rejectionReason) {
       updateData.kycRejectionReason = rejectionReason;
-    } else if (action === 'approve') {
+    } else if (status === 'Approved') {
       updateData.kycRejectionReason = undefined;
     }
 
@@ -155,8 +155,8 @@ async function processKYCHandler(
 
     // Send notification email
     try {
-      const emailTemplate = action === 'approve' ? 'kyc_approved' : 'kyc_rejected';
-      const emailSubject = action === 'approve' ? 'KYC Approved' : 'KYC Rejected';
+      const emailTemplate = status === 'Approved' ? 'kyc_approved' : 'kyc_rejected';
+      const emailSubject = status === 'Approved' ? 'KYC Approved' : 'KYC Rejected';
       
       await sendEmail({
         to: updatedUser.email,
@@ -176,7 +176,7 @@ async function processKYCHandler(
     // Log audit
     await AuditLog.create({
       adminId,
-      action: `kyc.${action}`,
+      action: `kyc.${status.toLowerCase()}`,
       entity: 'KYC',
       entityId: id,
       status: 'Success',
@@ -193,7 +193,7 @@ async function processKYCHandler(
     return apiHandler.success({
       userId: updatedUser._id,
       kycStatus: updatedUser.kycStatus,
-      message: `KYC ${action}d successfully`,
+      message: `KYC ${status.toLowerCase()} successfully`,
       emailSent: true
     });
 

@@ -95,6 +95,7 @@ export type Permission =
   | 'support.close'
   | 'support.escalate'
   | 'support.export'
+  | 'support.analytics' 
   
   // Audit permissions
   | 'audit.read'
@@ -184,7 +185,7 @@ export const ROLE_PERMISSIONS: Record<AdminRole, Permission[]> = {
     'finance.view', 'finance.manage', 'finance.reconcile', 'finance.export',
     'system.logs', 'system.maintenance', 'system.backup', 'system.restore', 'system.config',
     'content.view', 'content.create', 'content.update', 'content.delete', 'content.publish',
-    'communication.sms', 'communication.email', 'communication.push', 'communication.broadcast'
+    'communication.sms', 'communication.email', 'communication.push', 'communication.broadcast','support.analytics',
   ],
   
   Admin: [
@@ -206,7 +207,7 @@ export const ROLE_PERMISSIONS: Record<AdminRole, Permission[]> = {
     'analytics.view', 'analytics.advanced', 'analytics.export',
     'finance.view', 'finance.manage', 'finance.reconcile', 'finance.export',
     'content.view', 'content.create', 'content.update', 'content.publish',
-    'communication.sms', 'communication.email', 'communication.push', 'communication.broadcast'
+    'communication.sms', 'communication.email', 'communication.push', 'communication.broadcast','support.analytics',
   ],
   
   Moderator: [

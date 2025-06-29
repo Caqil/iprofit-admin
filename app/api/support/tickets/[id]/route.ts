@@ -1,3 +1,4 @@
+// app/api/support/tickets/[id]/route.ts - COMPLETE FIX
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { SupportTicket } from '@/models/SupportTicket';
@@ -34,6 +35,40 @@ const ticketUpdateSchema = z.object({
   satisfactionRating: z.number().min(1).max(5).optional(),
   feedbackComment: z.string().optional()
 });
+
+// Helper function to create audit log entry
+async function createAuditLog(data: {
+  adminId?: string | null;
+  action: string;
+  entityId: string;
+  oldData?: any;
+  newData?: any;
+  changes?: any;
+  request: NextRequest;
+  severity?: 'Low' | 'Medium' | 'High' | 'Critical';
+  status?: 'Success' | 'Failed' | 'Partial';
+  errorMessage?: string;
+}) {
+  try {
+    await AuditLog.create({
+      adminId: data.adminId ? new mongoose.Types.ObjectId(data.adminId) : null,
+      action: data.action,
+      entity: 'SupportTicket', // FIXED: Always use 'entity'
+      entityId: data.entityId, // FIXED: Always use 'entityId'
+      oldData: data.oldData,
+      newData: data.newData,
+      changes: data.changes,
+      ipAddress: data.request.headers.get('x-forwarded-for') || 'unknown',
+      userAgent: data.request.headers.get('user-agent') || 'unknown',
+      severity: data.severity || 'Low',
+      status: data.status || 'Success',
+      errorMessage: data.errorMessage
+    });
+  } catch (error) {
+    console.error('Failed to create audit log:', error);
+    // Don't throw error to avoid failing the main operation
+  }
+}
 
 // GET /api/support/tickets/[id] - Get specific ticket
 async function getTicketHandler(
@@ -75,34 +110,36 @@ async function getTicketHandler(
           path: 'assignedTo',
           select: 'name email avatar role'
         }
-      ])
-      .lean();
+      ]);
 
     if (!ticket) {
       return apiHandler.notFound('Support ticket not found');
     }
 
+    // Type-safe way to access responses with proper null checking
+    const responses = ticket.responses || [];
+    const responsesCount = responses.length;
+    const hasUnreadResponses = responses.some((response: any) => !response.isRead);
+
     // Add response metadata
     const enrichedTicket = {
-      ...ticket,
-      responsesCount: ticket.responses?.length || 0,
+      ...ticket.toJSON(),
+      responsesCount,
       isOverdue: ticket.status === 'Open' && 
                  new Date(ticket.lastResponseAt) < new Date(Date.now() - 24 * 60 * 60 * 1000),
-      hasUnreadResponses: ticket.responses?.some((r: any) => !r.isRead) || false
+      hasUnreadResponses
     };
 
-    // Create audit log
-    await AuditLog.create({
+    // FIXED: Create audit log with correct field mapping
+    await createAuditLog({
       adminId: (request as any).admin?.id,
       action: 'tickets.view',
-      resourceType: 'SupportTicket',
-      resourceId: ticket._id,
-      details: {
+      entityId: ticket._id.toString(),
+      newData: {
         ticketNumber: ticket.ticketNumber,
         status: ticket.status
       },
-      ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
-      userAgent: request.headers.get('user-agent') || 'unknown'
+      request
     });
 
     return apiHandler.success(enrichedTicket);
@@ -163,6 +200,15 @@ async function updateTicketHandler(
     if (!existingTicket) {
       return apiHandler.notFound('Support ticket not found');
     }
+
+    // Store old data for audit log
+    const oldData = {
+      status: existingTicket.status,
+      priority: existingTicket.priority,
+      assignedTo: existingTicket.assignedTo,
+      category: existingTicket.category,
+      tags: existingTicket.tags
+    };
 
     // Validate assigned admin if provided
     if (updates.assignedTo && updates.assignedTo !== '') {
@@ -235,19 +281,20 @@ async function updateTicketHandler(
       }
     }
 
-    // Create audit log
-    await AuditLog.create({
+    // FIXED: Create audit log with correct field mapping
+    await createAuditLog({
       adminId: (request as any).admin?.id,
       action: 'tickets.update',
-      resourceType: 'SupportTicket',
-      resourceId: id,
-      details: {
-        changes: updates,
-        previousStatus: existingTicket.status,
-        ticketNumber: existingTicket.ticketNumber
-      },
-      ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
-      userAgent: request.headers.get('user-agent') || 'unknown'
+      entityId: id,
+      oldData,
+      newData: updateData,
+      changes: Object.keys(updates).map(field => ({
+        field,
+        oldValue: oldData[field as keyof typeof oldData],
+        newValue: updates[field as keyof typeof updates]
+      })),
+      request,
+      severity: 'Medium'
     });
 
     return apiHandler.success(updatedTicket, 'Ticket updated successfully');
@@ -258,7 +305,7 @@ async function updateTicketHandler(
   }
 }
 
-// POST /api/support/tickets/[id]/responses - Add response to ticket
+// POST /api/support/tickets/[id] - Add response to ticket
 async function addResponseHandler(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -309,30 +356,37 @@ async function addResponseHandler(
       return apiHandler.notFound('Support ticket not found');
     }
 
-    // Create response
-    const response = {
+    // Add response to ticket
+    const newResponse = {
       message,
       isAdminResponse,
       adminId: isAdminResponse ? (request as any).admin?.id : null,
-      attachments: attachments?.map(att => ({
-        ...att,
-        uploadedAt: new Date()
-      })) || [],
+      attachments: attachments || [],
       createdAt: new Date()
     };
 
-    // Add response to ticket
-    ticket.responses.push(response);
-    ticket.lastResponseAt = new Date();
+    const updatedTicket = await SupportTicket.findByIdAndUpdate(
+      id,
+      {
+        $push: { responses: newResponse },
+        $set: { 
+          lastResponseAt: new Date(),
+          status: ticket.status === 'Waiting for User' ? 'In Progress' : ticket.status
+        }
+      },
+      { new: true, runValidators: true }
+    ).populate([
+      {
+        path: 'userId',
+        select: 'name email phone profilePicture'
+      },
+      {
+        path: 'assignedTo',
+        select: 'name email avatar role'
+      }
+    ]);
 
-    // Update status if ticket was closed
-    if (ticket.status === 'Closed' && isAdminResponse) {
-      ticket.status = 'In Progress';
-    }
-
-    await ticket.save();
-
-    // Send email notification to user
+    // Send email notification to user if admin response
     if (isAdminResponse) {
       try {
         await sendEmail({
@@ -342,8 +396,8 @@ async function addResponseHandler(
           variables: {
             userName: ticket.userId.name,
             ticketNumber: ticket.ticketNumber,
-            adminMessage: message,
-            ticketUrl: `${process.env.NEXTAUTH_URL}/support/tickets/${ticket._id}`
+            subject: ticket.subject,
+            response: message
           }
         });
       } catch (emailError) {
@@ -351,22 +405,21 @@ async function addResponseHandler(
       }
     }
 
-    // Create audit log
-    await AuditLog.create({
+    // FIXED: Create audit log with correct field mapping
+    await createAuditLog({
       adminId: (request as any).admin?.id,
       action: 'tickets.respond',
-      resourceType: 'SupportTicket',
-      resourceId: id,
-      details: {
-        messageLength: message.length,
-        attachmentsCount: attachments?.length || 0,
+      entityId: id,
+      newData: {
+        responseMessage: message,
+        isAdminResponse,
         ticketNumber: ticket.ticketNumber
       },
-      ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
-      userAgent: request.headers.get('user-agent') || 'unknown'
+      request,
+      severity: 'Low'
     });
 
-    return apiHandler.success(response, 'Response added successfully');
+    return apiHandler.success(updatedTicket, 'Response added successfully');
 
   } catch (error) {
     console.error('Add response error:', error);
@@ -409,19 +462,18 @@ async function deleteTicketHandler(
       return apiHandler.notFound('Support ticket not found');
     }
 
-    // Create audit log
-    await AuditLog.create({
+    // FIXED: Create audit log with correct field mapping
+    await createAuditLog({
       adminId: (request as any).admin?.id,
       action: 'tickets.delete',
-      resourceType: 'SupportTicket',
-      resourceId: id,
-      details: {
+      entityId: id,
+      oldData: {
         ticketNumber: ticket.ticketNumber,
         subject: ticket.subject,
         status: ticket.status
       },
-      ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
-      userAgent: request.headers.get('user-agent') || 'unknown'
+      request,
+      severity: 'High'
     });
 
     return apiHandler.success(null, 'Ticket deleted successfully');
