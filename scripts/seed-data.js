@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 
 /**
- * Database Seeder Script for IProfit Platform (CommonJS)
+ * Enhanced Database Seeder Script for IProfit Platform (CommonJS)
  * 
- * This script populates the database with sample data for development and testing.
- * Includes users, transactions, loans, and other necessary data.
+ * This script populates the database with comprehensive sample data including:
+ * - Realistic user accounts with referral chains
+ * - Synchronized referral bonuses (signup + profit share)
+ * - Transaction history with referral rewards
+ * - Loan applications with referrer benefits
+ * - Complete demo ecosystem for testing
  * 
- * Usage: npm run seed-data [--reset] [--production]
+ * Usage: npm run seed-data [--reset] [--production] [--demo]
  */
 
 const mongoose = require('mongoose');
@@ -17,6 +21,14 @@ const bcrypt = require('bcryptjs');
 // Load environment variables first
 dotenv.config({ path: '.env.local' });
 
+// Constants for referral system
+const REFERRAL_CONFIG = {
+  SIGNUP_BONUS: 100,        // BDT bonus for successful referral
+  PROFIT_SHARE_PERCENTAGE: 10,  // 10% of referee profits
+  MIN_REFEREE_DEPOSIT: 50,  // Minimum deposit to trigger signup bonus
+  MAX_REFERRAL_DEPTH: 3     // Maximum referral chain depth for demo
+};
+
 // Check if MONGODB_URI is set
 if (!process.env.MONGODB_URI) {
   console.error('❌ MONGODB_URI environment variable is not set');
@@ -24,16 +36,19 @@ if (!process.env.MONGODB_URI) {
   process.exit(1);
 }
 
-class DatabaseSeeder {
+class EnhancedDatabaseSeeder {
   constructor(options) {
     this.options = options || {
       reset: false,
       production: false,
+      demo: false,
       count: {
-        users: 50,
-        transactions: 200,
-        loans: 25,
-        tickets: 30,
+        users: 100,           // Increased for better referral chains
+        transactions: 300,    // More transactions for profit sharing
+        loans: 40,
+        tickets: 50,
+        tasks: 15,
+        news: 10
       },
     };
     
@@ -44,8 +59,16 @@ class DatabaseSeeder {
       transactions: [],
       loans: [],
       referrals: [],
-      tickets: []
+      tickets: [],
+      tasks: [],
+      taskSubmissions: [],
+      news: [],
+      notifications: []
     };
+
+    // Referral tracking
+    this.referralChains = [];
+    this.userProfits = new Map(); // Track profits per user for profit sharing
   }
 
   async connectToDatabase() {
@@ -65,8 +88,9 @@ class DatabaseSeeder {
   }
 
   async seedAll() {
-    console.log('🌱 Starting database seeding...');
+    console.log('🌱 Starting enhanced database seeding...');
     console.log(`📊 Mode: ${this.options.production ? 'Production' : 'Development'}`);
+    console.log(`🎯 Demo mode: ${this.options.demo ? 'Enabled' : 'Disabled'}`);
 
     try {
       await this.connectToDatabase();
@@ -76,18 +100,23 @@ class DatabaseSeeder {
       }
 
       // Seed in order due to dependencies
-      await this.seedAdmins();
       await this.seedPlans();
+      await this.seedAdmins();
       await this.seedUsers();
       await this.seedTransactions();
+      await this.seedReferrals();  // Create referral records
       await this.seedLoans();
-      await this.seedReferrals();
-      await this.seedSupportTickets();
       await this.seedTasks();
+      await this.seedTaskSubmissions();
+      await this.seedSupportTickets();
+      await this.seedNews();
+      await this.processReferralBonuses(); // Process and sync all bonuses
+      await this.generateProfitSharing(); // Create profit sharing bonuses
+      await this.createNotifications();   // Send notifications
 
       await this.generateSummary();
 
-      console.log('🎉 Database seeding completed successfully!');
+      console.log('🎉 Enhanced database seeding completed successfully!');
 
     } catch (error) {
       console.error('❌ Seeding failed:', error);
@@ -100,9 +129,9 @@ class DatabaseSeeder {
 
     const db = mongoose.connection.db;
     const collections = [
-      'admins', 'users', 'plans', 'transactions', 
-      'loans', 'referrals', 'support_tickets', 'faqs',
-      'tasks', 'task_submissions', 'audit_logs'
+      'admins', 'users', 'plans', 'transactions', 'loans', 'referrals',
+      'support_tickets', 'faqs', 'tasks', 'task_submissions',
+      'audit_logs', 'notifications', 'notification_templates', 'news'
     ];
 
     for (const collection of collections) {
@@ -115,90 +144,6 @@ class DatabaseSeeder {
     }
   }
 
-  async seedAdmins() {
-    console.log('👨‍💼 Seeding admin accounts...');
-
-    const db = mongoose.connection.db;
-
-    const adminData = [
-      {
-        email: 'admin@iprofit.com',
-        password: 'Admin123@#',
-        name: 'System Administrator',
-        role: 'SuperAdmin',
-        permissions: ['*'],
-      },
-      {
-        email: 'moderator@iprofit.com',
-        password: 'Mod123!@#',
-        name: 'Support Moderator',
-        role: 'Moderator',
-        permissions: [
-          'users.view', 'users.update', 'users.kyc',
-          'transactions.view', 'transactions.approve',
-          'support.view', 'support.respond',
-          'dashboard.view', 'loans.view', 'loans.approve'
-        ],
-      },
-    ];
-
-    if (this.options.production) {
-      // In production, only create admin if it doesn't exist
-      const existingAdmin = await db.collection('admins').findOne({ email: 'admin@iprofit.com' });
-      if (!existingAdmin) {
-        const hashedPassword = await this.hashPassword(adminData[0].password);
-        const admin = {
-          email: adminData[0].email,
-          passwordHash: hashedPassword,
-          name: adminData[0].name,
-          role: adminData[0].role,
-          permissions: adminData[0].permissions,
-          isActive: true,
-          loginAttempts: 0,
-          twoFactorEnabled: false,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-        
-        const result = await db.collection('admins').insertOne(admin);
-        this.createdData.admins.push({ ...admin, _id: result.insertedId });
-        console.log('✅ Production admin created');
-      } else {
-        console.log('ℹ️  Production admin already exists');
-      }
-      return;
-    }
-
-    // Development mode - create all admins
-    for (const data of adminData) {
-      const existing = await db.collection('admins').findOne({ email: data.email });
-      if (!existing) {
-        const hashedPassword = await this.hashPassword(data.password);
-        const admin = {
-          email: data.email,
-          passwordHash: hashedPassword,
-          name: data.name,
-          role: data.role,
-          permissions: data.permissions,
-          isActive: true,
-          loginAttempts: 0,
-          twoFactorEnabled: false,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-        
-        const result = await db.collection('admins').insertOne(admin);
-        this.createdData.admins.push({ ...admin, _id: result.insertedId });
-        console.log(`✅ Admin created: ${data.email}`);
-      }
-    }
-  }
-
-  async hashPassword(password) {
-    const SALT_ROUNDS = 12;
-    return await bcrypt.hash(password, SALT_ROUNDS);
-  }
-
   async seedPlans() {
     console.log('📋 Seeding subscription plans...');
 
@@ -206,101 +151,129 @@ class DatabaseSeeder {
 
     const plansData = [
       {
-        name: 'Free',
-        description: 'Basic plan for beginners. Perfect for getting started with small investments.',
+        name: 'Free Plan',
+        description: 'Perfect for beginners to start their financial journey.',
         price: 0,
         currency: 'BDT',
-        depositLimit: 10000,
-        withdrawalLimit: 5000,
-        profitLimit: 1000,
-        minimumDeposit: 100,
-        minimumWithdrawal: 50,
-        dailyWithdrawalLimit: 1000,
-        monthlyWithdrawalLimit: 10000,
+        limits: {
+          depositLimit: 10000,
+          withdrawalLimit: 5000,
+          profitLimit: 1000,
+          minimumDeposit: 100,
+          minimumWithdrawal: 100,
+          dailyWithdrawalLimit: 1000,
+          monthlyWithdrawalLimit: 10000
+        },
         features: [
-          'Basic investment tracking',
-          'Standard customer support',
-          'Mobile app access',
-          'Basic analytics',
-          'Email notifications'
+          'Basic Support',
+          'Mobile App Access',
+          'Referral System',
+          'Basic Tasks',
+          'Email Notifications'
         ],
         color: '#6b7280',
         priority: 0,
-        isActive: true,
+        status: 'Active',
       },
       {
-        name: 'Standard',
-        description: 'Enhanced features for regular investors. Great for building your portfolio.',
-        price: 2000,
+        name: 'Silver Plan',
+        description: 'Enhanced features for growing investors.',
+        price: 1000,
         currency: 'BDT',
-        depositLimit: 50000,
-        withdrawalLimit: 25000,
-        profitLimit: 5000,
-        minimumDeposit: 500,
-        minimumWithdrawal: 100,
-        dailyWithdrawalLimit: 5000,
-        monthlyWithdrawalLimit: 50000,
+        limits: {
+          depositLimit: 50000,
+          withdrawalLimit: 25000,
+          profitLimit: 5000,
+          minimumDeposit: 500,
+          minimumWithdrawal: 100,
+          dailyWithdrawalLimit: 5000,
+          monthlyWithdrawalLimit: 50000
+        },
         features: [
-          'Advanced analytics',
-          'Priority support',
-          'Higher limits',
-          'Investment insights',
-          'SMS notifications',
-          'Referral bonuses'
+          'Priority Support',
+          'Higher Limits',
+          'Advanced Tasks',
+          'SMS Notifications',
+          'Investment Insights'
         ],
-        color: '#3b82f6',
+        color: '#9ca3af',
         priority: 1,
-        isActive: true,
+        status: 'Active',
       },
       {
-        name: 'Premium',
-        description: 'Premium features for serious investors. Maximum returns and flexibility.',
+        name: 'Gold Plan',
+        description: 'Premium experience with maximum benefits.',
         price: 5000,
         currency: 'BDT',
-        depositLimit: 200000,
-        withdrawalLimit: 100000,
-        profitLimit: 20000,
-        minimumDeposit: 1000,
-        minimumWithdrawal: 200,
-        dailyWithdrawalLimit: 20000,
-        monthlyWithdrawalLimit: 200000,
+        limits: {
+          depositLimit: 200000,
+          withdrawalLimit: 100000,
+          profitLimit: 20000,
+          minimumDeposit: 1000,
+          minimumWithdrawal: 100,
+          dailyWithdrawalLimit: 20000,
+          monthlyWithdrawalLimit: 200000
+        },
         features: [
-          'Premium analytics dashboard',
-          'Dedicated account manager',
-          'Maximum profit limits',
-          'Priority withdrawals',
-          'Advanced notifications',
-          'Exclusive investment opportunities',
-          'Custom reports'
+          'VIP Support',
+          'Maximum Limits',
+          'Exclusive Tasks',
+          'Real-time Alerts',
+          'Personal Advisor'
         ],
-        color: '#10b981',
+        color: '#f59e0b',
         priority: 2,
-        isActive: true,
+        status: 'Active',
       },
       {
-        name: 'VIP',
-        description: 'Ultimate experience for high-value investors. Unlimited potential.',
-        price: 10000,
+        name: 'Platinum Plan',
+        description: 'Enterprise-grade features for serious investors.',
+        price: 15000,
         currency: 'BDT',
-        depositLimit: 500000,
-        withdrawalLimit: 250000,
-        profitLimit: 50000,
-        minimumDeposit: 5000,
-        minimumWithdrawal: 500,
-        dailyWithdrawalLimit: 50000,
-        monthlyWithdrawalLimit: 500000,
+        limits: {
+          depositLimit: 500000,
+          withdrawalLimit: 250000,
+          profitLimit: 50000,
+          minimumDeposit: 2000,
+          minimumWithdrawal: 100,
+          dailyWithdrawalLimit: 50000,
+          monthlyWithdrawalLimit: 500000
+        },
         features: [
-          'White-glove service',
-          'Custom investment strategies',
-          'No transaction limits',
-          'Instant support',
-          'Maximum referral rewards',
-          'Private investment access',
-          'Quarterly strategy reviews'
+          '24/7 Support',
+          'Priority Processing',
+          'Dedicated Manager',
+          'Advanced Analytics',
+          'Custom Solutions'
         ],
         color: '#8b5cf6',
         priority: 3,
-        isActive: true,
+        status: 'Active',
+      },
+      {
+        name: 'Diamond Plan',
+        description: 'Ultimate plan with unlimited potential.',
+        price: 25000,
+        currency: 'BDT',
+        limits: {
+          depositLimit: 1000000,
+          withdrawalLimit: 500000,
+          profitLimit: 100000,
+          minimumDeposit: 5000,
+          minimumWithdrawal: 100,
+          dailyWithdrawalLimit: 100000,
+          monthlyWithdrawalLimit: 1000000
+        },
+        features: [
+          'White-glove Service',
+          'Unlimited Access',
+          'Private Investment Access',
+          'Quarterly Reviews',
+          'Global Support'
+        ],
+        color: '#06b6d4',
+        priority: 4,
+        status: 'Active',
       },
     ];
 
@@ -315,12 +288,91 @@ class DatabaseSeeder {
         const result = await db.collection('plans').insertOne(plan);
         this.createdData.plans.push({ ...plan, _id: result.insertedId });
         console.log(`✅ Plan created: ${planData.name}`);
+      } else {
+        this.createdData.plans.push(existing);
+      }
+    }
+  }
+
+  async seedAdmins() {
+    console.log('👨‍💼 Seeding admin accounts...');
+
+    const db = mongoose.connection.db;
+
+    const adminData = [
+      {
+        name: 'System Administrator',
+        email: 'admin@iprofit.com',
+        password: await bcrypt.hash('Admin123@#', 12),
+        role: 'SuperAdmin',
+        permissions: ['*'],
+        status: 'Active',
+        emailVerified: true,
+        twoFactorEnabled: false,
+        lastLoginAt: null,
+        metadata: {
+          source: 'system_seed'
+        }
+      },
+      {
+        name: 'Content Moderator',
+        email: 'moderator@iprofit.com',
+        password: await bcrypt.hash('Mod123@#', 12),
+        role: 'Moderator',
+        permissions: [
+          'users.view', 'users.update', 'users.kyc.approve', 'users.kyc.reject',
+          'transactions.view', 'transactions.approve', 'transactions.reject',
+          'loans.view', 'loans.approve', 'loans.reject',
+          'referrals.view', 'referrals.approve', 'referrals.reject',
+          'support.view', 'support.respond', 'support.close'
+        ],
+        status: 'Active',
+        emailVerified: true,
+        twoFactorEnabled: false,
+        lastLoginAt: null,
+        metadata: {
+          source: 'system_seed'
+        }
+      },
+      {
+        name: 'Financial Manager',
+        email: 'finance@iprofit.com',
+        password: await bcrypt.hash('Finance123@#', 12),
+        role: 'Moderator',
+        permissions: [
+          'transactions.view', 'transactions.approve', 'transactions.reject',
+          'loans.view', 'loans.approve', 'loans.reject', 'loans.disburse',
+          'referrals.view', 'referrals.approve', 'users.view'
+        ],
+        status: 'Active',
+        emailVerified: true,
+        twoFactorEnabled: true,
+        lastLoginAt: null,
+        metadata: {
+          source: 'system_seed'
+        }
+      }
+    ];
+
+    for (const admin of adminData) {
+      const existing = await db.collection('admins').findOne({ email: admin.email });
+      if (!existing) {
+        const adminDoc = {
+          ...admin,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+        const result = await db.collection('admins').insertOne(adminDoc);
+        this.createdData.admins.push({ ...adminDoc, _id: result.insertedId });
+        console.log(`✅ Admin created: ${admin.email}`);
+      } else {
+        this.createdData.admins.push(existing);
       }
     }
   }
 
   async seedUsers() {
-    console.log('👥 Seeding user accounts...');
+    console.log('👥 Seeding user accounts with referral chains...');
 
     if (this.options.production) {
       console.log('ℹ️  Skipping users in production mode');
@@ -330,118 +382,190 @@ class DatabaseSeeder {
     const db = mongoose.connection.db;
 
     // Get available plans
-    const plans = await db.collection('plans').find({ isActive: true }).toArray();
+    const plans = this.createdData.plans.filter(plan => plan.status === 'Active');
     if (plans.length === 0) {
-      throw new Error('No plans available for user creation');
+      throw new Error('No active plans available for user creation');
     }
 
     const userCount = this.options.count.users;
-    const sampleUsers = this.generateSampleUsers(userCount, plans);
+    const sampleUsers = this.generateEnhancedSampleUsers(userCount, plans);
 
-    let referrerUser = null;
+    // Create referral chains (20% of users will be referrers)
+    const referrerCount = Math.floor(userCount * 0.2);
+    const referralChains = this.generateReferralChains(sampleUsers, referrerCount);
 
     for (let i = 0; i < sampleUsers.length; i++) {
       const userData = sampleUsers[i];
       
       const existing = await db.collection('users').findOne({ email: userData.email });
       if (!existing) {
-        // Hash user password
-        userData.passwordHash = await this.hashPassword(userData.password);
+        // Hash password
+        userData.passwordHash = await bcrypt.hash('User123@#', 12);
         delete userData.password;
 
-        // Assign referrer for some users (simulate referral chain)
-        if (referrerUser && Math.random() > 0.7) {
-          userData.referredBy = referrerUser._id;
+        // Set referral chain data
+        const chainData = referralChains.find(chain => 
+          chain.referee.email === userData.email
+        );
+        
+        if (chainData) {
+          userData.referredBy = chainData.referrer._id;
+          console.log(`🔗 ${userData.name} referred by ${chainData.referrer.name}`);
         }
 
-        userData.createdAt = new Date();
+        userData.createdAt = new Date(Date.now() - Math.random() * 90 * 24 * 60 * 60 * 1000); // Random date within last 90 days
         userData.updatedAt = new Date();
 
         const result = await db.collection('users').insertOne(userData);
         const user = { ...userData, _id: result.insertedId };
         this.createdData.users.push(user);
-        
-        // Use some users as referrers
-        if (i % 3 === 0) {
-          referrerUser = user;
-        }
 
-        console.log(`✅ User created: ${userData.email}`);
+        console.log(`✅ User created: ${userData.email} (Plan: ${userData.planName})`);
+      } else {
+        this.createdData.users.push(existing);
       }
     }
+
+    // Store referral chains for later processing
+    this.referralChains = referralChains;
   }
 
-  generateSampleUsers(count, plans) {
-    const firstNames = [
-      'Ahmed', 'Fatima', 'Mohammad', 'Aisha', 'Omar', 'Khadija', 'Ali', 'Zainab',
-      'Hassan', 'Maryam', 'Ibrahim', 'Amina', 'Yusuf', 'Safiya', 'Khalid'
-    ];
-    
-    const lastNames = [
-      'Rahman', 'Ahmed', 'Khan', 'Islam', 'Hasan', 'Ali', 'Uddin', 'Begum',
-      'Sheikh', 'Chowdhury', 'Karim', 'Sultana', 'Mahmud', 'Khatun', 'Miah'
-    ];
+  generateEnhancedSampleUsers(count, plans) {
+    const bangladeshiNames = {
+      firstNames: [
+        'Ahmed', 'Fatima', 'Mohammad', 'Aisha', 'Omar', 'Khadija', 'Ali', 'Zainab',
+        'Hassan', 'Maryam', 'Ibrahim', 'Amina', 'Yusuf', 'Safiya', 'Khalid',
+        'Aminul', 'Rashida', 'Abdul', 'Nasreen', 'Mahbub', 'Sultana', 'Karim',
+        'Rahima', 'Shahid', 'Ruma', 'Mizanur', 'Shahnaz', 'Rafiq', 'Salma'
+      ],
+      lastNames: [
+        'Rahman', 'Ahmed', 'Khan', 'Islam', 'Hasan', 'Ali', 'Uddin', 'Begum',
+        'Sheikh', 'Chowdhury', 'Karim', 'Sultana', 'Mahmud', 'Khatun', 'Miah',
+        'Akter', 'Hossain', 'Sarkar', 'Das', 'Roy', 'Ghosh', 'Paul', 'Saha'
+      ]
+    };
 
     const cities = [
       'Dhaka', 'Chittagong', 'Sylhet', 'Rajshahi', 'Khulna', 'Barisal', 
-      'Rangpur', 'Comilla', 'Narayanganj', 'Gazipur'
+      'Rangpur', 'Comilla', 'Narayanganj', 'Gazipur', 'Mymensingh', 'Bogra'
+    ];
+
+    const professions = [
+      'Business Owner', 'Software Engineer', 'Teacher', 'Doctor', 'Accountant',
+      'Sales Executive', 'Marketing Manager', 'Freelancer', 'Student', 'Engineer',
+      'Banker', 'Consultant', 'Entrepreneur', 'Government Officer', 'Trader'
     ];
 
     const users = [];
     const usedEmails = new Set();
     const usedPhones = new Set();
     const usedDevices = new Set();
+    const usedReferralCodes = new Set();
 
     for (let i = 0; i < count; i++) {
-      const firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
-      const lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
+      const firstName = bangladeshiNames.firstNames[Math.floor(Math.random() * bangladeshiNames.firstNames.length)];
+      const lastName = bangladeshiNames.lastNames[Math.floor(Math.random() * bangladeshiNames.lastNames.length)];
       const name = `${firstName} ${lastName}`;
       
-      let email, phone, deviceId;
+      let email, phone, deviceId, referralCode;
       
-      // Generate unique email
+      // Generate unique identifiers
       do {
         email = `${firstName.toLowerCase()}.${lastName.toLowerCase()}${i}@example.com`;
       } while (usedEmails.has(email));
       usedEmails.add(email);
       
-      // Generate unique phone
       do {
         phone = `+8801${Math.floor(Math.random() * 900000000) + 100000000}`;
       } while (usedPhones.has(phone));
       usedPhones.add(phone);
       
-      // Generate unique device ID
       do {
         deviceId = `device_${crypto.randomBytes(8).toString('hex')}`;
       } while (usedDevices.has(deviceId));
       usedDevices.add(deviceId);
 
-      const plan = plans[Math.floor(Math.random() * plans.length)];
-      const city = cities[Math.floor(Math.random() * cities.length)];
+      do {
+        referralCode = this.generateReferralCode();
+      } while (usedReferralCodes.has(referralCode));
+      usedReferralCodes.add(referralCode);
 
+      // Assign plan (weighted towards lower plans)
+      const planWeights = [0.5, 0.25, 0.15, 0.07, 0.03]; // Free, Silver, Gold, Platinum, Diamond
+      let planIndex = 0;
+      const random = Math.random();
+      let cumulative = 0;
+      
+      for (let j = 0; j < planWeights.length; j++) {
+        cumulative += planWeights[j];
+        if (random <= cumulative) {
+          planIndex = j;
+          break;
+        }
+      }
+      
+      const plan = plans[Math.min(planIndex, plans.length - 1)];
+      const city = cities[Math.floor(Math.random() * cities.length)];
+      const profession = professions[Math.floor(Math.random() * professions.length)];
+
+      // Generate realistic balance based on plan
+      const balanceRanges = {
+        'Free Plan': [0, 5000],
+        'Silver Plan': [1000, 25000],
+        'Gold Plan': [5000, 100000],
+        'Platinum Plan': [25000, 500000],
+        'Diamond Plan': [100000, 1000000]
+      };
+      
+      const [minBalance, maxBalance] = balanceRanges[plan.name] || [0, 5000];
+      const balance = Math.floor(Math.random() * (maxBalance - minBalance)) + minBalance;
+
+      // KYC status weighted towards approved for higher plans
+      const kycApprovalRate = {
+        'Free Plan': 0.3,
+        'Silver Plan': 0.6,
+        'Gold Plan': 0.8,
+        'Platinum Plan': 0.95,
+        'Diamond Plan': 1.0
+      };
+      
+      const isKycApproved = Math.random() < kycApprovalRate[plan.name];
+      
       const user = {
         name,
         email,
         phone,
-        password: 'User123@#', // This will be hashed
+        password: 'User123@#', // Will be hashed
         planId: plan._id,
-        balance: Math.floor(Math.random() * 10000),
-        kycStatus: ['Pending', 'Approved', 'Approved', 'Approved'][Math.floor(Math.random() * 4)],
-        referralCode: this.generateReferralCode(),
+        planName: plan.name, // For tracking
+        balance,
+        kycStatus: isKycApproved ? 'Approved' : (Math.random() > 0.7 ? 'Pending' : 'Rejected'),
+        referralCode,
         deviceId,
         address: {
-          street: `${Math.floor(Math.random() * 999) + 1} Main Street`,
+          street: `${Math.floor(Math.random() * 999) + 1} ${['Main Street', 'First Avenue', 'Market Road', 'Station Road'][Math.floor(Math.random() * 4)]}`,
           city,
           state: city,
           country: 'Bangladesh',
           zipCode: `${Math.floor(Math.random() * 9000) + 1000}`
         },
+        personalInfo: {
+          dateOfBirth: new Date(1970 + Math.floor(Math.random() * 35), Math.floor(Math.random() * 12), Math.floor(Math.random() * 28) + 1),
+          profession,
+          monthlyIncome: Math.floor(Math.random() * 200000) + 20000, // 20k to 220k BDT
+          gender: Math.random() > 0.5 ? 'Male' : 'Female'
+        },
         status: 'Active',
         loginAttempts: 0,
-        emailVerified: Math.random() > 0.2,
-        phoneVerified: Math.random() > 0.3,
-        twoFactorEnabled: false
+        emailVerified: Math.random() > 0.1, // 90% verified
+        phoneVerified: Math.random() > 0.2, // 80% verified
+        twoFactorEnabled: false,
+        lastLoginAt: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000), // Last 7 days
+        metadata: {
+          source: 'demo_seed',
+          userAgent: 'Mobile App',
+          signupIp: `192.168.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`
+        }
       };
 
       users.push(user);
@@ -459,8 +583,38 @@ class DatabaseSeeder {
     return result;
   }
 
+  generateReferralChains(users, referrerCount) {
+    const chains = [];
+    const referrers = users.slice(0, referrerCount);
+    const potentialReferees = users.slice(referrerCount);
+
+    // Create multi-level referral chains
+    for (let i = 0; i < potentialReferees.length; i++) {
+      const referee = potentialReferees[i];
+      
+      // 60% chance of being referred
+      if (Math.random() < 0.6) {
+        let referrer;
+        
+        // 70% chance of being referred by a top-level referrer
+        // 30% chance of being referred by another referee (creating chain)
+        if (Math.random() < 0.7 || chains.length === 0) {
+          referrer = referrers[Math.floor(Math.random() * referrers.length)];
+        } else {
+          const existingChain = chains[Math.floor(Math.random() * chains.length)];
+          referrer = existingChain.referee;
+        }
+
+        chains.push({ referrer, referee });
+      }
+    }
+
+    console.log(`🔗 Generated ${chains.length} referral relationships`);
+    return chains;
+  }
+
   async seedTransactions() {
-    console.log('💳 Seeding transactions...');
+    console.log('💳 Seeding transactions with referral tracking...');
 
     if (this.createdData.users.length === 0) {
       console.log('ℹ️  No users available, skipping transactions');
@@ -468,60 +622,383 @@ class DatabaseSeeder {
     }
 
     const db = mongoose.connection.db;
-    const transactionCount = this.options.production ? 0 : this.options.count.transactions;
-    const transactionTypes = ['deposit', 'withdrawal', 'bonus', 'profit', 'referral_bonus'];
-    const currencies = ['BDT', 'USD'];
-    const gateways = ['CoinGate', 'UddoktaPay', 'Manual', 'System', 'Bank Transfer'];
-    const statuses = ['Approved', 'Approved', 'Approved', 'Pending', 'Rejected'];
-
+    const transactionCount = this.options.count.transactions;
     const transactions = [];
+    
+    const transactionTypes = ['deposit', 'withdrawal', 'bonus', 'profit'];
+    const gateways = ['CoinGate', 'UddoktaPay', 'Manual', 'System'];
+    const statuses = ['Approved', 'Pending', 'Rejected'];
+
+    // Weight distributions for more realistic data
+    const typeWeights = { deposit: 0.4, withdrawal: 0.3, bonus: 0.2, profit: 0.1 };
+    const statusWeights = { Approved: 0.7, Pending: 0.2, Rejected: 0.1 };
 
     for (let i = 0; i < transactionCount; i++) {
       const user = this.createdData.users[Math.floor(Math.random() * this.createdData.users.length)];
-      const type = transactionTypes[Math.floor(Math.random() * transactionTypes.length)];
-      const currency = currencies[Math.floor(Math.random() * currencies.length)];
       
-      let amount;
-      if (currency === 'BDT') {
-        amount = Math.floor(Math.random() * 5000 + 100);
-      } else {
-        amount = Math.floor(Math.random() * 50 + 1);
+      // Select transaction type based on weights
+      const typeRandom = Math.random();
+      let type = 'deposit';
+      let cumulative = 0;
+      for (const [transType, weight] of Object.entries(typeWeights)) {
+        cumulative += weight;
+        if (typeRandom <= cumulative) {
+          type = transType;
+          break;
+        }
       }
+
+      // Select status based on weights
+      const statusRandom = Math.random();
+      let status = 'Approved';
+      cumulative = 0;
+      for (const [statusType, weight] of Object.entries(statusWeights)) {
+        cumulative += weight;
+        if (statusRandom <= cumulative) {
+          status = statusType;
+          break;
+        }
+      }
+
+      // Generate realistic amounts based on transaction type and user plan
+      let amount;
+      switch (type) {
+        case 'deposit':
+          amount = Math.floor(Math.random() * 50000) + 500; // 500-50,500 BDT
+          break;
+        case 'withdrawal':
+          amount = Math.floor(Math.random() * Math.min(user.balance || 1000, 25000)) + 100;
+          break;
+        case 'bonus':
+          amount = Math.floor(Math.random() * 1000) + 50; // 50-1,050 BDT
+          break;
+        case 'profit':
+          amount = Math.floor(Math.random() * 5000) + 100; // 100-5,100 BDT
+          break;
+      }
+
+      const gateway = type === 'bonus' || type === 'profit' ? 'System' : 
+                     gateways[Math.floor(Math.random() * (gateways.length - 1))];
 
       const transaction = {
         userId: user._id,
         type,
         amount,
-        currency,
-        status: statuses[Math.floor(Math.random() * statuses.length)],
-        gateway: gateways[Math.floor(Math.random() * gateways.length)],
-        description: `${type.charAt(0).toUpperCase() + type.slice(1)} transaction`,
-        gatewayTransactionId: `txn_${Date.now()}_${i}`,
-        processedAt: Math.random() > 0.3 ? new Date() : null,
+        currency: 'BDT',
+        gateway,
+        status,
+        description: this.generateTransactionDescription(type, amount),
+        transactionId: `TXN${Date.now()}${i.toString().padStart(4, '0')}`,
+        fees: type === 'withdrawal' ? Math.floor(amount * 0.02) : 0, // 2% withdrawal fee
+        netAmount: type === 'withdrawal' ? amount - Math.floor(amount * 0.02) : amount,
         metadata: {
-          source: 'seeder',
-          randomId: Math.random().toString(36).substr(2, 9),
+          userAgent: 'Mobile App',
+          ipAddress: `192.168.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
+          source: 'demo_seed'
         },
-        createdAt: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000), // Random date within last 30 days
+        createdAt: new Date(Date.now() - Math.random() * 60 * 24 * 60 * 60 * 1000), // Last 60 days
         updatedAt: new Date(),
+        processedAt: status === 'Approved' ? new Date() : null
       };
 
       transactions.push(transaction);
 
-      if (transactions.length >= 100) {
-        await db.collection('transactions').insertMany(transactions);
-        this.createdData.transactions.push(...transactions);
-        transactions.length = 0;
-        console.log(`✅ Created ${i + 1} transactions`);
+      // Track profits for referral sharing
+      if (type === 'profit' && status === 'Approved') {
+        const currentProfit = this.userProfits.get(user._id.toString()) || 0;
+        this.userProfits.set(user._id.toString(), currentProfit + amount);
       }
     }
 
     if (transactions.length > 0) {
-      await db.collection('transactions').insertMany(transactions);
+      const results = await db.collection('transactions').insertMany(transactions);
+      
+      // Add inserted IDs to transactions
+      transactions.forEach((transaction, index) => {
+        transaction._id = results.insertedIds[index];
+      });
+      
       this.createdData.transactions.push(...transactions);
     }
 
-    console.log(`✅ ${transactionCount} transactions created`);
+    console.log(`✅ ${transactions.length} transactions created`);
+  }
+
+  generateTransactionDescription(type, amount) {
+    const descriptions = {
+      deposit: [
+        `Mobile wallet deposit - ${amount} BDT`,
+        `Bank transfer deposit - ${amount} BDT`,
+        `CoinGate deposit - ${amount} BDT`,
+        `UddoktaPay deposit - ${amount} BDT`
+      ],
+      withdrawal: [
+        `Withdrawal to bank account - ${amount} BDT`,
+        `Mobile wallet withdrawal - ${amount} BDT`,
+        `Account withdrawal request - ${amount} BDT`
+      ],
+      bonus: [
+        `Referral signup bonus - ${amount} BDT`,
+        `Task completion bonus - ${amount} BDT`,
+        `Welcome bonus - ${amount} BDT`,
+        `Loyalty bonus - ${amount} BDT`
+      ],
+      profit: [
+        `Investment profit - ${amount} BDT`,
+        `Trading profit - ${amount} BDT`,
+        `Portfolio return - ${amount} BDT`,
+        `Interest earning - ${amount} BDT`
+      ]
+    };
+
+    const typeDescriptions = descriptions[type] || [`${type} - ${amount} BDT`];
+    return typeDescriptions[Math.floor(Math.random() * typeDescriptions.length)];
+  }
+
+  async seedReferrals() {
+    console.log('🔗 Creating referral records...');
+
+    if (this.referralChains.length === 0) {
+      console.log('ℹ️  No referral chains available, skipping');
+      return;
+    }
+
+    const db = mongoose.connection.db;
+    const referrals = [];
+
+    for (const chain of this.referralChains) {
+      // Find the actual user documents with their _id
+      const referrer = this.createdData.users.find(u => u.email === chain.referrer.email);
+      const referee = this.createdData.users.find(u => u.email === chain.referee.email);
+
+      if (!referrer || !referee) {
+        console.warn(`⚠️  Could not find users for referral chain`);
+        continue;
+      }
+
+      // Create signup bonus referral
+      const signupReferral = {
+        referrerId: referrer._id,
+        refereeId: referee._id,
+        bonusAmount: REFERRAL_CONFIG.SIGNUP_BONUS,
+        profitBonus: 0,
+        status: 'Pending', // Will be processed later
+        bonusType: 'signup',
+        metadata: {
+          refereeFirstDeposit: null,
+          refereeFirstDepositDate: null,
+          signupDate: referee.createdAt
+        },
+        createdAt: referee.createdAt,
+        updatedAt: new Date()
+      };
+
+      referrals.push(signupReferral);
+
+      // Create profit sharing referral if referee has profits
+      const refereeProfit = this.userProfits.get(referee._id.toString()) || 0;
+      if (refereeProfit > 0) {
+        const profitShareAmount = Math.floor(refereeProfit * REFERRAL_CONFIG.PROFIT_SHARE_PERCENTAGE / 100);
+        
+        const profitReferral = {
+          referrerId: referrer._id,
+          refereeId: referee._id,
+          bonusAmount: 0,
+          profitBonus: profitShareAmount,
+          status: 'Pending',
+          bonusType: 'profit_share',
+          metadata: {
+            totalRefereeProfit: refereeProfit,
+            profitSharePercentage: REFERRAL_CONFIG.PROFIT_SHARE_PERCENTAGE,
+            lastCalculatedAt: new Date()
+          },
+          createdAt: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000),
+          updatedAt: new Date()
+        };
+
+        referrals.push(profitReferral);
+      }
+    }
+
+    if (referrals.length > 0) {
+      const results = await db.collection('referrals').insertMany(referrals);
+      
+      // Add inserted IDs
+      referrals.forEach((referral, index) => {
+        referral._id = results.insertedIds[index];
+      });
+      
+      this.createdData.referrals.push(...referrals);
+    }
+
+    console.log(`✅ ${referrals.length} referral records created`);
+  }
+
+  async processReferralBonuses() {
+    console.log('💰 Processing referral bonuses...');
+
+    if (this.createdData.referrals.length === 0) {
+      console.log('ℹ️  No referrals to process, skipping');
+      return;
+    }
+
+    const db = mongoose.connection.db;
+    let processedCount = 0;
+
+    for (const referral of this.createdData.referrals) {
+      // 80% chance of approval for demo purposes
+      if (Math.random() < 0.8) {
+        const referrer = this.createdData.users.find(u => u._id.toString() === referral.referrerId.toString());
+        
+        if (referrer) {
+          // Update referral status
+          await db.collection('referrals').updateOne(
+            { _id: referral._id },
+            { 
+              $set: { 
+                status: 'Paid',
+                paidAt: new Date(),
+                updatedAt: new Date()
+              }
+            }
+          );
+
+          // Calculate total bonus amount
+          const totalBonus = referral.bonusAmount + referral.profitBonus;
+
+          // Create transaction for the bonus
+          const bonusTransaction = {
+            userId: referral.referrerId,
+            type: 'bonus',
+            amount: totalBonus,
+            currency: 'BDT',
+            gateway: 'System',
+            status: 'Approved',
+            description: `Referral ${referral.bonusType} bonus - ${totalBonus} BDT`,
+            transactionId: `BONUS${Date.now()}${processedCount}`,
+            fees: 0,
+            netAmount: totalBonus,
+            metadata: {
+              referralId: referral._id,
+              bonusType: referral.bonusType,
+              refereeId: referral.refereeId,
+              source: 'referral_system'
+            },
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            processedAt: new Date()
+          };
+
+          const transactionResult = await db.collection('transactions').insertOne(bonusTransaction);
+          
+          // Update referrer balance
+          await db.collection('users').updateOne(
+            { _id: referrer._id },
+            { 
+              $inc: { balance: totalBonus },
+              $set: { updatedAt: new Date() }
+            }
+          );
+
+          // Update referral with transaction ID
+          await db.collection('referrals').updateOne(
+            { _id: referral._id },
+            { 
+              $set: { 
+                transactionId: transactionResult.insertedId,
+                updatedAt: new Date()
+              }
+            }
+          );
+
+          processedCount++;
+          console.log(`✅ Processed ${referral.bonusType} bonus: ${totalBonus} BDT for ${referrer.name}`);
+        }
+      }
+    }
+
+    console.log(`✅ ${processedCount} referral bonuses processed`);
+  }
+
+  async generateProfitSharing() {
+    console.log('📈 Generating additional profit sharing bonuses...');
+
+    const db = mongoose.connection.db;
+    let bonusCount = 0;
+
+    // Find users with significant profits who might have referrers
+    for (const [userId, profit] of this.userProfits.entries()) {
+      if (profit > 1000) { // Only process significant profits
+        const user = this.createdData.users.find(u => u._id.toString() === userId);
+        
+        if (user && user.referredBy) {
+          // Check if profit sharing already exists
+          const existingProfit = this.createdData.referrals.find(r => 
+            r.refereeId.toString() === userId && r.bonusType === 'profit_share'
+          );
+
+          if (!existingProfit) {
+            const profitShareAmount = Math.floor(profit * REFERRAL_CONFIG.PROFIT_SHARE_PERCENTAGE / 100);
+            
+            const profitReferral = {
+              referrerId: user.referredBy,
+              refereeId: user._id,
+              bonusAmount: 0,
+              profitBonus: profitShareAmount,
+              status: Math.random() < 0.9 ? 'Paid' : 'Pending', // 90% approved
+              bonusType: 'profit_share',
+              metadata: {
+                totalRefereeProfit: profit,
+                profitSharePercentage: REFERRAL_CONFIG.PROFIT_SHARE_PERCENTAGE,
+                generatedFrom: 'profit_accumulation'
+              },
+              createdAt: new Date(),
+              updatedAt: new Date(),
+              paidAt: Math.random() < 0.9 ? new Date() : null
+            };
+
+            const result = await db.collection('referrals').insertOne(profitReferral);
+            profitReferral._id = result.insertedId;
+            
+            // Create transaction if paid
+            if (profitReferral.status === 'Paid') {
+              const bonusTransaction = {
+                userId: profitReferral.referrerId,
+                type: 'bonus',
+                amount: profitShareAmount,
+                currency: 'BDT',
+                gateway: 'System',
+                status: 'Approved',
+                description: `Profit sharing bonus - ${profitShareAmount} BDT`,
+                transactionId: `PROFIT${Date.now()}${bonusCount}`,
+                fees: 0,
+                netAmount: profitShareAmount,
+                metadata: {
+                  referralId: profitReferral._id,
+                  bonusType: 'profit_share',
+                  source: 'profit_sharing'
+                },
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                processedAt: new Date()
+              };
+
+              await db.collection('transactions').insertOne(bonusTransaction);
+              
+              // Update referrer balance
+              await db.collection('users').updateOne(
+                { _id: profitReferral.referrerId },
+                { $inc: { balance: profitShareAmount } }
+              );
+            }
+
+            bonusCount++;
+          }
+        }
+      }
+    }
+
+    console.log(`✅ ${bonusCount} profit sharing bonuses generated`);
   }
 
   async seedLoans() {
@@ -533,97 +1010,350 @@ class DatabaseSeeder {
     }
 
     const db = mongoose.connection.db;
-    const loanCount = this.options.production ? 0 : this.options.count.loans;
-    const loanTypes = ['Personal', 'Business', 'Emergency', 'Investment'];
-    const statuses = ['Pending', 'Approved', 'Rejected', 'Active', 'Completed'];
-    const purposes = [
-      'Business expansion', 'Medical emergency', 'Education', 'Home renovation',
-      'Investment opportunity', 'Debt consolidation', 'Equipment purchase'
-    ];
-
+    const loanCount = this.options.count.loans;
     const loans = [];
 
-    for (let i = 0; i < loanCount; i++) {
-      const user = this.createdData.users[Math.floor(Math.random() * this.createdData.users.length)];
-      const admin = this.createdData.admins[Math.floor(Math.random() * this.createdData.admins.length)];
+    // Only create loans for KYC approved users
+    const eligibleUsers = this.createdData.users.filter(u => u.kycStatus === 'Approved');
+    
+    if (eligibleUsers.length === 0) {
+      console.log('ℹ️  No KYC approved users, skipping loans');
+      return;
+    }
+
+    const loanPurposes = [
+      'Personal Loan', 'Business Expansion', 'Home Renovation', 'Education',
+      'Medical Emergency', 'Debt Consolidation', 'Vehicle Purchase', 'Wedding'
+    ];
+
+    const loanStatuses = ['Pending', 'Approved', 'Active', 'Completed', 'Rejected'];
+    const statusWeights = { Pending: 0.2, Approved: 0.3, Active: 0.25, Completed: 0.15, Rejected: 0.1 };
+
+    for (let i = 0; i < Math.min(loanCount, eligibleUsers.length); i++) {
+      const user = eligibleUsers[i];
+      const loanAmount = (Math.floor(Math.random() * 20) + 1) * 5000; // 5k to 100k BDT
+      const interestRate = 12 + Math.random() * 8; // 12-20% annual
+      const tenure = (Math.floor(Math.random() * 5) + 1) * 12; // 1-5 years in months
       
-      const amount = Math.floor(Math.random() * 95000 + 5000); // 5k to 100k
-      const interestRate = Math.floor(Math.random() * 18 + 8); // 8% to 25%
-      const termMonths = [6, 12, 18, 24, 36][Math.floor(Math.random() * 5)];
-      
+      // Calculate EMI using standard formula
+      const monthlyRate = interestRate / 100 / 12;
+      const emiAmount = Math.floor(
+        (loanAmount * monthlyRate * Math.pow(1 + monthlyRate, tenure)) /
+        (Math.pow(1 + monthlyRate, tenure) - 1)
+      );
+
+      // Select status based on weights
+      const statusRandom = Math.random();
+      let status = 'Pending';
+      let cumulative = 0;
+      for (const [statusType, weight] of Object.entries(statusWeights)) {
+        cumulative += weight;
+        if (statusRandom <= cumulative) {
+          status = statusType;
+          break;
+        }
+      }
+
       const loan = {
         userId: user._id,
-        amount,
-        interestRate,
-        termMonths,
-        purpose: purposes[Math.floor(Math.random() * purposes.length)],
-        status: statuses[Math.floor(Math.random() * statuses.length)],
-        loanType: loanTypes[Math.floor(Math.random() * loanTypes.length)],
-        approvedBy: Math.random() > 0.5 ? admin._id : null,
-        approvedAt: Math.random() > 0.5 ? new Date() : null,
-        monthlyPayment: Math.floor((amount * (1 + interestRate / 100)) / termMonths),
-        totalRepayment: Math.floor(amount * (1 + interestRate / 100)),
-        remainingBalance: Math.floor(Math.random() * amount),
-        nextPaymentDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        collateral: Math.random() > 0.7 ? 'Property documents' : null,
-        guarantor: Math.random() > 0.8 ? 'Family member' : null,
-        creditScore: Math.floor(Math.random() * 300 + 500), // 500-800
-        riskLevel: ['Low', 'Medium', 'High'][Math.floor(Math.random() * 3)],
-        createdAt: new Date(Date.now() - Math.random() * 60 * 24 * 60 * 60 * 1000),
+        amount: loanAmount,
+        currency: 'BDT',
+        interestRate: parseFloat(interestRate.toFixed(2)),
+        tenure,
+        emiAmount,
+        creditScore: 650 + Math.floor(Math.random() * 200), // 650-850
+        status,
+        purpose: loanPurposes[Math.floor(Math.random() * loanPurposes.length)],
+        monthlyIncome: user.personalInfo?.monthlyIncome || 50000,
+        employmentStatus: 'Employed',
+        documents: [
+          { type: 'national_id', url: '/uploads/demo/nid.pdf', uploadedAt: new Date() },
+          { type: 'bank_statement', url: '/uploads/demo/bank.pdf', uploadedAt: new Date() },
+          { type: 'salary_certificate', url: '/uploads/demo/salary.pdf', uploadedAt: new Date() }
+        ],
+        repaymentSchedule: [],
+        totalPaid: 0,
+        remainingAmount: loanAmount,
+        overdueAmount: 0,
+        penaltyAmount: 0,
+        createdAt: new Date(Date.now() - Math.random() * 45 * 24 * 60 * 60 * 1000), // Last 45 days
         updatedAt: new Date(),
+        approvedAt: ['Approved', 'Active', 'Completed'].includes(status) ? new Date() : null,
+        disbursedAt: ['Active', 'Completed'].includes(status) ? new Date() : null
       };
+
+      // Generate repayment schedule for approved loans
+      if (['Approved', 'Active', 'Completed'].includes(status)) {
+        const startDate = loan.disbursedAt || new Date();
+        for (let month = 1; month <= tenure; month++) {
+          const dueDate = new Date(startDate);
+          dueDate.setMonth(dueDate.getMonth() + month);
+          
+          const installment = {
+            installmentNumber: month,
+            dueDate,
+            amount: emiAmount,
+            principal: Math.floor(loanAmount / tenure),
+            interest: emiAmount - Math.floor(loanAmount / tenure),
+            status: status === 'Completed' || (status === 'Active' && month <= Math.floor(tenure * 0.3)) ? 'Paid' : 'Pending'
+          };
+
+          if (installment.status === 'Paid') {
+            installment.paidAt = new Date(dueDate.getTime() - Math.random() * 7 * 24 * 60 * 60 * 1000);
+            installment.paidAmount = emiAmount;
+            loan.totalPaid += emiAmount;
+            loan.remainingAmount -= installment.principal;
+          }
+
+          loan.repaymentSchedule.push(installment);
+        }
+      }
 
       loans.push(loan);
     }
 
     if (loans.length > 0) {
-      await db.collection('loans').insertMany(loans);
+      const results = await db.collection('loans').insertMany(loans);
+      
+      loans.forEach((loan, index) => {
+        loan._id = results.insertedIds[index];
+      });
+      
       this.createdData.loans.push(...loans);
     }
 
-    console.log(`✅ ${loanCount} loans created`);
+    console.log(`✅ ${loans.length} loan applications created`);
   }
 
-  async seedReferrals() {
-    console.log('🔗 Seeding referral records...');
+  async seedTasks() {
+    console.log('📋 Seeding tasks...');
 
-    if (this.createdData.users.length < 2) {
-      console.log('ℹ️  Not enough users for referrals, skipping');
+    const db = mongoose.connection.db;
+    
+    const tasksData = [
+      {
+        name: 'Follow IProfit on Facebook',
+        description: 'Follow our official Facebook page and get rewarded!',
+        category: 'Social Media',
+        reward: 50,
+        currency: 'BDT',
+        difficulty: 'Easy',
+        estimatedTime: 2,
+        requirements: 'Must follow and like the page',
+        instructions: '1. Visit our Facebook page\n2. Click Follow\n3. Like our latest post\n4. Submit screenshot',
+        maxSubmissions: 1000,
+        currentSubmissions: 0,
+        validFrom: new Date(),
+        validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        isRepeatable: false,
+        status: 'Active'
+      },
+      {
+        name: 'Install Partner App',
+        description: 'Install our partner mobile app and earn bonus',
+        category: 'App Installation',
+        reward: 100,
+        currency: 'BDT',
+        difficulty: 'Easy',
+        estimatedTime: 5,
+        requirements: 'Android or iOS device',
+        instructions: '1. Download app from store\n2. Create account\n3. Complete profile\n4. Submit user ID',
+        maxSubmissions: 500,
+        currentSubmissions: 0,
+        validFrom: new Date(),
+        validUntil: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
+        isRepeatable: false,
+        status: 'Active'
+      },
+      {
+        name: 'Write Product Review',
+        description: 'Write a detailed review of your experience with IProfit',
+        category: 'Review',
+        reward: 200,
+        currency: 'BDT',
+        difficulty: 'Medium',
+        estimatedTime: 15,
+        requirements: 'Minimum 100 words review',
+        instructions: '1. Use our platform for at least 7 days\n2. Write honest review (min 100 words)\n3. Submit via form',
+        maxSubmissions: 100,
+        currentSubmissions: 0,
+        validFrom: new Date(),
+        validUntil: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+        isRepeatable: false,
+        status: 'Active'
+      },
+      {
+        name: 'Refer 3 Friends',
+        description: 'Refer 3 friends who successfully complete KYC',
+        category: 'Referral',
+        reward: 500,
+        currency: 'BDT',
+        difficulty: 'Hard',
+        estimatedTime: 0,
+        requirements: '3 successful referrals with completed KYC',
+        instructions: '1. Share your referral code\n2. Ensure friends complete signup\n3. Wait for KYC approval',
+        maxSubmissions: 1000,
+        currentSubmissions: 0,
+        validFrom: new Date(),
+        validUntil: new Date(Date.now() + 120 * 24 * 60 * 60 * 1000),
+        isRepeatable: true,
+        cooldownPeriod: 30,
+        status: 'Active'
+      },
+      {
+        name: 'Watch Educational Video',
+        description: 'Watch our financial literacy video series',
+        category: 'Video Watch',
+        reward: 75,
+        currency: 'BDT',
+        difficulty: 'Easy',
+        estimatedTime: 10,
+        requirements: 'Complete all 5 videos',
+        instructions: '1. Access video library\n2. Watch all 5 videos\n3. Pass quiz with 80% score',
+        maxSubmissions: 2000,
+        currentSubmissions: 0,
+        validFrom: new Date(),
+        validUntil: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+        isRepeatable: false,
+        status: 'Active'
+      }
+    ];
+
+    for (const taskData of tasksData) {
+      const existing = await db.collection('tasks').findOne({ name: taskData.name });
+      if (!existing) {
+        const task = {
+          ...taskData,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+        const result = await db.collection('tasks').insertOne(task);
+        this.createdData.tasks.push({ ...task, _id: result.insertedId });
+        console.log(`✅ Task created: ${taskData.name}`);
+      } else {
+        this.createdData.tasks.push(existing);
+      }
+    }
+  }
+
+  async seedTaskSubmissions() {
+    console.log('📝 Seeding task submissions...');
+
+    if (this.createdData.tasks.length === 0 || this.createdData.users.length === 0) {
+      console.log('ℹ️  No tasks or users available, skipping task submissions');
       return;
     }
 
     const db = mongoose.connection.db;
-    const referrals = [];
-    const referralCount = Math.min(this.createdData.users.length / 2, 20);
+    const submissions = [];
+    const submissionCount = Math.min(this.options.count.users * 2, 200); // 2 submissions per user on average
 
-    for (let i = 0; i < referralCount; i++) {
-      const referrer = this.createdData.users[i];
-      const referred = this.createdData.users[i + referralCount];
+    for (let i = 0; i < submissionCount; i++) {
+      const user = this.createdData.users[Math.floor(Math.random() * this.createdData.users.length)];
+      const task = this.createdData.tasks[Math.floor(Math.random() * this.createdData.tasks.length)];
 
-      if (referrer && referred) {
-        const referral = {
-          referrerId: referrer._id,
-          referredUserId: referred._id,
-          status: 'Completed',
-          rewardAmount: Math.floor(Math.random() * 500 + 100),
-          rewardCurrency: 'BDT',
-          level: 1,
-          commissionRate: 10,
-          isActive: true,
-          createdAt: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000),
-          updatedAt: new Date(),
-        };
+      // Check if user already submitted this task (if not repeatable)
+      const existingSubmission = submissions.find(s => 
+        s.userId.toString() === user._id.toString() && 
+        s.taskId.toString() === task._id.toString()
+      );
 
-        referrals.push(referral);
+      if (existingSubmission && !task.isRepeatable) {
+        continue;
       }
+
+      const statuses = ['Pending', 'Approved', 'Rejected'];
+      const statusWeights = { Pending: 0.3, Approved: 0.6, Rejected: 0.1 };
+      
+      const statusRandom = Math.random();
+      let status = 'Pending';
+      let cumulative = 0;
+      for (const [statusType, weight] of Object.entries(statusWeights)) {
+        cumulative += weight;
+        if (statusRandom <= cumulative) {
+          status = statusType;
+          break;
+        }
+      }
+
+      const submission = {
+        taskId: task._id,
+        userId: user._id,
+        status,
+        proof: [
+          {
+            type: 'screenshot',
+            content: '/uploads/demo/screenshot.jpg',
+            uploadedAt: new Date()
+          }
+        ],
+        submissionNote: 'Completed as per instructions',
+        reviewNote: status !== 'Pending' ? (status === 'Approved' ? 'Good submission' : 'Incomplete proof') : null,
+        reviewedBy: status !== 'Pending' ? this.createdData.admins[0]._id : null,
+        reviewedAt: status !== 'Pending' ? new Date() : null,
+        reward: task.reward,
+        transactionId: null, // Will be set if approved
+        createdAt: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000),
+        updatedAt: new Date()
+      };
+
+      submissions.push(submission);
     }
 
-    if (referrals.length > 0) {
-      await db.collection('referrals').insertMany(referrals);
-      this.createdData.referrals.push(...referrals);
-    }
+    if (submissions.length > 0) {
+      const results = await db.collection('task_submissions').insertMany(submissions);
+      
+      submissions.forEach((submission, index) => {
+        submission._id = results.insertedIds[index];
+      });
+      
+      this.createdData.taskSubmissions.push(...submissions);
 
-    console.log(`✅ ${referrals.length} referrals created`);
+      // Create transactions for approved submissions
+      let rewardTransactions = 0;
+      for (const submission of submissions) {
+        if (submission.status === 'Approved') {
+          const rewardTransaction = {
+            userId: submission.userId,
+            type: 'bonus',
+            amount: submission.reward,
+            currency: 'BDT',
+            gateway: 'System',
+            status: 'Approved',
+            description: `Task completion reward - ${submission.reward} BDT`,
+            transactionId: `TASK${Date.now()}${rewardTransactions}`,
+            fees: 0,
+            netAmount: submission.reward,
+            metadata: {
+              taskId: submission.taskId,
+              submissionId: submission._id,
+              source: 'task_reward'
+            },
+            createdAt: submission.reviewedAt,
+            updatedAt: submission.reviewedAt,
+            processedAt: submission.reviewedAt
+          };
+
+          const transResult = await db.collection('transactions').insertOne(rewardTransaction);
+          
+          // Update submission with transaction ID
+          await db.collection('task_submissions').updateOne(
+            { _id: submission._id },
+            { $set: { transactionId: transResult.insertedId } }
+          );
+
+          // Update user balance
+          await db.collection('users').updateOne(
+            { _id: submission.userId },
+            { $inc: { balance: submission.reward } }
+          );
+
+          rewardTransactions++;
+        }
+      }
+
+      console.log(`✅ ${submissions.length} task submissions created, ${rewardTransactions} rewards processed`);
+    }
   }
 
   async seedSupportTickets() {
@@ -635,195 +1365,530 @@ class DatabaseSeeder {
     }
 
     const db = mongoose.connection.db;
-    const ticketCount = this.options.production ? 0 : this.options.count.tickets;
-    
-    const categories = ['Account', 'Payment', 'Technical', 'General', 'Loan', 'KYC'];
-    const priorities = ['Low', 'Medium', 'High', 'Urgent'];
-    const statuses = ['Open', 'In Progress', 'Resolved', 'Closed'];
-    
-    const subjects = [
-      'Cannot withdraw funds',
-      'Account verification issue',
-      'Login problems',
-      'Transaction not reflecting',
-      'App crashing frequently',
-      'Loan application status',
-      'KYC document rejection',
-      'Referral bonus not credited',
-      'Password reset not working',
-      'Balance discrepancy'
+    const ticketCount = this.options.count.tickets;
+    const tickets = [];
+
+    const categories = [
+      'Account Issues', 'Payment Problems', 'KYC Verification',
+      'Loan Inquiry', 'Technical Support', 'Feature Request',
+      'Complaint', 'General Inquiry', 'Referral Issues'
     ];
 
-    const tickets = [];
+    const priorities = ['Low', 'Medium', 'High', 'Urgent'];
+    const statuses = ['Open', 'In Progress', 'Resolved', 'Closed'];
+
+    const sampleIssues = {
+      'Account Issues': [
+        'Cannot login to my account',
+        'Account balance not updating',
+        'Profile information cannot be edited',
+        'Two-factor authentication issues'
+      ],
+      'Payment Problems': [
+        'Deposit not reflecting in account',
+        'Withdrawal request stuck',
+        'Transaction failed but money deducted',
+        'Gateway error during payment'
+      ],
+      'KYC Verification': [
+        'KYC documents rejected',
+        'How long does KYC take?',
+        'Need to update KYC information',
+        'Document upload failing'
+      ],
+      'Referral Issues': [
+        'Referral bonus not credited',
+        'Referral code not working',
+        'Questions about profit sharing',
+        'How to track my referrals'
+      ]
+    };
 
     for (let i = 0; i < ticketCount; i++) {
       const user = this.createdData.users[Math.floor(Math.random() * this.createdData.users.length)];
-      const admin = Math.random() > 0.5 ? this.createdData.admins[Math.floor(Math.random() * this.createdData.admins.length)] : null;
+      const category = categories[Math.floor(Math.random() * categories.length)];
+      const priority = priorities[Math.floor(Math.random() * priorities.length)];
+      const status = statuses[Math.floor(Math.random() * statuses.length)];
+
+      const issues = sampleIssues[category] || ['General support request'];
+      const subject = issues[Math.floor(Math.random() * issues.length)];
 
       const ticket = {
         userId: user._id,
-        subject: subjects[Math.floor(Math.random() * subjects.length)],
-        description: `I am experiencing issues with my account. Please help me resolve this issue.`,
-        category: categories[Math.floor(Math.random() * categories.length)],
-        priority: priorities[Math.floor(Math.random() * priorities.length)],
-        status: statuses[Math.floor(Math.random() * statuses.length)],
-        assignedTo: admin?._id || null,
+        subject,
+        description: `Detailed description of the issue: ${subject}. Please help me resolve this as soon as possible.`,
+        category,
+        priority,
+        status,
+        assignedTo: status !== 'Open' ? this.createdData.admins[Math.floor(Math.random() * this.createdData.admins.length)]._id : null,
         attachments: [],
         responses: [],
-        tags: [],
-        lastResponseAt: new Date(),
+        tags: [category.toLowerCase().replace(' ', '_')],
         metadata: {
-          source: 'web',
-          ipAddress: '192.168.1.' + Math.floor(Math.random() * 255),
-          userAgent: 'Mozilla/5.0 (compatible; Seeder/1.0)'
+          userAgent: 'Mobile App',
+          source: 'demo_seed'
         },
-        createdAt: new Date(Date.now() - Math.random() * 15 * 24 * 60 * 60 * 1000),
+        createdAt: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000),
         updatedAt: new Date(),
+        resolvedAt: status === 'Resolved' || status === 'Closed' ? new Date() : null
       };
+
+      // Add sample responses for non-open tickets
+      if (status !== 'Open') {
+        ticket.responses = [
+          {
+            adminId: ticket.assignedTo,
+            message: 'Thank you for contacting support. We are looking into your issue.',
+            isInternal: false,
+            createdAt: new Date(ticket.createdAt.getTime() + 2 * 60 * 60 * 1000)
+          }
+        ];
+
+        if (status === 'Resolved' || status === 'Closed') {
+          ticket.responses.push({
+            adminId: ticket.assignedTo,
+            message: 'Your issue has been resolved. Please let us know if you need further assistance.',
+            isInternal: false,
+            createdAt: ticket.resolvedAt
+          });
+        }
+      }
 
       tickets.push(ticket);
     }
 
     if (tickets.length > 0) {
-      await db.collection('support_tickets').insertMany(tickets);
+      const results = await db.collection('support_tickets').insertMany(tickets);
+      
+      tickets.forEach((ticket, index) => {
+        ticket._id = results.insertedIds[index];
+      });
+      
       this.createdData.tickets.push(...tickets);
     }
 
-    console.log(`✅ ${ticketCount} support tickets created`);
+    console.log(`✅ ${tickets.length} support tickets created`);
   }
 
-  async seedTasks() {
-    console.log('📋 Seeding tasks...');
+  async seedNews() {
+    console.log('📰 Seeding news articles...');
 
     const db = mongoose.connection.db;
     
-    const tasks = [
+    const newsData = [
       {
-        title: 'Complete Profile Setup',
-        description: 'Fill out your complete profile information including personal details and preferences.',
-        category: 'Account',
-        difficulty: 'Easy',
-        reward: 100,
-        currency: 'BDT',
-        status: 'Active',
-        validFrom: new Date(),
-        validUntil: null,
-        isRepeatable: false,
+        title: 'Welcome to IProfit - Your Financial Journey Starts Here',
+        slug: 'welcome-to-iprofit-financial-journey',
+        content: `<p>We are thrilled to announce the official launch of IProfit, your comprehensive financial management platform designed to help you achieve your financial goals.</p>
+        
+        <p>Our platform offers:</p>
+        <ul>
+          <li>Secure investment opportunities</li>
+          <li>Competitive loan options</li>
+          <li>Rewarding referral programs</li>
+          <li>Task-based earning system</li>
+          <li>24/7 customer support</li>
+        </ul>
+        
+        <p>Join thousands of users who are already building their financial future with IProfit.</p>`,
+        excerpt: 'Discover how IProfit can help you achieve your financial goals with our comprehensive platform.',
+        category: 'Announcement',
+        status: 'Published',
+        isSticky: true,
+        author: 'IProfit Team',
+        featuredImage: '/images/news/welcome.jpg',
+        tags: ['announcement', 'launch', 'platform'],
+        publishedAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
         metadata: {
-          tags: ['profile', 'setup', 'onboarding']
-        },
-        createdAt: new Date(),
-        updatedAt: new Date()
+          seoTitle: 'Welcome to IProfit Financial Platform',
+          seoDescription: 'Start your financial journey with IProfit - secure investments, loans, and rewards await.'
+        }
       },
       {
-        title: 'Verify Phone Number',
-        description: 'Verify your phone number to secure your account and receive important notifications.',
+        title: 'New Referral Program: Earn More, Share More',
+        slug: 'new-referral-program-earn-share-more',
+        content: `<p>We're excited to introduce our enhanced referral program that rewards you for bringing friends and family to IProfit.</p>
+        
+        <h3>How It Works:</h3>
+        <ol>
+          <li>Share your unique referral code</li>
+          <li>Friends sign up and complete KYC</li>
+          <li>You both earn 100 BDT signup bonus</li>
+          <li>Earn 10% of their profits forever</li>
+        </ol>
+        
+        <p>The more you refer, the more you earn. Start sharing today!</p>`,
+        excerpt: 'Introducing our enhanced referral program with signup bonuses and lifetime profit sharing.',
+        category: 'Feature',
+        status: 'Published',
+        isSticky: false,
+        author: 'Marketing Team',
+        featuredImage: '/images/news/referral.jpg',
+        tags: ['referral', 'bonus', 'earning'],
+        publishedAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000)
+      },
+      {
+        title: 'Enhanced Loan Features Now Available',
+        slug: 'enhanced-loan-features-available',
+        content: `        <p>We've upgraded our loan system to serve you better with faster approvals and competitive rates.</p>
+        
+        <h3>What's New:</h3>
+        <ul>
+          <li>Instant loan eligibility check</li>
+          <li>EMI calculator for planning</li>
+          <li>Flexible repayment options</li>
+          <li>Lower interest rates for premium users</li>
+          <li>Digital document submission</li>
+        </ul>
+        
+        <p>Apply for your loan today and get approved within 24 hours!</p>`,
+        excerpt: 'Our enhanced loan system offers faster approvals, better rates, and more flexibility.',
+        category: 'Feature',
+        status: 'Published',
+        isSticky: false,
+        author: 'Product Team',
+        featuredImage: '/images/news/loans.jpg',
+        tags: ['loans', 'features', 'approval'],
+        publishedAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000)
+      },
+      {
+        title: 'Security Update: Enhanced Device Protection',
+        slug: 'security-update-enhanced-device-protection',
+        content: `<p>Your security is our top priority. We've implemented advanced device fingerprinting to protect your account.</p>
+        
+        <h3>New Security Features:</h3>
+        <ul>
+          <li>One account per device policy</li>
+          <li>Advanced fraud detection</li>
+          <li>Real-time security alerts</li>
+          <li>Enhanced login monitoring</li>
+        </ul>
+        
+        <p>These updates ensure your funds and personal information remain secure at all times.</p>`,
+        excerpt: 'New security measures including device fingerprinting and fraud detection are now active.',
         category: 'Security',
-        difficulty: 'Easy',
-        reward: 50,
-        currency: 'BDT',
-        status: 'Active',
-        validFrom: new Date(),
-        validUntil: null,
-        isRepeatable: false,
-        metadata: {
-          tags: ['verification', 'security', 'phone']
-        },
-        createdAt: new Date(),
-        updatedAt: new Date()
+        status: 'Published',
+        isSticky: false,
+        author: 'Security Team',
+        featuredImage: '/images/news/security.jpg',
+        tags: ['security', 'protection', 'update'],
+        publishedAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000)
       },
       {
-        title: 'First Investment',
-        description: 'Make your first investment to start earning profits.',
-        category: 'Investment',
-        difficulty: 'Medium',
-        reward: 500,
-        currency: 'BDT',
-        status: 'Active',
-        validFrom: new Date(),
-        validUntil: null,
-        isRepeatable: false,
-        metadata: {
-          tags: ['investment', 'first-time', 'milestone']
-        },
-        createdAt: new Date(),
-        updatedAt: new Date()
+        title: 'Task System: Earn While You Learn',
+        slug: 'task-system-earn-while-learn',
+        content: `<p>Complete simple tasks and earn rewards while learning about financial literacy and our platform.</p>
+        
+        <h3>Available Tasks:</h3>
+        <ul>
+          <li>Social media engagement (50-100 BDT)</li>
+          <li>Educational video watching (75 BDT)</li>
+          <li>App installations (100 BDT)</li>
+          <li>Product reviews (200 BDT)</li>
+          <li>Referral challenges (500 BDT)</li>
+        </ul>
+        
+        <p>Start completing tasks today and boost your earnings!</p>`,
+        excerpt: 'Complete tasks ranging from social media engagement to educational content for rewards.',
+        category: 'Feature',
+        status: 'Published',
+        isSticky: false,
+        author: 'Community Team',
+        featuredImage: '/images/news/tasks.jpg',
+        tags: ['tasks', 'rewards', 'learning'],
+        publishedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+      },
+      {
+        title: 'Premium Plans: Unlock Maximum Potential',
+        slug: 'premium-plans-unlock-maximum-potential',
+        content: `<p>Upgrade to our premium plans and enjoy higher limits, priority support, and exclusive features.</p>
+        
+        <h3>Plan Benefits:</h3>
+        <ul>
+          <li><strong>Silver Plan (1,000 BDT):</strong> 50,000 BDT deposit limit, priority support</li>
+          <li><strong>Gold Plan (5,000 BDT):</strong> 200,000 BDT deposit limit, VIP support</li>
+          <li><strong>Platinum Plan (15,000 BDT):</strong> 500,000 BDT deposit limit, dedicated manager</li>
+          <li><strong>Diamond Plan (25,000 BDT):</strong> Unlimited access, white-glove service</li>
+        </ul>
+        
+        <p>Choose the plan that fits your financial goals and start earning more today.</p>`,
+        excerpt: 'Explore our premium plans with higher limits, better support, and exclusive benefits.',
+        category: 'Plans',
+        status: 'Published',
+        isSticky: false,
+        author: 'Sales Team',
+        featuredImage: '/images/news/plans.jpg',
+        tags: ['plans', 'premium', 'upgrade'],
+        publishedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000)
+      },
+      {
+        title: 'Mobile App Update: Better Performance & Features',
+        slug: 'mobile-app-update-better-performance-features',
+        content: `<p>Our latest mobile app update brings improved performance, new features, and enhanced user experience.</p>
+        
+        <h3>What's New in v2.1:</h3>
+        <ul>
+          <li>50% faster loading times</li>
+          <li>Improved transaction history</li>
+          <li>Enhanced KYC upload process</li>
+          <li>Real-time notifications</li>
+          <li>Dark mode support</li>
+          <li>Biometric authentication</li>
+        </ul>
+        
+        <p>Update your app now to enjoy these improvements!</p>`,
+        excerpt: 'Mobile app v2.1 features faster performance, new capabilities, and better user experience.',
+        category: 'Update',
+        status: 'Published',
+        isSticky: false,
+        author: 'Development Team',
+        featuredImage: '/images/news/app-update.jpg',
+        tags: ['mobile', 'update', 'performance'],
+        publishedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)
+      },
+      {
+        title: 'Customer Success Stories: Real Users, Real Results',
+        slug: 'customer-success-stories-real-users-results',
+        content: `<p>Meet some of our successful users who have achieved their financial goals with IProfit.</p>
+        
+        <h3>Success Highlights:</h3>
+        <blockquote>
+          <p>"I've earned over 50,000 BDT through referrals and smart investments in just 6 months!" - Ahmed Rahman, Dhaka</p>
+        </blockquote>
+        
+        <blockquote>
+          <p>"The loan approval was so fast, I got my business funding within 24 hours." - Fatima Khan, Chittagong</p>
+        </blockquote>
+        
+        <blockquote>
+          <p>"Task completion helped me learn about finance while earning extra income." - Mohammad Ali, Sylhet</p>
+        </blockquote>
+        
+        <p>Join thousands of satisfied users and start your success story today!</p>`,
+        excerpt: 'Read inspiring success stories from real IProfit users who achieved their financial goals.',
+        category: 'Success Stories',
+        status: 'Published',
+        isSticky: false,
+        author: 'Marketing Team',
+        featuredImage: '/images/news/success.jpg',
+        tags: ['success', 'testimonials', 'users'],
+        publishedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000)
       }
     ];
 
-    for (const task of tasks) {
-      const existing = await db.collection('tasks').findOne({ title: task.title });
+    for (const article of newsData) {
+      const existing = await db.collection('news').findOne({ slug: article.slug });
       if (!existing) {
-        await db.collection('tasks').insertOne(task);
-        console.log(`✅ Task created: ${task.title}`);
+        const newsDoc = {
+          ...article,
+          createdAt: article.publishedAt,
+          updatedAt: new Date()
+        };
+        const result = await db.collection('news').insertOne(newsDoc);
+        this.createdData.news.push({ ...newsDoc, _id: result.insertedId });
+        console.log(`✅ News article created: ${article.title}`);
+      } else {
+        this.createdData.news.push(existing);
       }
     }
   }
 
-  async generateSummary() {
-    console.log('\n📊 Seeding Summary');
-    console.log('==================');
+  async createNotifications() {
+    console.log('🔔 Creating system notifications...');
 
     const db = mongoose.connection.db;
+    const notifications = [];
 
-    const counts = {
-      admins: await db.collection('admins').countDocuments(),
-      users: await db.collection('users').countDocuments(),
-      plans: await db.collection('plans').countDocuments(),
-      transactions: await db.collection('transactions').countDocuments(),
-      loans: await db.collection('loans').countDocuments(),
-      referrals: await db.collection('referrals').countDocuments(),
-      tickets: await db.collection('support_tickets').countDocuments(),
-      tasks: await db.collection('tasks').countDocuments()
-    };
+    // Create notifications for major events
+    const notificationTypes = [
+      {
+        type: 'System',
+        title: 'Welcome to IProfit!',
+        message: 'Your account has been created successfully. Complete your KYC to unlock all features.',
+        priority: 'High',
+        channel: 'in_app'
+      },
+      {
+        type: 'Referral',
+        title: 'Referral Bonus Credited',
+        message: 'You have earned a referral bonus! Check your transaction history.',
+        priority: 'Medium',
+        channel: 'in_app'
+      },
+      {
+        type: 'KYC',
+        title: 'KYC Verification Required',
+        message: 'Please complete your KYC verification to access premium features.',
+        priority: 'High',
+        channel: 'in_app'
+      },
+      {
+        type: 'Marketing',
+        title: 'New Features Available',
+        message: 'Check out our latest updates including enhanced loan features and task system.',
+        priority: 'Low',
+        channel: 'in_app'
+      }
+    ];
 
-    Object.entries(counts).forEach(([key, count]) => {
-      console.log(`${key.charAt(0).toUpperCase() + key.slice(1)}: ${count}`);
-    });
+    // Create notifications for random users
+    const selectedUsers = this.createdData.users.slice(0, Math.min(50, this.createdData.users.length));
 
-    if (!this.options.production) {
-      console.log('\n🔐 Default Credentials (Development):');
-      console.log('=====================================');
-      console.log('Super Admin:');
-      console.log('  Email: admin@iprofit.com');
-      console.log('  Password: Admin123@#');
-      console.log('');
-      console.log('Moderator:');
-      console.log('  Email: moderator@iprofit.com');
-      console.log('  Password: Mod123!@#');
-      console.log('');
-      console.log('Sample User:');
-      console.log('  Any user email from the generated users');
-      console.log('  Password: User123@#');
+    for (const user of selectedUsers) {
+      // Each user gets 1-3 notifications
+      const notificationCount = Math.floor(Math.random() * 3) + 1;
+      
+      for (let i = 0; i < notificationCount; i++) {
+        const notificationType = notificationTypes[Math.floor(Math.random() * notificationTypes.length)];
+        
+        const notification = {
+          userId: user._id,
+          type: notificationType.type,
+          channel: notificationType.channel,
+          title: notificationType.title,
+          message: notificationType.message,
+          status: Math.random() > 0.3 ? 'Read' : 'Sent', // 70% read rate
+          priority: notificationType.priority,
+          sentAt: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000),
+          readAt: Math.random() > 0.3 ? new Date() : null,
+          retryCount: 0,
+          maxRetries: 3,
+          metadata: {
+            source: 'system_notification',
+            userId: user._id.toString()
+          },
+          createdAt: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000),
+          updatedAt: new Date()
+        };
+
+        notifications.push(notification);
+      }
     }
 
-    console.log('\n🚀 Ready to start! Run: npm run dev');
+    if (notifications.length > 0) {
+      const results = await db.collection('notifications').insertMany(notifications);
+      
+      notifications.forEach((notification, index) => {
+        notification._id = results.insertedIds[index];
+      });
+      
+      this.createdData.notifications.push(...notifications);
+    }
+
+    console.log(`✅ ${notifications.length} notifications created`);
+  }
+
+  async generateSummary() {
+    console.log('\n📊 Database Seeding Summary');
+    console.log('================================');
+
+    // Calculate referral statistics
+    const totalReferrals = this.createdData.referrals.length;
+    const paidReferrals = this.createdData.referrals.filter(r => r.status === 'Paid').length;
+    const signupBonuses = this.createdData.referrals.filter(r => r.bonusType === 'signup').length;
+    const profitShares = this.createdData.referrals.filter(r => r.bonusType === 'profit_share').length;
+    const totalBonusAmount = this.createdData.referrals
+      .filter(r => r.status === 'Paid')
+      .reduce((sum, r) => sum + r.bonusAmount + r.profitBonus, 0);
+
+    // Calculate user statistics
+    const totalUsers = this.createdData.users.length;
+    const kycApprovedUsers = this.createdData.users.filter(u => u.kycStatus === 'Approved').length;
+    const referredUsers = this.createdData.users.filter(u => u.referredBy).length;
+
+    // Plan distribution
+    const planDistribution = {};
+    this.createdData.users.forEach(user => {
+      const planName = user.planName || 'Unknown';
+      planDistribution[planName] = (planDistribution[planName] || 0) + 1;
+    });
+
+    // Transaction statistics
+    const totalTransactions = this.createdData.transactions.length;
+    const approvedTransactions = this.createdData.transactions.filter(t => t.status === 'Approved').length;
+    const totalTransactionValue = this.createdData.transactions
+      .filter(t => t.status === 'Approved')
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    console.log(`📈 Users: ${totalUsers} total, ${kycApprovedUsers} KYC approved, ${referredUsers} referred`);
+    console.log(`🔗 Referrals: ${totalReferrals} total, ${paidReferrals} paid, ${totalBonusAmount.toLocaleString()} BDT in bonuses`);
+    console.log(`   └─ Signup bonuses: ${signupBonuses}, Profit shares: ${profitShares}`);
+    console.log(`💳 Transactions: ${totalTransactions} total, ${approvedTransactions} approved, ${totalTransactionValue.toLocaleString()} BDT value`);
+    console.log(`🏦 Loans: ${this.createdData.loans.length} applications`);
+    console.log(`📋 Tasks: ${this.createdData.tasks.length} available, ${this.createdData.taskSubmissions.length} submissions`);
+    console.log(`🎫 Support: ${this.createdData.tickets.length} tickets`);
+    console.log(`📰 News: ${this.createdData.news.length} articles`);
+    console.log(`🔔 Notifications: ${this.createdData.notifications.length} sent`);
+
+    console.log('\n📊 Plan Distribution:');
+    Object.entries(planDistribution).forEach(([plan, count]) => {
+      console.log(`   ${plan}: ${count} users`);
+    });
+
+    console.log('\n🎯 Demo Referral Scenarios Created:');
+    console.log('   ✅ Multi-level referral chains');
+    console.log('   ✅ Signup bonuses with conditions');
+    console.log('   ✅ Profit sharing calculations');
+    console.log('   ✅ Pending and approved bonuses');
+    console.log('   ✅ Transaction tracking for rewards');
+    console.log('   ✅ Realistic user behavior patterns');
+
+    console.log('\n🔑 Demo Login Credentials:');
+    console.log('   Admin: admin@iprofit.com / Admin123@#');
+    console.log('   Moderator: moderator@iprofit.com / Mod123@#');
+    console.log('   Finance: finance@iprofit.com / Finance123@#');
+    console.log('   Users: Any generated email / User123@#');
+
+    console.log('\n🚀 Next Steps:');
+    console.log('   1. Run: npm run dev');
+    console.log('   2. Login and explore the referral system');
+    console.log('   3. Check pending referral bonuses');
+    console.log('   4. Process approvals and see transactions');
+    console.log('   5. View referral chains and profit sharing');
+
+    if (this.options.demo) {
+      console.log('\n🎪 Demo Mode Highlights:');
+      console.log('   • Comprehensive referral ecosystem');
+      console.log('   • Realistic transaction patterns');
+      console.log('   • Multi-level user engagement');
+      console.log('   • Complete admin workflow demos');
+    }
+  }
+
+  async hashPassword(password) {
+    return await bcrypt.hash(password, 12);
   }
 }
 
 // Main execution
 async function main() {
-  console.log('🌱 IProfit Database Seeder');
-  console.log('===========================');
+  console.log('🌱 IProfit Enhanced Database Seeder');
+  console.log('====================================');
 
   const args = process.argv.slice(2);
   const options = {
     reset: args.includes('--reset'),
     production: args.includes('--production'),
+    demo: args.includes('--demo'),
     count: {
-      users: 50,
-      transactions: 200,
-      loans: 25,
-      tickets: 30,
+      users: args.includes('--production') ? 0 : (args.includes('--demo') ? 150 : 100),
+      transactions: args.includes('--production') ? 0 : (args.includes('--demo') ? 500 : 300),
+      loans: args.includes('--production') ? 0 : (args.includes('--demo') ? 60 : 40),
+      tickets: args.includes('--production') ? 0 : (args.includes('--demo') ? 80 : 50),
+      tasks: 15,
+      news: 10
     },
   };
 
   if (options.production) {
-    console.log('⚠️  Production mode: Limited seeding');
-    options.count = { users: 0, transactions: 0, loans: 0, tickets: 0 };
+    console.log('⚠️  Production mode: Creating system data only');
+  } else if (options.demo) {
+    console.log('🎯 Demo mode: Creating comprehensive dataset with enhanced referral system');
+  } else {
+    console.log('🔧 Development mode: Creating standard test dataset');
   }
 
-  const seeder = new DatabaseSeeder(options);
+  const seeder = new EnhancedDatabaseSeeder(options);
 
   try {
     await seeder.seedAll();
@@ -842,4 +1907,4 @@ if (require.main === module) {
   main().catch(console.error);
 }
 
-module.exports = { DatabaseSeeder };
+module.exports = { EnhancedDatabaseSeeder };
