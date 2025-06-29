@@ -1,6 +1,9 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Geist } from "next/font/google";
-import { RootProvider } from "@/providers/toast-provider";
+import { Inter } from "next/font/google";
+import { AuthProvider } from "@/providers/auth-provider";
+import { QueryProvider } from "@/providers/query-provider";
+import { ThemeProvider } from "@/providers/theme-provider";
+import { Toaster } from "sonner";
 import { cn } from "@/lib/utils";
 import "./globals.css";
 
@@ -10,16 +13,10 @@ const inter = Inter({
   display: "swap",
 });
 
-const geist = Geist({
-  subsets: ["latin"],
-  variable: "--font-geist",
-  display: "swap",
-});
-
 export const metadata: Metadata = {
   title: {
-    default: "FinTech Platform",
-    template: "%s | FinTech Platform",
+    default: "IProfit Platform",
+    template: "%s | IProfit Platform",
   },
   description:
     "A comprehensive financial technology platform for modern banking and investment solutions.",
@@ -34,12 +31,12 @@ export const metadata: Metadata = {
   ],
   authors: [
     {
-      name: "FinTech Platform Team",
-      url: "https://fintechplatform.com",
+      name: "IProfit Platform Team",
+      url: "https://iprofit.com",
     },
   ],
-  creator: "FinTech Platform",
-  publisher: "FinTech Platform",
+  creator: "IProfit Platform",
+  publisher: "IProfit Platform",
   formatDetection: {
     email: false,
     address: false,
@@ -52,8 +49,8 @@ export const metadata: Metadata = {
     type: "website",
     locale: "en_US",
     url: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
-    siteName: "FinTech Platform",
-    title: "FinTech Platform - Modern Financial Solutions",
+    siteName: "IProfit Platform",
+    title: "IProfit Platform - Modern Financial Solutions",
     description:
       "A comprehensive financial technology platform for modern banking and investment solutions.",
     images: [
@@ -61,17 +58,15 @@ export const metadata: Metadata = {
         url: "/og-image.jpg",
         width: 1200,
         height: 630,
-        alt: "FinTech Platform",
+        alt: "IProfit Platform",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "FinTech Platform - Modern Financial Solutions",
+    title: "IProfit Platform - Modern Financial Solutions",
     description:
       "A comprehensive financial technology platform for modern banking and investment solutions.",
-    images: ["/og-image.jpg"],
-    creator: "@fintechplatform",
   },
   robots: {
     index: true,
@@ -84,26 +79,22 @@ export const metadata: Metadata = {
       "max-snippet": -1,
     },
   },
-  verification: {
-    google: process.env.GOOGLE_SITE_VERIFICATION,
-    yandex: process.env.YANDEX_VERIFICATION,
+  manifest: "/manifest.json",
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon-16x16.png",
+    apple: "/apple-touch-icon.png",
   },
-  alternates: {
-    canonical: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
-  },
-  category: "Finance",
 };
 
 export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "white" },
+    { media: "(prefers-color-scheme: dark)", color: "black" },
+  ],
   width: "device-width",
   initialScale: 1,
-  maximumScale: 5,
-  userScalable: true,
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
-  ],
-  colorScheme: "light dark",
+  maximumScale: 1,
 };
 
 interface RootLayoutProps {
@@ -112,46 +103,37 @@ interface RootLayoutProps {
 
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
-    <html
-      lang="en"
-      suppressHydrationWarning
-      className={cn(inter.variable, geist.variable, "scroll-smooth")}
-    >
-      <head>
-        <link rel="icon" href="/favicon.ico" sizes="any" />
-        <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-        <link rel="manifest" href="/manifest.json" />
-        <meta name="msapplication-TileColor" content="#000000" />
-        <meta name="msapplication-config" content="/browserconfig.xml" />
-      </head>
+    <html lang="en" suppressHydrationWarning>
       <body
         className={cn(
-          "min-h-screen bg-background font-inter antialiased",
-          "selection:bg-primary/20 selection:text-primary-foreground"
+          "min-h-screen bg-background font-sans antialiased",
+          inter.variable
         )}
         suppressHydrationWarning
       >
-        <RootProvider>
-          <div className="relative flex min-h-screen flex-col">
-            <div className="flex-1">{children}</div>
-          </div>
-        </RootProvider>
-
-        {/* Prevent FOUC (Flash of Unstyled Content) */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              try {
-                if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-                  document.documentElement.classList.add('dark')
-                } else {
-                  document.documentElement.classList.remove('dark')
-                }
-              } catch (_) {}
-            `,
-          }}
-        />
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <QueryProvider>
+            <AuthProvider>
+              {children}
+              <Toaster
+                position="top-right"
+                toastOptions={{
+                  duration: 4000,
+                  style: {
+                    background: "hsl(var(--background))",
+                    color: "hsl(var(--foreground))",
+                    border: "1px solid hsl(var(--border))",
+                  },
+                }}
+              />
+            </AuthProvider>
+          </QueryProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

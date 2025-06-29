@@ -2,7 +2,7 @@ import mongoose, { Document, Schema, Types } from 'mongoose';
 
 export interface IAuditLog extends Document {
   _id: string;
-  adminId: Types.ObjectId;
+  adminId?: mongoose.Types.ObjectId | null;
   action: string;
   entity: string;
   entityId?: string;

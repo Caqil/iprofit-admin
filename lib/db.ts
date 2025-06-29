@@ -1,22 +1,24 @@
 import mongoose from 'mongoose';
-import { env } from '@/config/env';
 
-interface CachedConnection {
+const MONGODB_URI = process.env.MONGODB_URI!;
+
+if (!MONGODB_URI) {
+  throw new Error('Please define the MONGODB_URI environment variable inside .env.local');
+}
+
+interface MongooseCache {
   conn: typeof mongoose | null;
   promise: Promise<typeof mongoose> | null;
 }
 
 declare global {
-  var mongoose: CachedConnection | undefined;
+  var mongooseCache: MongooseCache | undefined;
 }
 
-const cached: CachedConnection = global.mongoose || {
-  conn: null,
-  promise: null,
-};
+let cached: MongooseCache = global.mongooseCache || { conn: null, promise: null };
 
-if (!global.mongoose) {
-  global.mongoose = cached;
+if (!global.mongooseCache) {
+  global.mongooseCache = cached;
 }
 
 export async function connectToDatabase(): Promise<typeof mongoose> {
@@ -25,86 +27,96 @@ export async function connectToDatabase(): Promise<typeof mongoose> {
   }
 
   if (!cached.promise) {
-    const options = {
+    // Updated Mongoose connection options - removed deprecated options
+    const opts: mongoose.ConnectOptions = {
       bufferCommands: false,
-      maxPoolSize: env.DB_MAX_POOL_SIZE,
-      serverSelectionTimeoutMS: env.DB_SERVER_TIMEOUT,
-      socketTimeoutMS: env.DB_SOCKET_TIMEOUT,
-      authSource: env.DB_AUTH_SOURCE,
-      retryWrites: true,
-      w: 'majority' as const,
-      // Suppress deprecation warnings
-      strictQuery: false,
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+      family: 4,
+      // Removed strictQuery as it's deprecated
+      // Removed other deprecated options
     };
 
-    cached.promise = mongoose.connect(env.MONGODB_URI, options);
+    // Set mongoose options before connecting
+    mongoose.set('strictQuery', false); // This is the correct way to set it
+
+    cached.promise = mongoose.connect(MONGODB_URI, opts);
   }
 
   try {
     cached.conn = await cached.promise;
-    
-    // Handle connection events
-    mongoose.connection.on('connected', () => {
-      console.log('✅ MongoDB connected successfully');
-    });
-
-    mongoose.connection.on('error', (error) => {
-      console.error('❌ MongoDB connection error:', error);
-      cached.conn = null;
-      cached.promise = null;
-    });
-
-    mongoose.connection.on('disconnected', () => {
-      console.log('⚠️ MongoDB disconnected');
-      cached.conn = null;
-      cached.promise = null;
-    });
-
-    // Graceful shutdown
-    process.on('SIGINT', async () => {
-      await mongoose.connection.close();
-      process.exit(0);
-    });
-
+    console.log('✅ Connected to MongoDB');
     return cached.conn;
-  } catch (error) {
+  } catch (e) {
     cached.promise = null;
-    throw error;
+    console.error('❌ MongoDB connection error:', e);
+    throw e;
   }
-}
-
-export function isConnected(): boolean {
-  return mongoose.connection.readyState === 1;
 }
 
 export async function disconnectFromDatabase(): Promise<void> {
   if (cached.conn) {
-    await mongoose.disconnect();
+    await cached.conn.disconnect();
     cached.conn = null;
     cached.promise = null;
+    console.log('✅ Disconnected from MongoDB');
   }
 }
 
-// Optional: Health check function for the database
-export async function checkDatabaseHealth(): Promise<{
-  connected: boolean;
-  readyState: number;
-  host?: string;
-  name?: string;
-}> {
+// Database health check
+export async function checkDatabaseHealth(): Promise<boolean> {
   try {
-    await connectToDatabase();
-    
-    return {
-      connected: isConnected(),
-      readyState: mongoose.connection.readyState,
-      host: mongoose.connection.host,
-      name: mongoose.connection.name
-    };
-  } catch (error) {
-    return {
-      connected: false,
-      readyState: mongoose.connection.readyState
-    };
+    const connection = await connectToDatabase();
+    return connection.connection.readyState === 1;
+  } catch {
+    return false;
   }
 }
+
+// Connection event handlers
+export function setupDatabaseEventHandlers() {
+  mongoose.connection.on('connected', () => {
+    console.log('✅ Mongoose connected to MongoDB');
+  });
+
+  mongoose.connection.on('error', (error) => {
+    console.error('❌ Mongoose connection error:', error);
+  });
+
+  mongoose.connection.on('disconnected', () => {
+    console.log('⚠️ Mongoose disconnected from MongoDB');
+  });
+
+  mongoose.connection.on('reconnected', () => {
+    console.log('🔄 Mongoose reconnected to MongoDB');
+  });
+
+  // Graceful shutdown
+  process.on('SIGINT', async () => {
+    try {
+      await mongoose.connection.close();
+      console.log('📴 MongoDB connection closed through app termination');
+      process.exit(0);
+    } catch (error) {
+      console.error('Error during MongoDB disconnection:', error);
+      process.exit(1);
+    }
+  });
+
+  process.on('SIGTERM', async () => {
+    try {
+      await mongoose.connection.close();
+      console.log('📴 MongoDB connection closed through SIGTERM');
+      process.exit(0);
+    } catch (error) {
+      console.error('Error during MongoDB disconnection:', error);
+      process.exit(1);
+    }
+  });
+}
+
+// Initialize database event handlers when module is loaded
+setupDatabaseEventHandlers();
+
+export default connectToDatabase;

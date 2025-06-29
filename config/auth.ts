@@ -1,4 +1,4 @@
-
+import { NextAuthOptions } from "next-auth";
 import { MongoDBAdapter } from "@next-auth/mongodb-adapter";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
@@ -15,7 +15,6 @@ import { generateReferralCode } from "@/utils/helpers";
 import { AdminRole } from "@/types";
 import speakeasy from "speakeasy";
 
-import type { NextAuthOptions } from "next-auth";
 // Extend NextAuth types
 declare module "next-auth" {
   interface User {
@@ -62,261 +61,180 @@ declare module "next-auth/jwt" {
 const client = new MongoClient(process.env.MONGODB_URI!);
 const clientPromise = client.connect();
 
-
 export const authConfig: NextAuthOptions = {
-  adapter: MongoDBAdapter(clientPromise, {
-    databaseName: process.env.MONGODB_DB_NAME || "iprofit",
-    collections: {
-      Users: "auth_users",
-      Accounts: "auth_accounts", 
-      Sessions: "auth_sessions",
-      VerificationTokens: "auth_verification_tokens"
-    }
-  }),
+  adapter: MongoDBAdapter(clientPromise),
   
   providers: [
     CredentialsProvider({
-      id: "admin-credentials",
-      name: "Admin Credentials",
+      id: "credentials",
+      name: "Credentials",
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
+        userType: { label: "User Type", type: "text" },
         twoFactorToken: { label: "2FA Token", type: "text" },
-      },
-      async authorize(credentials, req) {
-        if (!credentials?.email || !credentials?.password) {
-          throw new Error("Email and password are required");
-        }
-
-        await connectToDatabase();
-
-        try {
-          const admin = await Admin.findOne({ 
-            email: credentials.email.toLowerCase(),
-            isActive: true 
-          });
-
-          if (!admin) {
-            await logAuthAttempt(
-              credentials.email, 
-              'admin', 
-              false, 
-              'Admin not found',
-              getClientIP(req),
-              getUserAgent(req)
-            );
-            throw new Error("Invalid credentials");
-          }
-
-          const isValidPassword = await verifyPassword(credentials.password, admin.passwordHash);
-          if (!isValidPassword) {
-            await logAuthAttempt(
-              credentials.email, 
-              'admin', 
-              false, 
-              'Invalid password',
-              getClientIP(req),
-              getUserAgent(req)
-            );
-            throw new Error("Invalid credentials");
-          }
-
-          // Check 2FA if enabled
-          if (admin.twoFactorEnabled) {
-            if (!credentials.twoFactorToken) {
-              throw new Error("2FA token required");
-            }
-
-            const isValid2FA = speakeasy.totp.verify({
-              secret: admin.twoFactorSecret!,
-              encoding: 'base32',
-              token: credentials.twoFactorToken,
-              window: 2
-            });
-
-            if (!isValid2FA) {
-              await logAuthAttempt(
-                credentials.email, 
-                'admin', 
-                false, 
-                'Invalid 2FA token',
-                getClientIP(req),
-                getUserAgent(req)
-              );
-              throw new Error("Invalid 2FA token");
-            }
-          }
-
-          // Update last login
-          await Admin.findByIdAndUpdate(admin._id, { lastLogin: new Date() });
-          
-          await logAuthAttempt(
-            credentials.email, 
-            'admin', 
-            true, 
-            'Successful login',
-            getClientIP(req),
-            getUserAgent(req)
-          );
-
-          return {
-            id: admin._id.toString(),
-            email: admin.email,
-            name: admin.name,
-            userType: 'admin' as const,
-            role: admin.role,
-            avatar: admin.avatar,
-            permissions: admin.permissions
-          };
-        } catch (error) {
-          console.error('Admin auth error:', error);
-          throw error;
-        }
-      }
-    }),
-
-    CredentialsProvider({
-      id: "user-credentials", 
-      name: "User Credentials",
-      credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" },
+        rememberMe: { label: "Remember Me", type: "checkbox" },
         deviceId: { label: "Device ID", type: "text" },
         fingerprint: { label: "Fingerprint", type: "text" },
       },
       async authorize(credentials, req) {
-        if (!credentials?.email || !credentials?.deviceId || !credentials?.fingerprint) {
-          throw new Error("Email, device ID, and fingerprint are required");
+        if (!credentials?.email || !credentials?.password || !credentials?.userType) {
+          throw new Error("Email, password, and user type are required");
         }
 
-        await connectToDatabase();
-
         try {
-          // Check device limit first
-          const deviceCheck = await checkDeviceLimit(credentials.deviceId, credentials.fingerprint);
-          if (!deviceCheck.isAllowed) {
-            throw new Error("Multiple accounts detected. Contact support.");
-          }
+          await connectToDatabase();
 
-          const user = await User.findOne({ 
-            email: credentials.email.toLowerCase(),
-            status: 'Active'
-          }).populate('planId');
+          const { email, password, userType, twoFactorToken, deviceId, fingerprint } = credentials;
+          const clientIP = getClientIP(req);
+          const userAgent = getUserAgent(req);
 
-          if (!user) {
-            throw new Error("Invalid credentials");
-          }
+          if (userType === 'admin') {
+            // Admin authentication
+            const admin = await Admin.findOne({ 
+              email: email.toLowerCase(),
+              isActive: true 
+            });
 
-          // Update device info if needed
-          if (user.deviceId !== credentials.deviceId) {
-            await User.findByIdAndUpdate(user._id, { 
-              deviceId: credentials.deviceId,
+            if (!admin) {
+              await logAuthAttempt(email, userType, false, 'Admin not found', clientIP, userAgent);
+              throw new Error("Invalid credentials");
+            }
+
+            // Verify password
+            const isValidPassword = await verifyPassword(password, admin.passwordHash);
+            if (!isValidPassword) {
+              await logAuthAttempt(email, userType, false, 'Invalid password', clientIP, userAgent);
+              throw new Error("Invalid credentials");
+            }
+
+            // Check 2FA if enabled
+            if (admin.twoFactorEnabled) {
+              if (!twoFactorToken) {
+                throw new Error("TwoFactorRequired");
+              }
+
+              const isValidToken = speakeasy.totp.verify({
+                secret: admin.twoFactorSecret,
+                token: twoFactorToken,
+                window: 2
+              });
+
+              if (!isValidToken) {
+                await logAuthAttempt(email, userType, false, 'Invalid 2FA token', clientIP, userAgent);
+                throw new Error("Invalid two-factor authentication code");
+              }
+            }
+
+            // Update last login
+            await Admin.findByIdAndUpdate(admin._id, { 
               lastLogin: new Date() 
             });
+
+            await logAuthAttempt(email, userType, true, 'Successful admin login', clientIP, userAgent);
+
+            return {
+              id: admin._id.toString(),
+              email: admin.email,
+              name: admin.name,
+              userType: 'admin' as const,
+              role: admin.role,
+              avatar: admin.avatar,
+              permissions: admin.permissions
+            };
+          } 
+          
+          else if (userType === 'user') {
+            // User authentication
+            if (!deviceId || !fingerprint) {
+              throw new Error("Device identification required for user login");
+            }
+
+            // Check device limit
+            const deviceCheck = await checkDeviceLimit(deviceId, fingerprint);
+            if (!deviceCheck.isAllowed) {
+              await logAuthAttempt(email, userType, false, deviceCheck.reason || 'Device limit exceeded', clientIP, userAgent);
+              throw new Error("DeviceLimitExceeded");
+            }
+
+            const user = await User.findOne({ 
+              email: email.toLowerCase(),
+              status: 'Active'
+            }).populate('planId');
+
+            if (!user) {
+              await logAuthAttempt(email, userType, false, 'User not found', clientIP, userAgent);
+              throw new Error("Invalid credentials");
+            }
+
+            // For OAuth users, password might not be set
+            if (password && user.passwordHash) {
+              const isValidPassword = await verifyPassword(password, user.passwordHash);
+              if (!isValidPassword) {
+                await logAuthAttempt(email, userType, false, 'Invalid password', clientIP, userAgent);
+                throw new Error("Invalid credentials");
+              }
+            }
+
+            // Update device info and last login
+            await User.findByIdAndUpdate(user._id, { 
+              deviceId,
+              lastLogin: new Date() 
+            });
+
+            await logAuthAttempt(email, userType, true, 'Successful user login', clientIP, userAgent);
+
+            return {
+              id: user._id.toString(),
+              email: user.email,
+              name: user.name,
+              userType: 'user' as const,
+              phone: user.phone,
+              planId: user.planId?._id?.toString(),
+              kycStatus: user.kycStatus
+            };
           }
 
-          return {
-            id: user._id.toString(),
-            email: user.email,
-            name: user.name,
-            userType: 'user' as const,
-            phone: user.phone,
-            planId: user.planId?._id?.toString() || user.planId,
-            kycStatus: user.kycStatus
-          };
+          throw new Error("Invalid user type");
+
         } catch (error) {
-          console.error('User auth error:', error);
-          throw error;
+          console.error('Auth error:', error);
+          if (error instanceof Error) {
+            throw error;
+          }
+          throw new Error("Authentication failed");
         }
       }
     }),
 
-    // OAuth providers for user authentication
+    // OAuth providers for users
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      allowDangerousEmailAccountLinking: true,
-      profile(profile) {
-        return {
-          id: profile.sub,
-          name: profile.name,
-          email: profile.email,
-          image: profile.picture,
-          userType: 'user' as const
-        };
+      authorization: {
+        params: {
+          scope: "openid email profile"
+        }
       }
     }),
 
     FacebookProvider({
       clientId: process.env.FACEBOOK_CLIENT_ID!,
-      clientSecret: process.env.FACEBOOK_CLIENT_SECRET!,
-      allowDangerousEmailAccountLinking: true,
-      profile(profile) {
-        return {
-          id: profile.id,
-          name: profile.name,
-          email: profile.email,
-          image: profile.picture?.data?.url,
-          userType: 'user' as const
-        };
-      }
+      clientSecret: process.env.FACEBOOK_CLIENT_SECRET!
     })
   ],
 
   session: {
     strategy: "jwt",
-    maxAge: 30 * 60, // 30 minutes for admin sessions
-    updateAge: 5 * 60, // Update session every 5 minutes
+    maxAge: 30 * 24 * 60 * 60, // 30 days
+    updateAge: 24 * 60 * 60, // 24 hours
   },
 
   jwt: {
-    maxAge: 30 * 60, // 30 minutes
+    maxAge: 30 * 24 * 60 * 60, // 30 days
   },
 
   callbacks: {
-    async signIn({ user, account, profile, credentials }) {
-      // Additional sign-in validation
-      if (account?.provider === "google" || account?.provider === "facebook") {
-        try {
-          await connectToDatabase();
-          
-          const existingUser = await User.findOne({ email: user.email });
-          if (!existingUser) {
-            // Get free plan
-            const freePlan = await Plan.findOne({ name: "Free" });
-            
-            // Create new user with OAuth
-            const newUser = await User.create({
-              name: user.name,
-              email: user.email,
-              phone: '', // Will be updated later
-              planId: freePlan?._id,
-              deviceId: `oauth_${Date.now()}_${Math.random().toString(36).substring(7)}`,
-              referralCode: generateReferralCode(),
-              emailVerified: true, // OAuth emails are pre-verified
-              status: 'Active',
-              kycStatus: 'Pending'
-            });
-
-            // Update user object with database info
-            user.id = newUser._id.toString();
-            user.planId = freePlan?._id?.toString();
-            user.kycStatus = 'Pending';
-          } else {
-            // Update user object with existing user info
-            user.id = existingUser._id.toString();
-            user.planId = existingUser.planId?.toString();
-            user.kycStatus = existingUser.kycStatus;
-            user.phone = existingUser.phone;
-          }
-        } catch (error) {
-          console.error('OAuth user creation/update error:', error);
-          return false;
-        }
-      }
-      return true;
-    },
-
     async jwt({ token, user, account }) {
       // Initial sign in
       if (user) {
@@ -328,28 +246,14 @@ export const authConfig: NextAuthOptions = {
         token.kycStatus = user.kycStatus;
       }
 
-      // Update token if it's an OAuth user and we have fresh data
-      if (account?.provider === "google" || account?.provider === "facebook") {
-        try {
-          await connectToDatabase();
-          const dbUser = await User.findOne({ email: token.email });
-          if (dbUser) {
-            token.planId = dbUser.planId?.toString();
-            token.kycStatus = dbUser.kycStatus;
-            token.phone = dbUser.phone;
-          }
-        } catch (error) {
-          console.error('Token update error:', error);
-        }
-      }
-
       return token;
     },
 
     async session({ session, token }) {
+      // Send properties to the client
       if (token && session.user) {
         session.user.id = token.sub!;
-        session.user.userType = (token.userType as 'admin' | 'user') || 'user';
+        session.user.userType = token.userType as 'admin' | 'user';
         session.user.role = token.role as AdminRole;
         session.user.permissions = token.permissions as string[];
         session.user.phone = token.phone as string;
@@ -360,35 +264,100 @@ export const authConfig: NextAuthOptions = {
     },
 
     async redirect({ url, baseUrl }) {
-      // Handle different redirect scenarios
-      const urlObj = new URL(url.startsWith('/') ? `${baseUrl}${url}` : url);
+      // Handle redirect logic properly
       
-      // Check for userType parameter
+      // If URL is relative, make it absolute
+      if (url.startsWith('/')) {
+        url = `${baseUrl}${url}`;
+      }
+
+      // Parse the URL to check for parameters
+      const urlObj = new URL(url);
+      
+      // Check for callbackUrl parameter
+      const callbackUrl = urlObj.searchParams.get('callbackUrl');
+      if (callbackUrl) {
+        // If callback URL is relative, make it absolute
+        if (callbackUrl.startsWith('/')) {
+          return `${baseUrl}${callbackUrl}`;
+        }
+        // Only allow redirects to the same domain
+        const callbackUrlObj = new URL(callbackUrl);
+        if (callbackUrlObj.origin === baseUrl) {
+          return callbackUrl;
+        }
+      }
+
+      // Check for userType parameter to determine default redirect
       const userType = urlObj.searchParams.get('userType');
-      
-      // Redirect based on user type
       if (userType === 'admin') {
         return `${baseUrl}/dashboard`;
       } else if (userType === 'user') {
         return `${baseUrl}/user/dashboard`;
       }
-      
-      // Default redirect based on URL
-      if (url.includes('/admin') || url.includes('/dashboard')) {
+
+      // Default redirects based on the URL path
+      if (url.includes('/dashboard')) {
         return `${baseUrl}/dashboard`;
       }
-      
-      // Default user redirect
-      return `${baseUrl}/user/dashboard`;
+
+      // Default fallback
+      return baseUrl;
+    },
+
+    async signIn({ user, account, profile }) {
+      try {
+        // For OAuth providers, create user account if it doesn't exist
+        if (account?.provider && account.provider !== 'credentials') {
+          await connectToDatabase();
+          
+          const existingUser = await User.findOne({ 
+            email: user.email?.toLowerCase() 
+          });
+
+          if (!existingUser) {
+            // Get default plan for new users
+            const defaultPlan = await Plan.findOne({ isDefault: true });
+            
+            const newUser = await User.create({
+              name: user.name,
+              email: user.email?.toLowerCase(),
+              phone: '', // Will be updated in profile completion
+              planId: defaultPlan?._id,
+              balance: 0,
+              kycStatus: 'Pending',
+              kycDocuments: [],
+              referralCode: generateReferralCode(),
+              deviceId: '', // Will be updated on first app access
+              status: 'Active',
+              emailVerified: true, // OAuth users are pre-verified
+              phoneVerified: false,
+              twoFactorEnabled: false
+            });
+
+            // Log successful OAuth registration
+            await logAuthAttempt(
+              user.email!,
+              'user',
+              true,
+              `New user registered via ${account.provider}`,
+              '127.0.0.1',
+              'OAuth Provider'
+            );
+          }
+        }
+
+        return true;
+      } catch (error) {
+        console.error('SignIn callback error:', error);
+        return false;
+      }
     }
   },
 
   pages: {
     signIn: "/login",
-    signOut: "/login", 
     error: "/login",
-    verifyRequest: "/verify-request",
-    newUser: "/welcome"
   },
 
   events: {
@@ -396,19 +365,10 @@ export const authConfig: NextAuthOptions = {
       try {
         if (isNewUser && user.userType === 'user') {
           console.log(`New user registered: ${user.email}`);
-          
-          // Log the registration
-          await logAuthAttempt(
-            user.email,
-            'user',
-            true,
-            'New user registration via OAuth',
-            '127.0.0.1',
-            'OAuth Provider'
-          );
-          
-          // You can add welcome email sending here
-          // await sendWelcomeEmail(user.email, user.name);
+        }
+        
+        if (user.userType === 'admin') {
+          console.log(`Admin logged in: ${user.email}`);
         }
       } catch (error) {
         console.error('SignIn event error:', error);
@@ -420,7 +380,6 @@ export const authConfig: NextAuthOptions = {
         if (token?.email) {
           console.log(`User signed out: ${token.email}`);
           
-          // Log the signout
           await logAuthAttempt(
             token.email,
             token.userType || 'user',
@@ -433,24 +392,11 @@ export const authConfig: NextAuthOptions = {
       } catch (error) {
         console.error('SignOut event error:', error);
       }
-    },
-
-    async session({ session, token }) {
-      // Update last activity for active sessions
-      if (session.user?.id && session.user.userType === 'user') {
-        try {
-          await connectToDatabase();
-          await User.findByIdAndUpdate(session.user.id, {
-            lastLogin: new Date()
-          });
-        } catch (error) {
-          console.error('Session update error:', error);
-        }
-      }
     }
   },
 
   debug: process.env.NODE_ENV === "development",
+  
   logger: {
     error(code, metadata) {
       console.error("NextAuth Error:", code, metadata);
@@ -510,38 +456,4 @@ function getUserAgent(req: any): string {
   return req?.headers?.['user-agent'] || 'Unknown';
 }
 
-// Session helpers
-export async function getServerSession() {
-  const { getServerSession } = await import('next-auth');
-  return getServerSession(authConfig);
-}
-
-export async function requireAuth() {
-  const session = await getServerSession();
-  if (!session) {
-    throw new Error('Authentication required');
-  }
-  return session;
-}
-
-export async function requireAdminAuth() {
-  const session = await getServerSession();
-  if (!session || session.user.userType !== 'admin') {
-    throw new Error('Admin authentication required');
-  }
-  return session;
-}
-
-export async function requireUserAuth() {
-  const session = await getServerSession();
-  if (!session || session.user.userType !== 'user') {
-    throw new Error('User authentication required');
-  }
-  return session;
-}
-
-// Export auth configuration
 export default authConfig;
-
-// Additional configuration for NextAuth.js
-export const authOptions = authConfig;
