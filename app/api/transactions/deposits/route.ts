@@ -10,33 +10,8 @@ import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler } from '@/lib/api-helpers';
 import { z } from 'zod';
 import mongoose from 'mongoose';
+import { depositRequestSchema } from '@/lib/validation';
 
-// Deposit request validation schema
-const depositRequestSchema = z.object({
-  userId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid user ID'),
-  amount: z.number().min(0.01, 'Amount must be greater than 0'),
-  currency: z.enum(['USD', 'BDT']),
-  gateway: z.enum(['CoinGate', 'UddoktaPay', 'Manual']),
-  gatewayData: z.object({
-    // CoinGate specific
-    orderId: z.string().optional(),
-    coinbaseOrderId: z.string().optional(),
-    
-    // UddoktaPay specific
-    uddoktaPayOrderId: z.string().optional(),
-    paymentMethod: z.string().optional(),
-    
-    // Manual deposit specific
-    referenceNumber: z.string().optional(),
-    bankName: z.string().optional(),
-    accountNumber: z.string().optional(),
-    depositSlip: z.string().optional(), // File URL
-    
-    // Common fields
-    note: z.string().optional(),
-    customerReference: z.string().optional()
-  }).optional()
-});
 
 // GET /api/transactions/deposits - List deposit transactions
 async function getDepositsHandler(request: NextRequest): Promise<NextResponse> {

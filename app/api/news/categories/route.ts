@@ -8,18 +8,9 @@ import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler } from '@/lib/api-helpers';
 import { z } from 'zod';
 import mongoose from 'mongoose';
+import { categoryCreateSchema } from '@/lib/validation';
 
-// Category validation schemas
-const categoryCreateSchema = z.object({
-  name: z.string().min(1, 'Category name is required').max(50, 'Category name too long'),
-  description: z.string().max(200, 'Description too long').optional(),
-  color: z.string().regex(/^#[0-9A-F]{6}$/i, 'Invalid color format').optional(),
-  icon: z.string().optional(),
-  isActive: z.boolean().default(true),
-  sortOrder: z.number().min(0).optional().default(0)
-});
 
-const categoryUpdateSchema = categoryCreateSchema.partial();
 
 // GET /api/news/categories - Get all news categories with statistics
 async function getCategoriesHandler(request: NextRequest): Promise<NextResponse> {

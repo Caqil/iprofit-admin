@@ -11,19 +11,8 @@ import { sendEmail } from '@/lib/email';
 import { NOTIFICATION_CONFIG } from '@/utils/constants';
 import { z } from 'zod';
 import mongoose from 'mongoose';
+import { processPendingSchema, sendNotificationsSchema } from '@/lib/validation';
 
-// Manual send notifications schema
-const sendNotificationsSchema = z.object({
-  notificationIds: z.array(z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid notification ID')).min(1),
-  forceResend: z.boolean().optional().default(false)
-});
-
-// Process pending notifications schema
-const processPendingSchema = z.object({
-  batchSize: z.number().min(1).max(100).optional().default(50),
-  channel: z.enum(['email', 'sms', 'in_app', 'push']).optional(),
-  priority: z.enum(['Low', 'Medium', 'High', 'Urgent']).optional()
-});
 
 // POST /api/notifications/send - Send notifications manually or process pending
 async function sendNotificationsHandler(request: NextRequest): Promise<NextResponse> {

@@ -7,12 +7,8 @@ import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler } from '@/lib/api-helpers';
 import { z } from 'zod';
 import mongoose from 'mongoose';
+import { analyticsQuerySchema } from '@/lib/validation';
 
-// Analytics query validation schema
-const analyticsQuerySchema = z.object({
-  period: z.enum(['today', 'week', 'month', 'quarter', 'year', 'all_time']).optional().default('month'),
-  userId: z.string().optional().refine(val => !val || /^[0-9a-fA-F]{24}$/.test(val), 'Invalid user ID'),
-});
 
 // GET /api/loans/analytics - Get loan analytics and metrics
 async function getLoansAnalyticsHandler(request: NextRequest): Promise<NextResponse> {

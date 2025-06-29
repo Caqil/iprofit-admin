@@ -11,24 +11,9 @@ import { sendEmail } from '@/lib/email';
 import { TransactionApproval } from '@/types/transaction';
 import { z } from 'zod';
 import mongoose from 'mongoose';
+import { batchApprovalSchema, depositApprovalSchema } from '@/lib/validation';
 
-// Deposit approval validation schema
-const depositApprovalSchema = z.object({
-  transactionId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid transaction ID'),
-  action: z.enum(['approve', 'reject']),
-  reason: z.string().optional(),
-  adminNotes: z.string().optional(),
-  adjustedAmount: z.number().min(0).optional(), // Allow admin to adjust amount during approval
-  bonusAmount: z.number().min(0).optional().default(0), // Optional signup/referral bonus
-});
 
-// Batch approval schema
-const batchApprovalSchema = z.object({
-  transactionIds: z.array(z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid transaction ID')).min(1).max(100),
-  action: z.enum(['approve', 'reject']),
-  reason: z.string().optional(),
-  adminNotes: z.string().optional()
-});
 
 // POST /api/transactions/deposits/approve - Approve or reject a deposit
 async function approveDepositHandler(request: NextRequest): Promise<NextResponse> {

@@ -8,20 +8,8 @@ import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler } from '@/lib/api-helpers';
 import { z } from 'zod';
 import { LiveChat } from '@/models/LiveChat';
+import { analyticsQuerySchema } from '@/lib/validation';
 
-const analyticsQuerySchema = z.object({
-  period: z.enum(['7d', '30d', '90d', '1y']).optional().default('30d'),
-  startDate: z.string().optional().transform(val => {
-    if (!val) return undefined;
-    const date = new Date(val);
-    return isNaN(date.getTime()) ? undefined : date;
-  }),
-  endDate: z.string().optional().transform(val => {
-    if (!val) return undefined;
-    const date = new Date(val);
-    return isNaN(date.getTime()) ? undefined : date;
-  })
-});
 
 // GET /api/support/analytics - Get support analytics
 async function getSupportAnalyticsHandler(request: NextRequest): Promise<NextResponse> {

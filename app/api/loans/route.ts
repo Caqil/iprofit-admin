@@ -11,87 +11,8 @@ import { sendEmail } from '@/lib/email';
 import { calculateCreditScore, calculateEMI, generateRepaymentSchedule } from '@/utils/helpers';
 import { z } from 'zod';
 import mongoose from 'mongoose';
+import { loanListQuerySchema, loanApplicationSchema } from '@/lib/validation';
 
-// Loan application validation schema (for admin created loans)
-const loanApplicationSchema = z.object({
-  userId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid user ID'),
-  amount: z.number().min(500, 'Minimum loan amount is $500').max(50000, 'Maximum loan amount is $50,000'),
-  purpose: z.string().min(10, 'Purpose must be at least 10 characters').max(500, 'Purpose too long'),
-  tenure: z.number().min(6, 'Minimum tenure is 6 months').max(60, 'Maximum tenure is 60 months'),
-  interestRate: z.number().min(8, 'Minimum interest rate is 8%').max(25, 'Maximum interest rate is 25%'),
-  monthlyIncome: z.number().min(1000, 'Monthly income must be at least $1,000'),
-  employmentStatus: z.string().min(1, 'Employment status is required'),
-  employmentDetails: z.object({
-    company: z.string().min(1, 'Company name is required'),
-    position: z.string().min(1, 'Position is required'),
-    workingSince: z.string().transform(str => new Date(str)),
-    salary: z.number().min(0)
-  }),
-  personalDetails: z.object({
-    maritalStatus: z.enum(['Single', 'Married', 'Divorced', 'Widowed']),
-    dependents: z.number().min(0).max(10),
-    education: z.string().min(1, 'Education is required')
-  }),
-  financialDetails: z.object({
-    bankBalance: z.number().min(0),
-    monthlyExpenses: z.number().min(0),
-    existingLoans: z.number().min(0),
-    creditHistory: z.string().optional(),
-    assets: z.array(z.object({
-      type: z.string(),
-      value: z.number().min(0),
-      description: z.string()
-    })).optional().default([])
-  }),
-  documents: z.array(z.object({
-    type: z.string(),
-    url: z.string().url(),
-    uploadedAt: z.string().optional().default(() => new Date().toISOString()).transform(str => new Date(str))
-  })).optional().default([]),
-  collateral: z.object({
-    type: z.string(),
-    value: z.number().min(0),
-    description: z.string()
-  }).optional(),
-  notes: z.string().optional()
-});
-
-// Query parameters validation schema
-const loanListQuerySchema = z.object({
-  page: z.string().optional().default('1').transform(val => parseInt(val, 10)),
-  limit: z.string().optional().default('10').transform(val => Math.min(parseInt(val, 10), 100)),
-  sortBy: z.string().optional().default('createdAt'),
-  sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
-  userId: z.string().optional(),
-  status: z.enum(['Pending', 'Approved', 'Rejected', 'Active', 'Completed', 'Defaulted']).optional(),
-  amountMin: z.string().optional().transform(val => {
-    if (!val || val === '') return undefined;
-    const num = parseFloat(val);
-    return isNaN(num) ? undefined : num;
-  }),
-  amountMax: z.string().optional().transform(val => {
-    if (!val || val === '') return undefined;
-    const num = parseFloat(val);
-    return isNaN(num) ? undefined : num;
-  }),
-  creditScoreMin: z.string().optional().transform(val => {
-    if (!val || val === '') return undefined;
-    const num = parseInt(val, 10);
-    return isNaN(num) ? undefined : num;
-  }),
-  creditScoreMax: z.string().optional().transform(val => {
-    if (!val || val === '') return undefined;
-    const num = parseInt(val, 10);
-    return isNaN(num) ? undefined : num;
-  }),
-  dateFrom: z.string().optional(),
-  dateTo: z.string().optional(),
-  isOverdue: z.string().optional().transform(val => {
-    if (!val || val === '') return undefined;
-    return val === 'true';
-  }),
-  search: z.string().optional()
-});
 
 // GET /api/loans - Get loans list with filtering and pagination
 async function getLoansHandler(request: NextRequest): Promise<NextResponse> {

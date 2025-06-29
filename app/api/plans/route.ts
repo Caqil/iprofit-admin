@@ -7,52 +7,11 @@ import { authMiddleware } from '@/middleware/auth';
 import { apiRateLimit } from '@/middleware/rate-limit';
 import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler, createPaginatedResponse, createPaginationStages } from '@/lib/api-helpers';
-import { paginationSchema } from '@/lib/validation';
+import { paginationSchema, planCreateSchema, planListQuerySchema } from '@/lib/validation';
 import { z } from 'zod';
 import mongoose from 'mongoose';
 
-// Plan creation validation schema
-const planCreateSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters').max(100),
-  description: z.string().min(10, 'Description must be at least 10 characters'),
-  price: z.number().min(0, 'Price must be non-negative'),
-  currency: z.enum(['USD', 'BDT']).optional().default('BDT'),
-  duration: z.number().min(1, 'Duration must be at least 1 day').optional(),
-  features: z.array(z.string()).min(1, 'At least one feature is required'),
-  depositLimit: z.number().min(0),
-  withdrawalLimit: z.number().min(0),
-  profitLimit: z.number().min(0),
-  minimumDeposit: z.number().min(0),
-  minimumWithdrawal: z.number().min(0),
-  dailyWithdrawalLimit: z.number().min(0),
-  monthlyWithdrawalLimit: z.number().min(0),
-  priority: z.number().min(1).max(10).optional().default(1),
-  isActive: z.boolean().default(true),
-  color: z.string().optional().default('#000000'),
-  icon: z.string().optional(),
-});
 
-// Plan update validation schema
-const planUpdateSchema = planCreateSchema.partial();
-
-// Plan list query validation schema - FIXED to handle string values properly
-const planListQuerySchema = z.object({
-  page: z.string().transform(val => parseInt(val) || 1).optional().default('1'),
-  limit: z.string().transform(val => Math.min(parseInt(val) || 10, 100)).optional().default('10'),
-  sortBy: z.string().optional().default('priority'),
-  sortOrder: z.enum(['asc', 'desc']).optional().default('asc'),
-  isActive: z.string().transform(val => {
-    if (val === 'true') return true;
-    if (val === 'false') return false;
-    return undefined;
-  }).optional(),
-  search: z.string().optional(),
-});
-
-// Object ID validation
-const objectIdValidator = z.string().refine((id) => mongoose.Types.ObjectId.isValid(id), {
-  message: 'Invalid ObjectId format'
-});
 
 // GET /api/plans - List plans with user counts
 async function getPlansHandler(request: NextRequest): Promise<NextResponse> {

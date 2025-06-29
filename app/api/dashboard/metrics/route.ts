@@ -10,16 +10,7 @@ import { authMiddleware } from '@/middleware/auth';
 import { ApiHandler } from '@/lib/api-helpers';
 import { DashboardMetrics, DashboardFilter } from '@/types';
 import { z } from 'zod';
-
-// Dashboard filter validation schema
-const dashboardFilterSchema = z.object({
-  dateRange: z.enum(['today', 'week', 'month', 'quarter', 'year', 'custom']).optional(),
-  startDate: z.string().datetime().optional(),
-  endDate: z.string().datetime().optional(),
-  currency: z.enum(['USD', 'BDT']).optional(),
-  userSegment: z.string().optional(),
-  planId: z.string().optional()
-});
+import { dashboardFilterSchema } from '@/lib/validation';
 
 async function getDashboardMetrics(request: NextRequest): Promise<NextResponse> {
   const apiHandler = ApiHandler.create(request);

@@ -10,38 +10,8 @@ import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler } from '@/lib/api-helpers';
 import { z } from 'zod';
 import mongoose from 'mongoose';
+import { withdrawalRequestSchema } from '@/lib/validation';
 
-// Withdrawal request validation schema
-const withdrawalRequestSchema = z.object({
-  userId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid user ID'),
-  amount: z.number().min(0.01, 'Amount must be greater than 0'),
-  currency: z.enum(['USD', 'BDT']),
-  withdrawalMethod: z.enum(['bank_transfer', 'mobile_banking', 'crypto_wallet', 'check']),
-  accountDetails: z.object({
-    // Bank transfer
-    accountNumber: z.string().optional(),
-    routingNumber: z.string().optional(),
-    bankName: z.string().optional(),
-    accountHolderName: z.string().optional(),
-    bankBranch: z.string().optional(),
-    
-    // Mobile banking (bKash, Nagad, etc.)
-    mobileNumber: z.string().optional(),
-    mobileProvider: z.string().optional(), // bKash, Nagad, Rocket, etc.
-    
-    // Crypto wallet
-    walletAddress: z.string().optional(),
-    walletType: z.string().optional(), // Bitcoin, Ethereum, etc.
-    
-    // Check
-    mailingAddress: z.string().optional(),
-    
-    // Common
-    note: z.string().optional()
-  }),
-  reason: z.string().optional(),
-  urgentWithdrawal: z.boolean().optional().default(false) // For express processing
-});
 
 // GET /api/transactions/withdrawals - List withdrawal transactions
 async function getWithdrawalsHandler(request: NextRequest): Promise<NextResponse> {

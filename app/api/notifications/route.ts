@@ -11,56 +11,8 @@ import { notificationValidator } from '@/utils/validators';
 import { NOTIFICATION_CONFIG } from '@/utils/constants';
 import { z } from 'zod';
 import mongoose from 'mongoose';
+import { notificationListQuerySchema, bulkNotificationSchema } from '@/lib/validation';
 
-// Notification list query validation
-const notificationListQuerySchema = z.object({
-  page: z.string().optional().default('1').transform(val => {
-    const num = parseInt(val, 10);
-    return isNaN(num) || num < 1 ? 1 : num;
-  }),
-  limit: z.string().optional().default('10').transform(val => {
-    const num = parseInt(val, 10);
-    return isNaN(num) || num < 1 ? 10 : Math.min(num, 100);
-  }),
-  sortBy: z.string().optional().default('createdAt'),
-  sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
-  
-  // Filters
-  type: z.enum(['KYC', 'Withdrawal', 'Loan', 'Task', 'Referral', 'System', 'Marketing']).optional(),
-  channel: z.enum(['email', 'sms', 'in_app', 'push']).optional(),
-  status: z.enum(['Pending', 'Sent', 'Delivered', 'Failed', 'Read']).optional(),
-  priority: z.enum(['Low', 'Medium', 'High', 'Urgent']).optional(),
-  userId: z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
-  search: z.string().optional(),
-  
-  // Date filters
-  dateFrom: z.string().optional().transform(val => {
-    if (!val || val === '') return undefined;
-    const date = new Date(val);
-    return isNaN(date.getTime()) ? undefined : date;
-  }),
-  dateTo: z.string().optional().transform(val => {
-    if (!val || val === '') return undefined;
-    const date = new Date(val);
-    return isNaN(date.getTime()) ? undefined : date;
-  })
-});
-
-// Bulk notification schema
-const bulkNotificationSchema = z.object({
-  type: z.enum(['KYC', 'Withdrawal', 'Loan', 'Task', 'Referral', 'System', 'Marketing']),
-  channel: z.enum(['email', 'sms', 'in_app', 'push']),
-  title: z.string().min(1, 'Title is required'),
-  message: z.string().min(1, 'Message is required'),
-  priority: z.enum(['Low', 'Medium', 'High', 'Urgent']).optional().default('Medium'),
-  scheduledAt: z.string().datetime().optional(),
-  recipients: z.array(z.object({
-    userId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid user ID'),
-    variables: z.record(z.any()).optional()
-  })).min(1, 'At least one recipient is required'),
-  templateId: z.string().optional(),
-  sendImmediately: z.boolean().optional().default(false)
-});
 
 // GET /api/notifications - List notifications
 async function getNotificationsHandler(request: NextRequest): Promise<NextResponse> {

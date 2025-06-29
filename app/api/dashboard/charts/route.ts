@@ -9,15 +9,7 @@ import { authMiddleware } from '@/middleware/auth';
 import { ApiHandler } from '@/lib/api-helpers';
 import { ChartData, TimeSeriesData } from '@/types';
 import { z } from 'zod';
-
-// Chart filter validation schema
-const chartFilterSchema = z.object({
-  dateRange: z.enum(['today', 'week', 'month', 'quarter', 'year']).optional(),
-  startDate: z.string().datetime().optional(),
-  endDate: z.string().datetime().optional(),
-  currency: z.enum(['USD', 'BDT']).optional(),
-  groupBy: z.enum(['day', 'week', 'month']).optional()
-});
+import { chartFilterSchema } from '@/lib/validation';
 
 async function getDashboardCharts(request: NextRequest): Promise<NextResponse> {
   const apiHandler = ApiHandler.create(request);

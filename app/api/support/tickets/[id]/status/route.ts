@@ -7,14 +7,9 @@ import { apiRateLimit } from '@/middleware/rate-limit';
 import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler } from '@/lib/api-helpers';
 import { sendEmail } from '@/lib/email';
-import { objectIdValidator } from '@/utils/validators';
+import { objectIdValidator, statusUpdateSchema } from '@/lib/validation';
 import { z } from 'zod';
 
-const statusUpdateSchema = z.object({
-  status: z.enum(['Open', 'In Progress', 'Waiting for User', 'Resolved', 'Closed']),
-  resolution: z.string().optional(),
-  internalNotes: z.string().optional()
-});
 
 // PATCH /api/support/tickets/[id]/status - Update ticket status
 async function updateTicketStatusHandler(

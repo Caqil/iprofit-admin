@@ -11,42 +11,7 @@ import { sendEmail } from '@/lib/email';
 import { calculateCreditScore, calculateEMI, generateRepaymentSchedule } from '@/utils/helpers';
 import { z } from 'zod';
 import mongoose from 'mongoose';
-
-// User loan application schema
-const userLoanApplicationSchema = z.object({
-  amount: z.number().min(500, 'Minimum loan amount is $500').max(5500, 'Maximum loan amount is $5,500'),
-  purpose: z.string().min(10, 'Purpose must be at least 10 characters').max(500, 'Purpose too long'),
-  tenure: z.number().min(6, 'Minimum tenure is 6 months').max(60, 'Maximum tenure is 60 months'),
-  monthlyIncome: z.number().min(1000, 'Monthly income must be at least $1,000'),
-  employmentStatus: z.string().min(1, 'Employment status is required'),
-  employmentDetails: z.object({
-    company: z.string().min(1, 'Company name is required'),
-    position: z.string().min(1, 'Position is required'),
-    workingSince: z.string().transform(str => new Date(str)),
-    salary: z.number().min(0)
-  }),
-  personalDetails: z.object({
-    maritalStatus: z.enum(['Single', 'Married', 'Divorced', 'Widowed']),
-    dependents: z.number().min(0).max(10),
-    education: z.string().min(1, 'Education is required')
-  }),
-  financialDetails: z.object({
-    bankBalance: z.number().min(0),
-    monthlyExpenses: z.number().min(0),
-    existingLoans: z.number().min(0),
-    creditHistory: z.string().optional(),
-    assets: z.array(z.object({
-      type: z.string(),
-      value: z.number().min(0),
-      description: z.string()
-    })).optional().default([])
-  }),
-  documents: z.array(z.object({
-    type: z.string(),
-    url: z.string().url(),
-    uploadedAt: z.string().optional().default(() => new Date().toISOString()).transform(str => new Date(str))
-  })).optional().default([])
-});
+import { userLoanApplicationSchema } from '@/lib/validation';
 
 // POST /api/loans/applications - Submit loan application (for authenticated users)
 async function submitLoanApplicationHandler(request: NextRequest): Promise<NextResponse> {

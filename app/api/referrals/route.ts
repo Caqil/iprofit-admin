@@ -8,38 +8,11 @@ import { authMiddleware } from '@/middleware/auth';
 import { apiRateLimit } from '@/middleware/rate-limit';
 import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler, createPaginatedResponse, createPaginationStages } from '@/lib/api-helpers';
-import { paginationSchema, dateRangeSchema } from '@/lib/validation';
+import { paginationSchema, dateRangeSchema, referralListQuerySchema, createReferralSchema } from '@/lib/validation';
 import { ReferralOverview, TopReferrer } from '@/types/referral';
 import { z } from 'zod';
 import mongoose from 'mongoose';
 
-// Referral list query validation schema
-const referralListQuerySchema = paginationSchema.extend({
-  sortBy: z.string().optional().default('createdAt'),
-  sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
-  status: z.enum(['Pending', 'Paid', 'Cancelled']).optional(),
-  bonusType: z.enum(['signup', 'profit_share']).optional(),
-  referrerId: z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
-  refereeId: z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
-  amountMin: z.string().transform(Number).pipe(z.number().min(0)).optional(),
-  amountMax: z.string().transform(Number).pipe(z.number().min(0)).optional(),
-  search: z.string().optional()
-}).merge(dateRangeSchema);
-
-// Referral creation schema
-const createReferralSchema = z.object({
-  referrerId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid referrer ID'),
-  refereeId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid referee ID'),
-  bonusAmount: z.number().min(0, 'Bonus amount must be positive'),
-  bonusType: z.enum(['signup', 'profit_share']),
-  profitBonus: z.number().min(0).optional().default(0),
-  metadata: z.object({
-    refereeFirstDeposit: z.number().optional(),
-    refereeFirstDepositDate: z.string().datetime().optional(),
-    totalRefereeProfit: z.number().optional(),
-    campaignId: z.string().optional()
-  }).optional()
-});
 
 // GET /api/referrals - List referrals with filtering and pagination
 async function getReferralsHandler(request: NextRequest): Promise<NextResponse> {

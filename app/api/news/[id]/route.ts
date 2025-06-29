@@ -11,37 +11,8 @@ import { ApiHandler } from '@/lib/api-helpers';
 import { objectIdValidator } from '@/utils/validators';
 import { z } from 'zod';
 import mongoose from 'mongoose';
+import { newsPatchSchema, newsUpdateSchema } from '@/lib/validation';
 
-// News update validation schema
-const newsUpdateSchema = z.object({
-  title: z.string().min(1, 'Title is required').max(200, 'Title too long').optional(),
-  content: z.string().min(1, 'Content is required').optional(),
-  excerpt: z.string().max(500, 'Excerpt too long').optional(),
-  category: z.string().min(1, 'Category is required').optional(),
-  tags: z.array(z.string()).optional(),
-  featuredImage: z.string().url().optional(),
-  status: z.enum(['Draft', 'Published', 'Archived']).optional(),
-  isSticky: z.boolean().optional(),
-  publishedAt: z.string().datetime().optional(),
-  metadata: z.object({
-    seoTitle: z.string().max(70).optional(),
-    seoDescription: z.string().max(160).optional(),
-    socialImage: z.string().url().optional()
-  }).optional()
-});
-
-// Patch operation schema
-const newsPatchSchema = z.object({
-  action: z.enum(['publish', 'unpublish', 'archive', 'unarchive', 'stick', 'unstick', 'increment_view', 'update_metadata', 'update_tags']),
-  data: z.object({
-    metadata: z.object({
-      seoTitle: z.string().max(70).optional(),
-      seoDescription: z.string().max(160).optional(),
-      socialImage: z.string().url().optional()
-    }).optional(),
-    tags: z.array(z.string()).optional()
-  }).optional()
-});
 
 // Helper function to generate URL slug
 function generateSlug(title: string): string {

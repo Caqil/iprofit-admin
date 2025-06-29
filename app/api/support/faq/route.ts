@@ -11,35 +11,8 @@ import { ApiHandler } from '@/lib/api-helpers';
 import { FilterParams, PaginationParams, ListResponse } from '@/types';
 import { z } from 'zod';
 import mongoose from 'mongoose';
+import { faqFilterSchema, faqCreateSchema } from '@/lib/validation';
 
-// FAQ validation schemas
-const faqFilterSchema = z.object({
-  page: z.string().transform(Number).pipe(z.number().min(1)).optional().default('1'),
-  limit: z.string().transform(Number).pipe(z.number().min(1).max(100)).optional().default('10'),
-  sortBy: z.string().optional().default('priority'),
-  sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
-  category: z.string().optional(),
-  isActive: z.enum(['true', 'false']).optional(),
-  search: z.string().optional(),
-  tags: z.string().optional(), // Comma-separated tags
-  minViews: z.string().transform(Number).pipe(z.number().min(0)).optional(),
-  createdBy: z.string().optional()
-});
-
-const faqCreateSchema = z.object({
-  question: z.string().min(5, 'Question must be at least 5 characters').max(500, 'Question too long'),
-  answer: z.string().min(10, 'Answer must be at least 10 characters'),
-  category: z.string().min(1, 'Category is required'),
-  tags: z.array(z.string()).optional().default([]),
-  priority: z.number().min(0).max(10).default(0),
-  isActive: z.boolean().default(true)
-});
-
-const faqUpdateSchema = faqCreateSchema.partial();
-
-const faqFeedbackSchema = z.object({
-  helpful: z.boolean()
-});
 
 // Helper function to build FAQ filter query
 function buildFAQFilter(params: any) {

@@ -8,14 +8,11 @@ import { apiRateLimit } from '@/middleware/rate-limit';
 import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler } from '@/lib/api-helpers';
 import { sendEmail } from '@/lib/email';
-import { objectIdValidator } from '@/utils/validators';
+import { assignTicketSchema, objectIdValidator } from '@/lib/validation';
 import { z } from 'zod';
 import mongoose from 'mongoose';
 
-const assignTicketSchema = z.object({
-  adminId: z.string().refine(val => /^[0-9a-fA-F]{24}$/.test(val), 'Invalid admin ID'),
-  notes: z.string().optional()
-});
+
 
 // POST /api/support/tickets/[id]/assign - Assign ticket to admin
 async function assignTicketHandler(

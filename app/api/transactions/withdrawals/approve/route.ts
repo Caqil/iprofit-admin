@@ -11,26 +11,7 @@ import { sendEmail } from '@/lib/email';
 import { TransactionApproval } from '@/types/transaction';
 import { z } from 'zod';
 import mongoose from 'mongoose';
-
-// Withdrawal approval validation schema
-const withdrawalApprovalSchema = z.object({
-  transactionId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid transaction ID'),
-  action: z.enum(['approve', 'reject']),
-  reason: z.string().optional(),
-  adminNotes: z.string().optional(),
-  adjustedAmount: z.number().min(0).optional(), // Allow admin to adjust amount during approval
-  paymentReference: z.string().optional(), // Bank reference, transaction hash, etc.
-  estimatedDelivery: z.string().datetime().optional() // When funds will be available
-});
-
-// Batch approval schema for withdrawals
-const batchWithdrawalApprovalSchema = z.object({
-  transactionIds: z.array(z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid transaction ID')).min(1).max(50), // Lower limit for withdrawals due to manual processing
-  action: z.enum(['approve', 'reject']),
-  reason: z.string().optional(),
-  adminNotes: z.string().optional(),
-  batchPaymentReference: z.string().optional() // For batch payment processing
-});
+import { batchWithdrawalApprovalSchema, withdrawalApprovalSchema } from '@/lib/validation';
 
 // POST /api/transactions/withdrawals/approve - Approve or reject a withdrawal
 async function approveWithdrawalHandler(request: NextRequest): Promise<NextResponse> {

@@ -12,34 +12,7 @@ import { sendEmail } from '@/lib/email';
 import { TASK_CONFIG } from '@/utils/constants';
 import { z } from 'zod';
 import mongoose from 'mongoose';
-
-// Task submission list query validation
-const submissionListQuerySchema = z.object({
-  page: z.string().optional().default('1').transform(val => {
-    const num = parseInt(val, 10);
-    return isNaN(num) || num < 1 ? 1 : num;
-  }),
-  limit: z.string().optional().default('10').transform(val => {
-    const num = parseInt(val, 10);
-    return isNaN(num) || num < 1 ? 10 : Math.min(num, 100);
-  }),
-  sortBy: z.string().optional().default('createdAt'),
-  sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
-  
-  // Filters
-  taskId: z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
-  userId: z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
-  status: z.enum(['Pending', 'Approved', 'Rejected']).optional(),
-  search: z.string().optional()
-});
-
-// Task submission validation schema
-const taskSubmissionSchema = z.object({
-  submissionId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid submission ID'),
-  action: z.enum(['approve', 'reject']),
-  reviewNote: z.string().optional(),
-  adjustedReward: z.number().min(0).optional()
-});
+import { submissionListQuerySchema, taskSubmissionSchema } from '@/lib/validation';
 
 // GET /api/tasks/submissions - List task submissions
 async function getSubmissionsHandler(request: NextRequest): Promise<NextResponse> {

@@ -12,22 +12,8 @@ import { ApiHandler } from '@/lib/api-helpers';
 import { sendEmail } from '@/lib/email';
 import { z } from 'zod';
 import mongoose from 'mongoose';
+import { bonusApprovalSchema, bonusRecalculationSchema } from '@/lib/validation';
 
-// Bonus approval schema
-const bonusApprovalSchema = z.object({
-  referralIds: z.array(z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid referral ID')).min(1).max(100),
-  action: z.enum(['approve', 'reject']),
-  reason: z.string().optional(),
-  adminNotes: z.string().optional(),
-  adjustedAmount: z.number().min(0).optional()
-});
-
-// Bonus recalculation schema
-const bonusRecalculationSchema = z.object({
-  refereeId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid referee ID'),
-  newProfitAmount: z.number().min(0),
-  profitSharePercentage: z.number().min(0).max(100).optional().default(10)
-});
 
 // GET /api/referrals/bonuses - Get bonus overview and pending approvals
 async function getBonusesHandler(request: NextRequest): Promise<NextResponse> {

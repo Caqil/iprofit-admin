@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { VALIDATION_RULES, LOAN_CONFIG, TRANSACTION_CONFIG } from './constants';
+import { dateRangeSchema, paginationSchema } from '@/lib/validation';
 
 // Basic validation functions
 export function isValidEmail(email: string): boolean {

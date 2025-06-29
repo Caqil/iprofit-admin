@@ -13,43 +13,8 @@ import { sendEmail } from '@/lib/email';
 import { FilterParams, PaginationParams, ListResponse } from '@/types';
 import { z } from 'zod';
 import mongoose from 'mongoose';
+import { newsFilterSchema, newsCreateSchema } from '@/lib/validation';
 
-// News validation schemas
-const newsFilterSchema = z.object({
-  page: z.string().transform(Number).pipe(z.number().min(1)).optional().default('1'),
-  limit: z.string().transform(Number).pipe(z.number().min(1).max(100)).optional().default('10'),
-  sortBy: z.string().optional().default('createdAt'),
-  sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
-  status: z.enum(['Draft', 'Published', 'Archived']).optional(),
-  category: z.string().optional(),
-  author: z.string().optional(),
-  isSticky: z.enum(['true', 'false']).optional(),
-  search: z.string().optional(),
-  dateFrom: z.string().optional(),
-  dateTo: z.string().optional(),
-  tags: z.string().optional() // Comma-separated tags
-});
-
-const newsCreateSchema = z.object({
-  title: z.string().min(1, 'Title is required').max(200, 'Title too long'),
-  content: z.string().min(1, 'Content is required'),
-  excerpt: z.string().max(500, 'Excerpt too long').optional(),
-  category: z.string().min(1, 'Category is required'),
-  tags: z.array(z.string()).optional().default([]),
-  featuredImage: z.string().url().optional(),
-  status: z.enum(['Draft', 'Published', 'Archived']).default('Draft'),
-  isSticky: z.boolean().default(false),
-  publishedAt: z.string().datetime().optional(),
-  metadata: z.object({
-    seoTitle: z.string().max(70).optional(),
-    seoDescription: z.string().max(160).optional(),
-    socialImage: z.string().url().optional()
-  }).optional(),
-  schedulePublish: z.boolean().optional().default(false),
-  scheduledAt: z.string().datetime().optional()
-});
-
-const newsUpdateSchema = newsCreateSchema.partial();
 
 // Helper function to generate URL slug
 function generateSlug(title: string): string {

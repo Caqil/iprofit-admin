@@ -9,32 +9,9 @@ import { apiRateLimit } from '@/middleware/rate-limit';
 import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler } from '@/lib/api-helpers';
 import { sendEmail } from '@/lib/email';
-import { objectIdValidator } from '@/utils/validators';
+import { objectIdValidator, ticketResponseSchema, ticketUpdateSchema } from '@/lib/validation';
 import { z } from 'zod';
 import mongoose from 'mongoose';
-
-// Validation schemas
-const ticketResponseSchema = z.object({
-  message: z.string().min(1, 'Message is required').max(5000, 'Message too long'),
-  isAdminResponse: z.boolean().default(true),
-  attachments: z.array(z.object({
-    filename: z.string(),
-    url: z.string().url(),
-    mimeType: z.string(),
-    size: z.number().positive()
-  })).optional().default([])
-});
-
-const ticketUpdateSchema = z.object({
-  status: z.enum(['Open', 'In Progress', 'Waiting for User', 'Resolved', 'Closed']).optional(),
-  priority: z.enum(['Low', 'Medium', 'High', 'Urgent']).optional(),
-  assignedTo: z.string().optional().refine(val => !val || val === '' || /^[0-9a-fA-F]{24}$/.test(val), 'Invalid admin ID'),
-  category: z.string().optional(),
-  tags: z.array(z.string()).optional(),
-  resolution: z.string().optional(),
-  satisfactionRating: z.number().min(1).max(5).optional(),
-  feedbackComment: z.string().optional()
-});
 
 // Helper function to create audit log entry
 async function createAuditLog(data: {

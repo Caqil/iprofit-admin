@@ -12,14 +12,7 @@ import { ApiHandler } from '@/lib/api-helpers';
 import { sendEmail } from '@/lib/email';
 import { z } from 'zod';
 import mongoose from 'mongoose';
-
-// Bulk submission processing schema
-const bulkSubmissionSchema = z.object({
-  submissionIds: z.array(z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid submission ID')).min(1),
-  action: z.enum(['approve', 'reject']),
-  reviewNote: z.string().optional()
-});
-
+import { bulkSubmissionSchema } from '@/lib/validation';
 // POST /api/tasks/submissions/bulk - Bulk process task submissions
 async function bulkProcessSubmissionsHandler(request: NextRequest): Promise<NextResponse> {
   const apiHandler = ApiHandler.create(request);

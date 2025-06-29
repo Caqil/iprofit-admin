@@ -10,7 +10,7 @@ import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler, createPaginatedResponse, createPaginationStages } from '@/lib/api-helpers';
 
 
-import { paginationSchema, dateRangeSchema } from '@/lib/validation';
+import { paginationSchema, dateRangeSchema, transactionListQuerySchema } from '@/lib/validation';
 import { TransactionFilter, TransactionSummary } from '@/types/transaction';
 import { z } from 'zod';
 import mongoose from 'mongoose';
@@ -22,19 +22,6 @@ function createSortStage(sortBy: string, sortOrder: string): mongoose.PipelineSt
     }
   };
 }
-// Transaction list query validation
-const transactionListQuerySchema = paginationSchema.extend({
-  sortBy: z.string().optional().default('createdAt'),
-  sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
-  type: z.enum(['deposit', 'withdrawal', 'bonus', 'profit', 'penalty']).optional(),
-  status: z.enum(['Pending', 'Approved', 'Rejected', 'Processing', 'Failed']).optional(),
-  gateway: z.enum(['CoinGate', 'UddoktaPay', 'Manual', 'System']).optional(),
-  currency: z.enum(['USD', 'BDT']).optional(),
-  userId: z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
-  amountMin: z.string().transform(Number).pipe(z.number().min(0)).optional(),
-  amountMax: z.string().transform(Number).pipe(z.number().min(0)).optional(),
-  search: z.string().optional()
-}).merge(dateRangeSchema);
 
 // GET /api/transactions - List transactions with filtering and pagination
 async function getTransactionsHandler(request: NextRequest): Promise<NextResponse> {
@@ -218,7 +205,7 @@ async function getTransactionsHandler(request: NextRequest): Promise<NextRespons
       {
         $facet: {
           data: [
-            createSortStage(sortBy, sortOrder),
+            createSortStage(sortBy || 'createdAt', sortOrder || 'desc'),
             { $skip: (page - 1) * limit },
             { $limit: limit }
           ],

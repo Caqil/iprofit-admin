@@ -10,27 +10,7 @@ import { ApiHandler } from '@/lib/api-helpers';
 import { objectIdValidator } from '@/utils/validators';
 import { z } from 'zod';
 import mongoose from 'mongoose';
-
-// Plan update validation schema
-const planUpdateSchema = z.object({
-  name: z.string().min(2).max(100).optional(),
-  description: z.string().min(10).optional(),
-  price: z.number().min(0).optional(),
-  currency: z.enum(['USD', 'BDT']).optional(),
-  duration: z.number().min(1).optional(),
-  features: z.array(z.string()).min(1).optional(),
-  depositLimit: z.number().min(0).optional(),
-  withdrawalLimit: z.number().min(0).optional(),
-  profitLimit: z.number().min(0).optional(),
-  minimumDeposit: z.number().min(0).optional(),
-  minimumWithdrawal: z.number().min(0).optional(),
-  dailyWithdrawalLimit: z.number().min(0).optional(),
-  monthlyWithdrawalLimit: z.number().min(0).optional(),
-  priority: z.number().min(1).max(10).optional(),
-  isActive: z.boolean().optional(),
-  color: z.string().optional(),
-  icon: z.string().optional(),
-});
+import { planUpdateSchema } from '@/lib/validation';
 
 // GET /api/plans/[id] - Get plan details with user statistics
 async function getPlanHandler(

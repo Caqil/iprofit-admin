@@ -15,42 +15,8 @@ type ListResponse<T> = BaseListResponse<T> & {
 };
 import { z } from 'zod';
 import mongoose from 'mongoose';
+import { auditFilterSchema, auditLogCreateSchema } from '@/lib/validation';
 
-// Audit filter validation schema
-const auditFilterSchema = z.object({
-  page: z.string().transform(Number).pipe(z.number().min(1)).optional().default('1'),
-  limit: z.string().transform(Number).pipe(z.number().min(1).max(100)).optional().default('10'),
-  sortBy: z.string().optional().default('createdAt'),
-  sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
-  adminId: z.string().optional(),
-  action: z.string().optional(),
-  entity: z.string().optional(),
-  severity: z.enum(['Low', 'Medium', 'High', 'Critical']).optional(),
-  status: z.enum(['Success', 'Failed', 'Partial']).optional(),
-  dateFrom: z.string().datetime().optional(),
-  dateTo: z.string().datetime().optional(),
-  search: z.string().optional(),
-  entityId: z.string().optional(),
-  ipAddress: z.string().optional(),
-  export: z.enum(['true', 'false']).optional()
-});
-
-// Audit log creation schema for manual entries
-const auditLogCreateSchema = z.object({
-  action: z.string().min(1, 'Action is required'),
-  entity: z.string().min(1, 'Entity is required'),
-  entityId: z.string().optional(),
-  description: z.string().min(1, 'Description is required'),
-  severity: z.enum(['Low', 'Medium', 'High', 'Critical']).default('Medium'),
-  metadata: z.object({
-    context: z.any().optional(),
-    affectedUsers: z.array(z.string()).optional(),
-    relatedEntities: z.array(z.object({
-      type: z.string(),
-      id: z.string()
-    })).optional()
-  }).optional()
-});
 
 // Helper function to build audit filter query
 function buildAuditFilter(params: any) {

@@ -9,14 +9,9 @@ import { AuditLog } from '@/models/AuditLog';
 import { connectToDatabase } from '@/lib/db';
 import { z } from 'zod';
 import mongoose from 'mongoose';
+import { emiCalculatorSchema } from '@/lib/validation';
 
-// EMI calculation validation schema
-const emiCalculatorSchema = z.object({
-  loanAmount: z.number().min(500, 'Minimum loan amount is $500').max(50000, 'Maximum loan amount is $50,000'),
-  interestRate: z.number().min(8, 'Minimum interest rate is 8%').max(25, 'Maximum interest rate is 25%'),
-  tenure: z.number().min(6, 'Minimum tenure is 6 months').max(60, 'Maximum tenure is 60 months'),
-  sendCalculation: z.boolean().optional().default(false) // Option to send calculation via email
-});
+
 
 // POST /api/loans/emi-calculator - Calculate EMI for given parameters
 async function emiCalculatorHandler(request: NextRequest): Promise<NextResponse> {

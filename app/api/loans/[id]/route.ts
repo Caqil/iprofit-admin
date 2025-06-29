@@ -10,16 +10,8 @@ import { ApiHandler } from '@/lib/api-helpers';
 import { sendEmail } from '@/lib/email';
 import { z } from 'zod';
 import mongoose from 'mongoose';
+import { repaymentSchema } from '@/lib/validation';
 
-// Repayment validation schema
-const repaymentSchema = z.object({
-  amount: z.number().min(0.01, 'Amount must be greater than 0'),
-  paymentMethod: z.string().min(1, 'Payment method is required'),
-  transactionId: z.string().optional(),
-  notes: z.string().optional(),
-  penaltyAmount: z.number().min(0).optional().default(0),
-  installmentNumbers: z.array(z.number()).optional() // Specific installments to pay
-});
 
 // POST /api/loans/[id]/repayment - Record loan repayment
 async function recordRepaymentHandler(
