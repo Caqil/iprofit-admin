@@ -1,6 +1,14 @@
 import { z } from 'zod';
+export const adminUserCreateSchema = z.object({
+  name: z.string().min(2, 'Name must be at least 2 characters').max(100),
+  email: z.string().email('Invalid email address'),
+  phone: z.string().min(10, 'Phone number must be at least 10 digits').max(20),
+  planId: z.string().min(1, 'Plan is required'),
+  deviceId: z.string().min(1, 'Device ID is required'),
+  referralCode: z.string().optional(),
+});
 
-// User schemas
+// Original user creation schema for user registration (with password)
 export const userCreateSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters').max(100),
   email: z.string().email('Invalid email address'),
@@ -10,19 +18,7 @@ export const userCreateSchema = z.object({
   referredBy: z.string().optional()
 });
 
-export const userUpdateSchema = z.object({
-  name: z.string().min(2).max(100).optional(),
-  email: z.string().email().optional(),
-  phone: z.string().min(10).max(20).optional(),
-  status: z.enum(['Active', 'Suspended', 'Banned'] as const).optional(),
-  kycStatus: z.enum(['Pending', 'Approved', 'Rejected'] as const).optional(),
-  planId: z.string().optional(),
-  balance: z.number().min(0).optional(),
-  emailVerified: z.boolean().optional(),
-  phoneVerified: z.boolean().optional(),
-  twoFactorEnabled: z.boolean().optional()
-});
-
+// User registration schema for mobile app
 export const userRegistrationValidator = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
   email: z.string().email('Invalid email address'),
@@ -36,6 +32,19 @@ export const userRegistrationValidator = z.object({
 }).refine(data => data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ["confirmPassword"]
+});
+
+export const userUpdateSchema = z.object({
+  name: z.string().min(2).max(100).optional(),
+  email: z.string().email().optional(),
+  phone: z.string().min(10).max(20).optional(),
+  status: z.enum(['Active', 'Suspended', 'Banned'] as const).optional(),
+  kycStatus: z.enum(['Pending', 'Approved', 'Rejected'] as const).optional(),
+  planId: z.string().optional(),
+  balance: z.number().min(0).optional(),
+  emailVerified: z.boolean().optional(),
+  phoneVerified: z.boolean().optional(),
+  twoFactorEnabled: z.boolean().optional()
 });
 
 // Admin schemas

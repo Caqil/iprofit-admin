@@ -5,11 +5,11 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import { LayoutSidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 
-interface TransactionsLayoutProps {
+interface LoansLayoutProps {
   children: ReactNode;
 }
 
-export default function TransactionsLayout({ children }: TransactionsLayoutProps) {
+export default function LoansLayout({ children }: LoansLayoutProps) {
   return (
     <SidebarProvider>
       <LayoutSidebar />

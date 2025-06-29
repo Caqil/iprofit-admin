@@ -1,3 +1,4 @@
+
 import { BaseEntity, Currency, Plan, Transaction } from './index';
 
 export type UserStatus = 'Active' | 'Suspended' | 'Banned';
@@ -29,11 +30,11 @@ export interface User extends BaseEntity {
 }
 
 export interface UserAddress {
-  street: string;
-  city: string;
-  state: string;
-  country: string;
-  zipCode: string;
+  street?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  zipCode?: string;
 }
 
 export interface KYCDocument {
@@ -91,6 +92,7 @@ export interface UserBulkAction {
   };
 }
 
+// FIXED: Updated UserCreateRequest to match admin panel needs (without password)
 export interface UserCreateRequest {
   name: string;
   email: string;
@@ -99,19 +101,50 @@ export interface UserCreateRequest {
   deviceId: string;
   referralCode?: string;
 }
-export interface KYCApprovalRequest {
-  userId: string;
-  action: 'approve' | 'reject';
-  rejectionReason?: string;
-  adminNotes?: string;
-  documentsVerified?: string[];
-}
+
+// FIXED: Enhanced UserUpdateRequest with all necessary fields
 export interface UserUpdateRequest {
   name?: string;
   email?: string;
   phone?: string;
   status?: UserStatus;
   planId?: string;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
+  twoFactorEnabled?: boolean;
+  dateOfBirth?: Date | string; // Support both Date object and ISO string
   address?: UserAddress;
-  dateOfBirth?: Date;
+  notes?: string; // For admin notes during update
+}
+
+// New interface for user registration with password (mobile app)
+export interface UserRegistrationRequest {
+  name: string;
+  email: string;
+  phone: string;
+  password: string;
+  confirmPassword: string;
+  deviceId: string;
+  fingerprint: string;
+  referralCode?: string;
+  terms: boolean;
+}
+
+// Interface for admin creating users with password
+export interface AdminUserCreateRequest {
+  name: string;
+  email: string;
+  phone: string;
+  planId: string;
+  deviceId: string;
+  referralCode?: string;
+  generatePassword?: boolean; // Whether to auto-generate password
+}
+
+export interface KYCApprovalRequest {
+  userId: string;
+  action: 'approve' | 'reject';
+  rejectionReason?: string;
+  adminNotes?: string;
+  documentsVerified?: string[];
 }

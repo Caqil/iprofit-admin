@@ -395,13 +395,6 @@ export const REPAYMENT_STATUSES = {
   OVERDUE: 'Overdue'
 } as const;
 
-export const PAYMENT_METHODS = {
-  BANK_TRANSFER: 'Bank Transfer',
-  MOBILE_BANKING: 'Mobile Banking',
-  CASH: 'Cash',
-  CHEQUE: 'Cheque',
-  ONLINE: 'Online'
-} as const;
 
 export const EMPLOYMENT_STATUSES = [
   'Full-time Employee',
@@ -413,42 +406,6 @@ export const EMPLOYMENT_STATUSES = [
   'Retired',
   'Student',
   'Unemployed'
-];
-
-export const EDUCATION_LEVELS = [
-  'High School',
-  'Diploma',
-  'Bachelor\'s Degree',
-  'Master\'s Degree',
-  'PhD',
-  'Professional Certification',
-  'Other'
-];
-
-export const LOAN_PURPOSES = [
-  'Personal Expenses',
-  'Medical Emergency',
-  'Education',
-  'Home Improvement',
-  'Debt Consolidation',
-  'Business Investment',
-  'Vehicle Purchase',
-  'Wedding Expenses',
-  'Travel',
-  'Other'
-];
-
-export const DOCUMENT_TYPES = [
-  'National ID',
-  'Passport',
-  'Driver\'s License',
-  'Salary Certificate',
-  'Bank Statement',
-  'Employment Letter',
-  'Tax Returns',
-  'Utility Bill',
-  'Property Documents',
-  'Other'
 ];
 
 export const COLLATERAL_TYPES = [
@@ -500,3 +457,279 @@ export const LOAN_VALIDATION_MESSAGES = {
   EMPLOYMENT_REQUIRED: 'Employment status is required',
   DOCUMENTS_REQUIRED: 'At least one document is required'
 };
+
+
+export const LOAN_CONSTANTS = {
+  // Loan limits
+  MIN_LOAN_AMOUNT: 500,
+  MAX_LOAN_AMOUNT: 50000,
+  DEFAULT_MAX_AMOUNT: 5500, // For regular users
+  
+  // Interest rates
+  MIN_INTEREST_RATE: 8,
+  MAX_INTEREST_RATE: 25,
+  DEFAULT_INTEREST_RATES: {
+    EXCELLENT: 12, // Credit score >= 750
+    GOOD: 15,      // Credit score >= 700
+    FAIR: 18,      // Credit score >= 650
+    POOR: 20       // Credit score < 650
+  },
+  
+  // Tenure (in months)
+  MIN_TENURE: 6,
+  MAX_TENURE: 60,
+  DEFAULT_TENURE: 12,
+  
+  // Credit score thresholds
+  CREDIT_SCORE: {
+    EXCELLENT: 750,
+    GOOD: 700,
+    FAIR: 650,
+    POOR: 600,
+    MINIMUM_REQUIRED: 550
+  },
+  
+  // Income requirements
+  MIN_MONTHLY_INCOME: 1000,
+  DEBT_TO_INCOME_RATIO_MAX: 0.4, // 40%
+  
+  // Processing times
+  PROCESSING_TIME: {
+    STANDARD: '3-5 business days',
+    EXPRESS: '24-48 hours',
+    PREMIUM: '12-24 hours'
+  },
+  
+  // Payment related
+  LATE_PAYMENT_GRACE_DAYS: 3,
+  PENALTY_RATE: 2, // 2% of overdue amount
+  MAX_OVERDUE_DAYS: 90,
+  
+  // Email notification schedules (days before due date)
+  REMINDER_SCHEDULE: {
+    FIRST_REMINDER: 7,
+    SECOND_REMINDER: 3,
+    FINAL_REMINDER: 1,
+    OVERDUE_NOTIFICATION: 0 // On due date
+  }
+} as const;
+
+export const LOAN_STATUS = {
+  PENDING: 'Pending',
+  APPROVED: 'Approved', 
+  REJECTED: 'Rejected',
+  ACTIVE: 'Active',
+  COMPLETED: 'Completed',
+  DEFAULTED: 'Defaulted'
+} as const;
+
+export const INSTALLMENT_STATUS = {
+  PENDING: 'Pending',
+  PAID: 'Paid',
+  OVERDUE: 'Overdue',
+  PARTIAL: 'Partial'
+} as const;
+
+export const LOAN_PURPOSES = [
+  'Personal Expenses',
+  'Home Improvement',
+  'Medical Emergency',
+  'Education',
+  'Business Investment',
+  'Debt Consolidation',
+  'Travel',
+  'Wedding',
+  'Vehicle Purchase',
+  'Other'
+] as const;
+
+export const EMPLOYMENT_TYPES = [
+  'Full-time Employee',
+  'Part-time Employee',
+  'Self-employed',
+  'Business Owner',
+  'Freelancer',
+  'Retired',
+  'Student',
+  'Unemployed'
+] as const;
+
+export const MARITAL_STATUS = [
+  'Single',
+  'Married',
+  'Divorced',
+  'Widowed'
+] as const;
+
+export const EDUCATION_LEVELS = [
+  'High School',
+  'Bachelor\'s Degree',
+  'Master\'s Degree',
+  'PhD',
+  'Professional Degree',
+  'Trade School',
+  'Other'
+] as const;
+
+export const PAYMENT_METHODS = [
+  'Bank Transfer',
+  'Credit Card',
+  'Debit Card',
+  'Mobile Wallet',
+  'Cash',
+  'Check',
+  'Manual'
+] as const;
+
+export const DOCUMENT_TYPES = [
+  'Identity Proof',
+  'Address Proof',
+  'Income Certificate',
+  'Bank Statement',
+  'Employment Letter',
+  'Tax Return',
+  'Other'
+] as const;
+
+export const LOAN_API_ENDPOINTS = {
+  LIST: '/api/loans',
+  CREATE: '/api/loans',
+  GET_BY_ID: '/api/loans/[id]',
+  UPDATE: '/api/loans/[id]',
+  DELETE: '/api/loans/[id]',
+  APPLICATIONS: '/api/loans/applications',
+  EMI_CALCULATOR: '/api/loans/emi-calculator',
+  REPAYMENT: '/api/loans/[id]/repayment',
+  ANALYTICS: '/api/loans/analytics'
+} as const;
+
+export const LOAN_PERMISSIONS = {
+  VIEW: 'loans.view',
+  CREATE: 'loans.create',
+  UPDATE: 'loans.update',
+  DELETE: 'loans.delete',
+  APPROVE: 'loans.approve',
+  DISBURSE: 'loans.disburse',
+  RECORD_PAYMENT: 'loans.record_payment'
+} as const;
+
+// Credit score calculation weights
+export const CREDIT_SCORE_WEIGHTS = {
+  INCOME: 0.25,
+  EMPLOYMENT_STABILITY: 0.20,
+  EXISTING_DEBT: 0.20,
+  PAYMENT_HISTORY: 0.15,
+  BANK_BALANCE: 0.10,
+  AGE: 0.05,
+  COLLATERAL: 0.05
+} as const;
+
+// Email template mappings
+export const LOAN_EMAIL_EVENTS = {
+  APPLICATION_RECEIVED: 'loan-application-received',
+  APPLICATION_APPROVED: 'loan-approved',
+  APPLICATION_REJECTED: 'loan-rejected',
+  LOAN_DISBURSED: 'loan-disbursed',
+  LOAN_COMPLETED: 'loan-completed',
+  PAYMENT_CONFIRMED: 'loan-payment-confirmed',
+  PAYMENT_REMINDER: 'loan-payment-reminder',
+  PAYMENT_OVERDUE: 'loan-payment-overdue',
+  EMI_CALCULATION: 'emi-calculation-results',
+  SCHEDULE_UPDATED: 'repayment-schedule-updated',
+  LOAN_CANCELLED: 'loan-cancelled',
+  LOAN_DEFAULTED: 'loan-defaulted',
+  
+  // Admin notifications
+  ADMIN_NEW_APPLICATION: 'admin-loan-application-notification',
+  ADMIN_PAYMENT_RECEIVED: 'admin-payment-notification',
+  ADMIN_STATUS_UPDATE: 'admin-loan-status-update'
+} as const;
+
+// Validation rules
+export const LOAN_VALIDATION_RULES = {
+  AMOUNT: {
+    MIN: LOAN_CONSTANTS.MIN_LOAN_AMOUNT,
+    MAX: LOAN_CONSTANTS.MAX_LOAN_AMOUNT
+  },
+  TENURE: {
+    MIN: LOAN_CONSTANTS.MIN_TENURE,
+    MAX: LOAN_CONSTANTS.MAX_TENURE
+  },
+  INTEREST_RATE: {
+    MIN: LOAN_CONSTANTS.MIN_INTEREST_RATE,
+    MAX: LOAN_CONSTANTS.MAX_INTEREST_RATE
+  },
+  INCOME: {
+    MIN: LOAN_CONSTANTS.MIN_MONTHLY_INCOME
+  },
+  CREDIT_SCORE: {
+    MIN: LOAN_CONSTANTS.CREDIT_SCORE.MINIMUM_REQUIRED,
+    MAX: 850
+  }
+} as const;
+
+// Loan analytics categories
+export const LOAN_ANALYTICS = {
+  METRICS: [
+    'total_loans',
+    'active_loans', 
+    'completed_loans',
+    'overdue_loans',
+    'total_disbursed',
+    'total_collected',
+    'average_loan_amount',
+    'average_interest_rate',
+    'default_rate'
+  ],
+  TIME_PERIODS: [
+    'today',
+    'week',
+    'month',
+    'quarter',
+    'year',
+    'all_time'
+  ],
+  CHART_TYPES: [
+    'loan_trends',
+    'status_distribution',
+    'amount_ranges',
+    'interest_rate_distribution',
+    'repayment_performance'
+  ]
+} as const;
+
+// Risk assessment categories
+export const RISK_CATEGORIES = {
+  LOW: 'Low Risk',
+  MEDIUM: 'Medium Risk', 
+  HIGH: 'High Risk',
+  VERY_HIGH: 'Very High Risk'
+} as const;
+
+// Auto-approval rules
+export const AUTO_APPROVAL_RULES = {
+  CREDIT_SCORE_THRESHOLD: 700,
+  MAX_AUTO_APPROVAL_AMOUNT: 2000,
+  DEBT_TO_INCOME_RATIO: 0.3,
+  MIN_EMPLOYMENT_MONTHS: 12,
+  MIN_BANK_BALANCE: 1000
+} as const;
+
+// Collection stages
+export const COLLECTION_STAGES = {
+  STAGE_1: { days: 1, action: 'FRIENDLY_REMINDER' },
+  STAGE_2: { days: 7, action: 'FORMAL_NOTICE' },
+  STAGE_3: { days: 15, action: 'FINAL_NOTICE' },
+  STAGE_4: { days: 30, action: 'LEGAL_ACTION' },
+  STAGE_5: { days: 60, action: 'ASSET_RECOVERY' }
+} as const;
+
+export type LoanStatus = typeof LOAN_STATUS[keyof typeof LOAN_STATUS];
+export type InstallmentStatus = typeof INSTALLMENT_STATUS[keyof typeof INSTALLMENT_STATUS];
+export type LoanPurpose = typeof LOAN_PURPOSES[number];
+export type EmploymentType = typeof EMPLOYMENT_TYPES[number];
+export type MaritalStatus = typeof MARITAL_STATUS[number];
+export type EducationLevel = typeof EDUCATION_LEVELS[number];
+export type PaymentMethod = typeof PAYMENT_METHODS[number];
+export type DocumentType = typeof DOCUMENT_TYPES[number];
+export type RiskCategory = typeof RISK_CATEGORIES[keyof typeof RISK_CATEGORIES];

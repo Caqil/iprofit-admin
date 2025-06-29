@@ -29,10 +29,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, UserPlus } from "lucide-react";
-import { userCreateSchema } from "@/lib/validation";
-import { UserCreateRequest, User, Plan } from "@/types";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Loader2, UserPlus, RefreshCw } from "lucide-react";
+import { User, Plan, AdminUserCreateRequest } from "@/types";
 import { toast } from "sonner";
+import { adminUserCreateSchema } from "@/lib/validation";
 
 interface CreateUserDialogProps {
   open: boolean;
@@ -47,9 +48,10 @@ export function CreateUserDialog({
 }: CreateUserDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [generatePassword, setGeneratePassword] = useState(true);
 
-  const form = useForm<UserCreateRequest>({
-    resolver: zodResolver(userCreateSchema),
+  const form = useForm<AdminUserCreateRequest>({
+    resolver: zodResolver(adminUserCreateSchema),
     defaultValues: {
       name: "",
       email: "",
@@ -63,13 +65,9 @@ export function CreateUserDialog({
   useEffect(() => {
     if (open) {
       fetchPlans();
-      // Generate a random device ID for demo purposes
-      form.setValue(
-        "deviceId",
-        `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-      );
+      generateDeviceId();
     }
-  }, [open, form]);
+  }, [open]);
 
   const fetchPlans = async () => {
     try {
@@ -80,36 +78,65 @@ export function CreateUserDialog({
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
-          setPlans(data.data);
+          setPlans(data.data || data.data?.data || []);
         }
       }
     } catch (error) {
       console.error("Error fetching plans:", error);
+      toast.error("Failed to load plans");
     }
   };
 
-  const onSubmit = async (data: UserCreateRequest) => {
+  const generateDeviceId = () => {
+    const deviceId = `admin_device_${Date.now()}_${Math.random()
+      .toString(36)
+      .substr(2, 9)}`;
+    form.setValue("deviceId", deviceId);
+  };
+
+  const onSubmit = async (data: AdminUserCreateRequest) => {
     setIsLoading(true);
     try {
+      // Prepare the data for the API
+      const submitData = {
+        ...data,
+        generatePassword, // Include the generatePassword flag
+      };
+
       const response = await fetch("/api/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(data),
+        body: JSON.stringify(submitData),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to create user");
+        throw new Error(
+          errorData.error || errorData.message || "Failed to create user"
+        );
       }
 
       const result = await response.json();
       if (result.success) {
-        onSuccess(result.data.user);
+        const user = result.data?.user || result.data;
+        onSuccess(user);
         onOpenChange(false);
         form.reset();
+
+        // Show success message with password info if generated
+        if (generatePassword && result.data?.generatedPassword) {
+          toast.success(
+            `User created successfully! Generated password: ${result.data.generatedPassword}`,
+            { duration: 10000 }
+          );
+        } else {
+          toast.success("User created successfully!");
+        }
       } else {
-        throw new Error(result.error || "Failed to create user");
+        throw new Error(
+          result.error || result.message || "Failed to create user"
+        );
       }
     } catch (error) {
       console.error("Error creating user:", error);
@@ -123,14 +150,15 @@ export function CreateUserDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle className="flex items-center space-x-2">
             <UserPlus className="h-5 w-5" />
             <span>Create New User</span>
           </DialogTitle>
           <DialogDescription>
-            Add a new user to the system with their basic information
+            Add a new user to the system with their basic information. A
+            password will be auto-generated.
           </DialogDescription>
         </DialogHeader>
 
@@ -199,7 +227,10 @@ export function CreateUserDialog({
                     </FormControl>
                     <SelectContent>
                       {plans.map((plan) => (
-                        <SelectItem key={plan._id} value={plan._id}>
+                        <SelectItem
+                          key={plan._id || plan._id}
+                          value={plan._id || plan._id}
+                        >
                           {plan.name} - ${plan.price || 0}/
                           {plan.duration ? `${plan.duration} days` : "month"}
                         </SelectItem>
@@ -235,13 +266,24 @@ export function CreateUserDialog({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Device ID</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="Device identifier"
-                      {...field}
-                      readOnly
-                    />
-                  </FormControl>
+                  <div className="flex space-x-2">
+                    <FormControl>
+                      <Input
+                        placeholder="Device identifier"
+                        {...field}
+                        readOnly
+                      />
+                    </FormControl>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={generateDeviceId}
+                      disabled={isLoading}
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                    </Button>
+                  </div>
                   <FormDescription>
                     Auto-generated device identifier for this user
                   </FormDescription>
@@ -249,6 +291,20 @@ export function CreateUserDialog({
                 </FormItem>
               )}
             />
+
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="generatePassword"
+                checked={generatePassword}
+                onCheckedChange={(checked) => setGeneratePassword(checked === true)}
+              />
+              <label
+                htmlFor="generatePassword"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              >
+                Auto-generate secure password
+              </label>
+            </div>
 
             <div className="flex justify-end space-x-2 pt-4">
               <Button

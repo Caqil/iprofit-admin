@@ -24,13 +24,21 @@ interface TransactionsHookReturn {
   exportTransactions: (format: 'csv' | 'xlsx') => Promise<void>;
 }
 
+// API Response wrapper type to match actual response structure
+interface ApiResponseWrapper<T> {
+  success: boolean;
+  data: T;
+  message?: string;
+  timestamp: string;
+}
+
 export function useTransactions(
   filters?: TransactionFilter,
   pagination?: PaginationParams
 ): TransactionsHookReturn {
   const queryClient = useQueryClient();
 
-  // Transactions list query
+  // Transactions query with proper response type handling
   const transactionsQuery = useQuery({
     queryKey: ['transactions', filters, pagination],
     queryFn: async (): Promise<ListResponse<Transaction>> => {
@@ -56,25 +64,29 @@ export function useTransactions(
       });
       
       if (!response.ok) {
-        throw new Error('Failed to fetch transactions');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP ${response.status}: Failed to fetch transactions`);
       }
 
-      const result = await response.json();
+      const result: ApiResponseWrapper<ListResponse<Transaction>> = await response.json();
+      
       if (!result.success) {
-        throw new Error(result.error || 'Failed to fetch transactions');
+        throw new Error(result.message || 'Failed to fetch transactions');
       }
 
-      return result.data;
+      return result.data; // This contains { data: Transaction[], pagination: {...} }
     },
-    staleTime: 30 * 1000, // 30 seconds
-    refetchOnWindowFocus: true
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    retry: 3,
+    retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
 
   // Transaction summary query
   const summaryQuery = useQuery({
-    queryKey: ['transactions', 'summary', filters],
+    queryKey: ['transactions-summary', filters],
     queryFn: async (): Promise<TransactionSummary> => {
       const params = new URLSearchParams();
+      
       if (filters) {
         Object.entries(filters).forEach(([key, value]) => {
           if (value !== undefined && value !== null && value !== '') {
@@ -88,102 +100,114 @@ export function useTransactions(
       });
       
       if (!response.ok) {
-        throw new Error('Failed to fetch transaction summary');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to fetch transaction summary');
       }
 
-      const result = await response.json();
+      const result: ApiResponseWrapper<TransactionSummary> = await response.json();
+      
       if (!result.success) {
-        throw new Error(result.error || 'Failed to fetch summary');
+        throw new Error(result.message || 'Failed to fetch transaction summary');
       }
 
       return result.data;
     },
-    staleTime: 60 * 1000, // 1 minute
-    refetchInterval: 60 * 1000 // Auto-refresh every minute
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
-  // Transaction approval mutation
+  // Approve transaction mutation
   const approveTransactionMutation = useMutation({
-    mutationFn: async (data: TransactionApproval) => {
+    mutationFn: async (data: TransactionApproval): Promise<void> => {
       const response = await fetch('/api/transactions/approve', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         credentials: 'include',
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to process transaction');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to approve transaction');
       }
 
-      return response.json();
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to approve transaction');
+      }
     },
-    onSuccess: (_, variables) => {
-      const action = variables.action === 'approve' ? 'approved' : 
-                   variables.action === 'reject' ? 'rejected' : 'cancelled';
-      toast.success(`Transaction ${action} successfully`);
-      
-      // Invalidate and refetch related queries
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions-summary'] });
+      toast.success('Transaction updated successfully');
     },
     onError: (error: Error) => {
-      toast.error(error.message || 'Failed to process transaction');
-    }
+      toast.error(error.message || 'Failed to update transaction');
+    },
   });
 
   // Bulk action mutation
   const bulkActionMutation = useMutation({
-    mutationFn: async (data: BulkTransactionAction) => {
-      const response = await fetch('/api/transactions/bulk-action', {
+    mutationFn: async (data: BulkTransactionAction): Promise<void> => {
+      const response = await fetch('/api/transactions/bulk', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         credentials: 'include',
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to perform bulk action');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to perform bulk action');
       }
 
-      return response.json();
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to perform bulk action');
+      }
     },
-    onSuccess: (_, variables) => {
-      toast.success(`Bulk action completed: ${variables.action} for ${variables.transactionIds.length} transactions`);
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions-summary'] });
+      toast.success('Bulk action completed successfully');
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to perform bulk action');
-    }
+    },
   });
 
   // Flag transaction mutation
   const flagTransactionMutation = useMutation({
-    mutationFn: async ({ transactionId, reason }: { transactionId: string; reason: string }) => {
+    mutationFn: async ({ transactionId, reason }: { transactionId: string; reason: string }): Promise<void> => {
       const response = await fetch(`/api/transactions/${transactionId}/flag`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         credentials: 'include',
-        body: JSON.stringify({ reason })
+        body: JSON.stringify({ reason }),
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to flag transaction');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to flag transaction');
       }
 
-      return response.json();
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to flag transaction');
+      }
     },
     onSuccess: () => {
-      toast.success('Transaction flagged successfully');
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      toast.success('Transaction flagged successfully');
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to flag transaction');
-    }
+    },
   });
 
   // Export transactions function
@@ -225,7 +249,8 @@ export function useTransactions(
 
   return {
     transactions: transactionsQuery.data?.data || [],
-    totalTransactions: transactionsQuery.data?.total || 0,
+    // FIXED: Access total from pagination object instead of directly from response
+    totalTransactions: transactionsQuery.data?.pagination?.total || 0,
     summary: summaryQuery.data,
     isLoading: transactionsQuery.isLoading,
     isSummaryLoading: summaryQuery.isLoading,

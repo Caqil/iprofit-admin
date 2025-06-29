@@ -7,7 +7,7 @@ export interface IUser extends Document {
   phone: string;
   planId: mongoose.Types.ObjectId;
   balance: number;
-  kycStatus: 'Pending' | 'Approved' | 'Rejected';
+  kycStatus: 'Pending' | 'Approved' | 'Rejected' | 'Verified';
   kycDocuments: {
     type: string;
     url: string;

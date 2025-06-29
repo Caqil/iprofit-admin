@@ -22,7 +22,7 @@ const emailConfig: EmailConfig = {
   }
 };
 
-const transporter = nodemailer.createTransporter(emailConfig);
+const transporter = nodemailer.createTransport(emailConfig);
 
 export async function sendEmail(emailData: EmailTemplateData): Promise<boolean> {
   try {
@@ -436,7 +436,7 @@ async function getEmailTemplate(templateId: string) {
           <p>We have successfully received your loan application and our team is now reviewing it.</p>
           <div style="background: #eff6ff; border: 1px solid #3b82f6; padding: 16px; margin: 20px 0; border-radius: 6px;">
             <strong>Application ID:</strong> {{applicationId}}<br>
-            <strong>Loan Amount:</strong> ${{loanAmount}}<br>
+            <strong>Loan Amount:</strong> {{loanAmount}}<br>
             <strong>Expected Processing Time:</strong> {{expectedProcessingTime}}
           </div>
           <p>We will notify you via email once the review is complete. Thank you for choosing our services.</p>
@@ -452,7 +452,7 @@ async function getEmailTemplate(templateId: string) {
           <p>Dear {{userName}},</p>
           <p>We regret to inform you that your loan application has been declined after careful review.</p>
           <div style="background: #fef2f2; border: 1px solid #ef4444; padding: 16px; margin: 20px 0; border-radius: 6px;">
-            <strong>Loan Amount:</strong> ${{loanAmount}}<br>
+            <strong>Loan Amount:</strong> {{loanAmount}}<br>
             <strong>Application ID:</strong> {{loanId}}<br>
             <strong>Reason:</strong> {{rejectionReason}}
           </div>
@@ -469,8 +469,8 @@ async function getEmailTemplate(templateId: string) {
           <p>Dear {{userName}},</p>
           <p>Your loan amount has been successfully disbursed to your registered account.</p>
           <div style="background: #faf5ff; border: 1px solid #8b5cf6; padding: 16px; margin: 20px 0; border-radius: 6px;">
-            <strong>Disbursed Amount:</strong> ${{loanAmount}}<br>
-            <strong>Monthly EMI:</strong> ${{emiAmount}}<br>
+            <strong>Disbursed Amount:</strong> {{loanAmount}}<br>
+            <strong>Monthly EMI:</strong> {{emiAmount}}<br>
             <strong>Interest Rate:</strong> {{interestRate}}% per annum<br>
             <strong>Loan ID:</strong> {{loanId}}
           </div>
@@ -487,7 +487,7 @@ async function getEmailTemplate(templateId: string) {
           <p>Dear {{userName}},</p>
           <p>Congratulations! You have successfully completed your loan repayment!</p>
           <div style="background: #ecfdf5; border: 1px solid #059669; padding: 16px; margin: 20px 0; border-radius: 6px;">
-            <strong>Loan Amount:</strong> ${{loanAmount}}<br>
+            <strong>Loan Amount:</strong> {{loanAmount}}<br>
             <strong>Loan ID:</strong> {{loanId}}<br>
             <strong>Status:</strong> <span style="color: #059669; font-weight: bold;">COMPLETED</span>
           </div>
@@ -506,10 +506,10 @@ async function getEmailTemplate(templateId: string) {
           <div style="background: #f0fdf4; border: 1px solid #22c55e; padding: 16px; margin: 20px 0; border-radius: 6px;">
             <strong>Loan ID:</strong> {{loanId}}<br>
             <strong>Installment:</strong> {{installmentNumber}}<br>
-            <strong>Amount Paid:</strong> ${{paidAmount}}<br>
+            <strong>Amount Paid:</strong> {{paidAmount}}<br>
             <strong>Payment Date:</strong> {{paidAt}}<br>
             <strong>Transaction ID:</strong> {{transactionId}}<br>
-            <strong>Remaining Balance:</strong> ${{remainingAmount}}
+            <strong>Remaining Balance:</strong> {{remainingAmount}}
           </div>
           {{#if isCompleted}}
           <p style="color: #059669; font-weight: bold;">🎉 Congratulations! You have completed all loan payments!</p>
@@ -528,7 +528,7 @@ async function getEmailTemplate(templateId: string) {
           <div style="background: #fffbeb; border: 1px solid #f59e0b; padding: 16px; margin: 20px 0; border-radius: 6px;">
             <strong>Loan ID:</strong> {{loanId}}<br>
             <strong>Installment:</strong> {{installmentNumber}}<br>
-            <strong>Amount Due:</strong> ${{emiAmount}}<br>
+            <strong>Amount Due:</strong> {{emiAmount}}<br>
             <strong>Due Date:</strong> {{dueDate}}
           </div>
           <p>Please ensure you have sufficient funds in your account.</p>
@@ -548,9 +548,9 @@ async function getEmailTemplate(templateId: string) {
           <p>Your loan payment is now overdue. Please make the payment immediately to avoid additional penalties.</p>
           <div style="background: #fef2f2; border: 1px solid #dc2626; padding: 16px; margin: 20px 0; border-radius: 6px;">
             <strong>Loan ID:</strong> {{loanId}}<br>
-            <strong>Original EMI:</strong> ${{emiAmount}}<br>
-            <strong>Overdue Amount:</strong> ${{overdueAmount}}<br>
-            <strong>Penalty:</strong> ${{penaltyAmount}}
+            <strong>Original EMI:</strong> {{emiAmount}}<br>
+            <strong>Overdue Amount:</strong> {{overdueAmount}}<br>
+            <strong>Penalty:</strong> {{penaltyAmount}}
           </div>
           <p>Please pay the overdue amount within 7 days to avoid further penalties.</p>
           <a href="{{paymentUrl}}" style="background: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; margin: 20px 0;">

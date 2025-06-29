@@ -1,3 +1,4 @@
+// app/api/loans/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { Loan, ILoan } from '@/models/Loan';
@@ -5,28 +6,63 @@ import { User, IUser } from '@/models/User';
 import { AuditLog } from '@/models/AuditLog';
 import { authMiddleware } from '@/middleware/auth';
 import { withErrorHandler } from '@/middleware/error-handler';
-import { ApiHandler, createPaginatedResponse, createMatchStage, createSortStage, createPaginationStages } from '@/lib/api-helpers';
-import { loanApplicationSchema } from '@/lib/validation';
+import { ApiHandler, createPaginatedResponse } from '@/lib/api-helpers';
+import { sendEmail } from '@/lib/email';
 import { calculateCreditScore, calculateEMI, generateRepaymentSchedule } from '@/utils/helpers';
-import { LoanFilter, PaginationParams } from '@/types';
 import { z } from 'zod';
 import mongoose from 'mongoose';
 
-// Loan list query validation schema
+// Loan application validation schema (for admin created loans)
+const loanApplicationSchema = z.object({
+  userId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid user ID'),
+  amount: z.number().min(500, 'Minimum loan amount is $500').max(50000, 'Maximum loan amount is $50,000'),
+  purpose: z.string().min(10, 'Purpose must be at least 10 characters').max(500, 'Purpose too long'),
+  tenure: z.number().min(6, 'Minimum tenure is 6 months').max(60, 'Maximum tenure is 60 months'),
+  interestRate: z.number().min(8, 'Minimum interest rate is 8%').max(25, 'Maximum interest rate is 25%'),
+  monthlyIncome: z.number().min(1000, 'Monthly income must be at least $1,000'),
+  employmentStatus: z.string().min(1, 'Employment status is required'),
+  employmentDetails: z.object({
+    company: z.string().min(1, 'Company name is required'),
+    position: z.string().min(1, 'Position is required'),
+    workingSince: z.string().transform(str => new Date(str)),
+    salary: z.number().min(0)
+  }),
+  personalDetails: z.object({
+    maritalStatus: z.enum(['Single', 'Married', 'Divorced', 'Widowed']),
+    dependents: z.number().min(0).max(10),
+    education: z.string().min(1, 'Education is required')
+  }),
+  financialDetails: z.object({
+    bankBalance: z.number().min(0),
+    monthlyExpenses: z.number().min(0),
+    existingLoans: z.number().min(0),
+    creditHistory: z.string().optional(),
+    assets: z.array(z.object({
+      type: z.string(),
+      value: z.number().min(0),
+      description: z.string()
+    })).optional().default([])
+  }),
+  documents: z.array(z.object({
+    type: z.string(),
+    url: z.string().url(),
+    uploadedAt: z.string().optional().default(() => new Date().toISOString()).transform(str => new Date(str))
+  })).optional().default([]),
+  collateral: z.object({
+    type: z.string(),
+    value: z.number().min(0),
+    description: z.string()
+  }).optional(),
+  notes: z.string().optional()
+});
+
+// Query parameters validation schema
 const loanListQuerySchema = z.object({
-  page: z.string().optional().default('1').transform(val => {
-    const num = parseInt(val, 10);
-    return isNaN(num) || num < 1 ? 1 : num;
-  }),
-  limit: z.string().optional().default('10').transform(val => {
-    const num = parseInt(val, 10);
-    return isNaN(num) || num < 1 ? 10 : Math.min(num, 100);
-  }),
+  page: z.string().optional().default('1').transform(val => parseInt(val, 10)),
+  limit: z.string().optional().default('10').transform(val => Math.min(parseInt(val, 10), 100)),
   sortBy: z.string().optional().default('createdAt'),
   sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
-  
-  // Filters
-  userId: z.string().optional().refine(val => !val || /^[0-9a-fA-F]{24}$/.test(val), 'Invalid user ID'),
+  userId: z.string().optional(),
   status: z.enum(['Pending', 'Approved', 'Rejected', 'Active', 'Completed', 'Defaulted']).optional(),
   amountMin: z.string().optional().transform(val => {
     if (!val || val === '') return undefined;
@@ -64,7 +100,7 @@ async function getLoansHandler(request: NextRequest): Promise<NextResponse> {
   // Apply middleware
   const authResult = await authMiddleware(request, {
     requireAuth: true,
-    allowedUserTypes: ['admin'],
+    allowedUserTypes: ['admin', 'user'],
     requiredPermission: 'loans.view'
   });
   if (authResult) return authResult;
@@ -103,13 +139,23 @@ async function getLoansHandler(request: NextRequest): Promise<NextResponse> {
       search
     } = validationResult.data;
 
+    const userType = request.headers.get('x-user-type');
+    const requestingUserId = request.headers.get('x-user-id');
+
     // Build aggregation pipeline
     const pipeline: any[] = [];
 
     // Match stage for filtering
     const matchConditions: any = {};
 
-    if (userId) {
+    // Users can only view their own loans
+    if (userType === 'user') {
+      if (requestingUserId) {
+        matchConditions.userId = new mongoose.Types.ObjectId(requestingUserId);
+      } else {
+        return apiHandler.badRequest('Missing or invalid user ID in request headers');
+      }
+    } else if (userId) {
       matchConditions.userId = new mongoose.Types.ObjectId(userId);
     }
 
@@ -136,22 +182,20 @@ async function getLoansHandler(request: NextRequest): Promise<NextResponse> {
     }
 
     if (isOverdue) {
-      matchConditions['repaymentSchedule'] = {
-        $elemMatch: {
-          status: 'Overdue'
-        }
-      };
+      matchConditions.overdueAmount = { $gt: 0 };
     }
 
     if (search) {
       matchConditions.$or = [
         { purpose: { $regex: search, $options: 'i' } },
-        { employmentStatus: { $regex: search, $options: 'i' } },
-        { 'metadata.applicationSource': { $regex: search, $options: 'i' } }
+        { 'employmentDetails.company': { $regex: search, $options: 'i' } },
+        { notes: { $regex: search, $options: 'i' } }
       ];
     }
 
-    pipeline.push({ $match: matchConditions });
+    if (Object.keys(matchConditions).length > 0) {
+      pipeline.push({ $match: matchConditions });
+    }
 
     // Lookup user details
     pipeline.push({
@@ -159,91 +203,20 @@ async function getLoansHandler(request: NextRequest): Promise<NextResponse> {
         from: 'users',
         localField: 'userId',
         foreignField: '_id',
-        as: 'user',
-        pipeline: [
-          {
-            $project: {
-              name: 1,
-              email: 1,
-              phone: 1,
-              kycStatus: 1,
-              planId: 1
-            }
-          }
-        ]
+        as: 'user'
       }
     });
 
     pipeline.push({
-      $unwind: {
-        path: '$user',
-        preserveNullAndEmptyArrays: true
-      }
+      $unwind: '$user'
     });
 
-    // Lookup approved by admin details
-    pipeline.push({
-      $lookup: {
-        from: 'admins',
-        localField: 'approvedBy',
-        foreignField: '_id',
-        as: 'approvedByAdmin',
-        pipeline: [
-          {
-            $project: {
-              name: 1,
-              email: 1
-            }
-          }
-        ]
-      }
-    });
-
-    pipeline.push({
-      $unwind: {
-        path: '$approvedByAdmin',
-        preserveNullAndEmptyArrays: true
-      }
-    });
-
-    // Add computed fields
-    pipeline.push({
-      $addFields: {
-        hasOverduePayments: {
-          $gt: [
-            {
-              $size: {
-                $filter: {
-                  input: '$repaymentSchedule',
-                  cond: { $eq: ['$$this.status', 'Overdue'] }
-                }
-              }
-            },
-            0
-          ]
-        },
-        nextPaymentDate: {
-          $min: {
-            $map: {
-              input: {
-                $filter: {
-                  input: '$repaymentSchedule',
-                  cond: { $eq: ['$$this.status', 'Pending'] }
-                }
-              },
-              in: '$$this.dueDate'
-            }
-          }
-        }
-      }
-    });
-
-    // Count total documents
+    // Get total count
     const countPipeline = [...pipeline, { $count: 'total' }];
-    const totalResult = await Loan.aggregate(countPipeline);
-    const total = totalResult[0]?.total || 0;
+    const countResult = await Loan.aggregate(countPipeline);
+    const total = countResult[0]?.total || 0;
 
-    // Sort and paginate
+    // Add sorting
     const sortDirection = sortOrder === 'asc' ? 1 : -1;
     pipeline.push({ $sort: { [sortBy]: sortDirection } });
     
@@ -264,7 +237,7 @@ async function getLoansHandler(request: NextRequest): Promise<NextResponse> {
   }
 }
 
-// POST /api/loans - Create new loan application
+// POST /api/loans - Create new loan application (Admin only)
 async function createLoanHandler(request: NextRequest): Promise<NextResponse> {
   const apiHandler = ApiHandler.create(request);
 
@@ -310,7 +283,7 @@ async function createLoanHandler(request: NextRequest): Promise<NextResponse> {
       return apiHandler.badRequest('User already has a pending or approved loan application');
     }
 
-    // Calculate credit score
+    // Calculate credit score if not provided
     const creditScore = calculateCreditScore({
       income: loanData.monthlyIncome,
       employmentStability: loanData.employmentDetails ? 
@@ -322,59 +295,31 @@ async function createLoanHandler(request: NextRequest): Promise<NextResponse> {
         Math.floor((Date.now() - user.dateOfBirth.getTime()) / (1000 * 60 * 60 * 24 * 365)) : 30
     });
 
-    // Calculate EMI with default interest rate
-    const interestRate = 12; // Default 12% annual interest rate
-    const emiAmount = calculateEMI(loanData.amount, interestRate, loanData.tenure);
+    // Calculate EMI
+    const emiAmount = calculateEMI(loanData.amount, loanData.interestRate, loanData.tenure);
+    
+    // Generate repayment schedule
     const repaymentSchedule = await generateRepaymentSchedule(
-      loanData.amount,
-      interestRate,
+      loanData.amount, 
+      loanData.interestRate, 
       loanData.tenure
     );
 
-    // Transform schedule to match schema
-    const transformedSchedule = repaymentSchedule.map((item, index) => ({
-      installmentNumber: item.installmentNumber,
-      dueDate: new Date(Date.now() + (index + 1) * 30 * 24 * 60 * 60 * 1000), // Monthly intervals
-      amount: item.amount,
-      principal: item.principal,
-      interest: item.interest,
-      status: 'Pending' as const
-    }));
-
-    // Create loan application
+    // Create loan
     const newLoan = await Loan.create({
-      userId: loanData.userId,
-      amount: loanData.amount,
-      currency: 'USD',
-      interestRate,
-      tenure: loanData.tenure,
+      ...loanData,
       emiAmount,
       creditScore,
-      status: 'Pending',
-      purpose: loanData.purpose,
-      monthlyIncome: loanData.monthlyIncome,
-      employmentStatus: loanData.employmentStatus,
-      collateral: loanData.collateral,
-      documents: loanData.documents || [],
-      repaymentSchedule: transformedSchedule,
-      totalPaid: 0,
+      totalAmount: emiAmount * loanData.tenure,
       remainingAmount: loanData.amount,
+      totalPaid: 0,
       overdueAmount: 0,
-      penaltyAmount: 0,
-      metadata: {
-        applicationSource: 'admin_panel',
-        riskAssessment: {
-          score: creditScore,
-          factors: {
-            income: loanData.monthlyIncome,
-            creditScore,
-            employmentStability: loanData.employmentDetails ? 
-              Math.floor((Date.now() - loanData.employmentDetails.workingSince.getTime()) / (1000 * 60 * 60 * 24 * 30)) : 24,
-            debtToIncomeRatio: loanData.financialDetails.existingLoans / loanData.monthlyIncome,
-            collateralValue: loanData.collateral?.value || 0
-          },
-          recommendation: creditScore >= 650 ? 'Approve' : creditScore >= 550 ? 'Review' : 'Reject'
-        }
+      repaymentSchedule,
+      currency: 'USD',
+      status: 'Pending',
+      analytics: {
+        creditScore,
+        recommendation: creditScore >= 650 ? 'Approve' : creditScore >= 550 ? 'Review' : 'Reject'
       }
     }) as ILoan;
 
@@ -395,6 +340,24 @@ async function createLoanHandler(request: NextRequest): Promise<NextResponse> {
       userAgent: request.headers.get('user-agent') || 'Unknown',
       severity: 'Medium'
     });
+
+    // Send email notification to user
+    try {
+      await sendEmail({
+        to: user.email,
+        subject: 'Loan Application Created',
+        templateId: 'loan-application-received',
+        variables: {
+          userName: user.name,
+          loanAmount: loanData.amount,
+          applicationId: newLoan._id.toString(),
+          expectedProcessingTime: '3-5 business days'
+        }
+      });
+    } catch (emailError) {
+      console.error('Failed to send loan creation email:', emailError);
+      // Don't fail the request if email fails
+    }
 
     // Populate user details for response
     const populatedLoan = await Loan.findById(newLoan._id)

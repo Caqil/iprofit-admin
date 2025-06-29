@@ -31,23 +31,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { userUpdateSchema } from "@/lib/validation";
-import { UserUpdateRequest, Plan } from "@/types";
+import { Plan, User, UserUpdateRequest } from "@/types";
 import { useAuth } from "@/hooks/use-auth";
 import { hasPermission } from "@/lib/permissions";
 import { toast } from "sonner";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
-
-import { z } from "zod";
-type EditUserFormData = UserUpdateRequest & {
-  notes?: string;
-};
-
-const editUserSchema = userUpdateSchema.extend({
-  notes: z.string().optional(),
-});
 
 export default function EditUserPage() {
   const params = useParams();
@@ -55,20 +45,24 @@ export default function EditUserPage() {
   const { user: currentUser } = useAuth();
   const userId = params.id as string;
 
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const form = useForm<EditUserFormData>({
-    resolver: zodResolver(editUserSchema),
+  const form = useForm<UserUpdateRequest>({
+    resolver: zodResolver(userUpdateSchema),
     defaultValues: {
       name: "",
       email: "",
       phone: "",
       status: "Active",
       planId: "",
+      emailVerified: false,
+      phoneVerified: false,
+      twoFactorEnabled: false,
+      dateOfBirth: undefined,
       address: {
         street: "",
         city: "",
@@ -76,6 +70,7 @@ export default function EditUserPage() {
         country: "",
         zipCode: "",
       },
+      notes: "",
     },
   });
 
@@ -98,24 +93,35 @@ export default function EditUserPage() {
 
       const data = await response.json();
       if (data.success) {
-        const userData = data.data.user;
+        const userData = data.data.user || data.data;
         setUser(userData);
 
-        // Populate form with user data
-        form.reset({
-          name: userData.name,
-          email: userData.email,
-          phone: userData.phone,
-          status: userData.status,
-          planId: userData.plan?._id || "",
-          address: userData.address || {
-            street: "",
-            city: "",
-            state: "",
-            country: "",
-            zipCode: "",
+        // FIXED: Properly handle date conversion and form reset
+        const formData: UserUpdateRequest = {
+          name: userData.name || "",
+          email: userData.email || "",
+          phone: userData.phone || "",
+          status: userData.status || "Active",
+          planId: userData.plan?._id || userData.planId || "",
+          emailVerified: Boolean(userData.emailVerified),
+          phoneVerified: Boolean(userData.phoneVerified),
+          twoFactorEnabled: Boolean(userData.twoFactorEnabled),
+          dateOfBirth: userData.dateOfBirth
+            ? (new Date(userData.dateOfBirth)
+                .toISOString()
+                .split("T")[0] as any)
+            : undefined,
+          address: {
+            street: userData.address?.street || "",
+            city: userData.address?.city || "",
+            state: userData.address?.state || "",
+            country: userData.address?.country || "",
+            zipCode: userData.address?.zipCode || "",
           },
-        });
+          notes: "",
+        };
+
+        form.reset(formData);
       } else {
         throw new Error(data.error || "Failed to fetch user data");
       }
@@ -136,7 +142,7 @@ export default function EditUserPage() {
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
-          setPlans(data.data);
+          setPlans(data.data?.data || data.data || []);
         }
       }
     } catch (error) {
@@ -144,24 +150,57 @@ export default function EditUserPage() {
     }
   };
 
-  const onSubmit = async (data: EditUserFormData) => {
+  const onSubmit = async (data: UserUpdateRequest) => {
     try {
       setIsSaving(true);
+
+      // FIXED: Clean up the data before sending
+      const submitData = {
+        ...data,
+        // Remove empty address fields
+        address:
+          data.address &&
+          Object.values(data.address).some(
+            (value) => typeof value === "string" && value.trim() !== ""
+          )
+            ? data.address
+            : undefined,
+        // Handle date properly
+        dateOfBirth: data.dateOfBirth
+          ? new Date(data.dateOfBirth).toISOString()
+          : undefined,
+        // Remove empty notes
+        notes: data.notes?.trim() || undefined,
+      };
+
+      // Remove undefined values
+      Object.keys(submitData).forEach((key) => {
+        if (submitData[key as keyof typeof submitData] === undefined) {
+          delete submitData[key as keyof typeof submitData];
+        }
+      });
 
       const response = await fetch(`/api/users/${userId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(data),
+        body: JSON.stringify(submitData),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to update user");
+        throw new Error(
+          errorData.error || errorData.message || "Failed to update user"
+        );
       }
 
-      toast.success("User updated successfully");
-      router.push(`/dashboard/users/${userId}`);
+      const result = await response.json();
+      if (result.success) {
+        toast.success("User updated successfully");
+        router.push(`/dashboard/users/${userId}`);
+      } else {
+        throw new Error(result.error || "Failed to update user");
+      }
     } catch (error) {
       console.error("Error updating user:", error);
       toast.error(
@@ -297,7 +336,18 @@ export default function EditUserPage() {
                     <FormItem>
                       <FormLabel>Date of Birth</FormLabel>
                       <FormControl>
-                        <Input type="date" {...field} />
+                        <Input
+                          type="date"
+                          {...field}
+                          value={
+                            field.value
+                              ? new Date(field.value)
+                                  .toISOString()
+                                  .split("T")[0]
+                              : ""
+                          }
+                          onChange={(e) => field.onChange(e.target.value)}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -325,7 +375,7 @@ export default function EditUserPage() {
                       <FormLabel>Account Status</FormLabel>
                       <Select
                         onValueChange={field.onChange}
-                        defaultValue={field.value}
+                        value={field.value}
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -350,7 +400,7 @@ export default function EditUserPage() {
                       <FormLabel>Plan</FormLabel>
                       <Select
                         onValueChange={field.onChange}
-                        defaultValue={field.value}
+                        value={field.value}
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -359,7 +409,10 @@ export default function EditUserPage() {
                         </FormControl>
                         <SelectContent>
                           {plans.map((plan) => (
-                            <SelectItem key={plan._id} value={plan._id}>
+                            <SelectItem
+                              key={plan._id || plan._id}
+                              value={plan._id || plan._id}
+                            >
                               {plan.name} - ${plan.price || 0}
                             </SelectItem>
                           ))}
@@ -521,6 +574,37 @@ export default function EditUserPage() {
                   )}
                 />
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Admin Notes */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Admin Notes</CardTitle>
+              <CardDescription>
+                Add internal notes about this user update
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <FormField
+                control={form.control}
+                name="notes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Notes</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="Enter any notes about this update..."
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      These notes will be recorded in the audit log
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </CardContent>
           </Card>
 
