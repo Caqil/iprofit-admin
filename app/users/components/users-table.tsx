@@ -350,7 +350,7 @@ export function UsersTable({
 
   if (error) {
     return (
-      <div className="flex items-center justify-center py-10">
+     <div className="*:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:shadow-xs flex items-center justify-center py-10">
         <div className="text-center">
           <div className="text-red-500 text-sm font-medium">
             Error loading users
@@ -362,9 +362,9 @@ export function UsersTable({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="*:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:shadow-xs space-y-4">
       {/* Table */}
-      <div className="*:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:shadow-xs rounded-md border">
+      <div className="rounded-md border">
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (

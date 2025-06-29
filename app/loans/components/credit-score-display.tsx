@@ -124,58 +124,6 @@ export function CreditScoreDisplay({
 
   const config = sizeConfig[size];
 
-  // Circular progress component
-  const CircularProgress = ({
-    percentage,
-    size,
-  }: {
-    percentage: number;
-    size: number;
-  }) => {
-    const radius = (size - config.strokeWidth) / 2;
-    const circumference = radius * 2 * Math.PI;
-    const strokeDasharray = `${
-      (percentage / 100) * circumference
-    } ${circumference}`;
-
-    return (
-      <div className="relative">
-        <svg className={config.circle} viewBox={`0 0 ${size} ${size}`}>
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            fill="transparent"
-            stroke="currentColor"
-            strokeWidth={config.strokeWidth}
-            className="text-gray-200"
-          />
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            fill="transparent"
-            stroke="currentColor"
-            strokeWidth={config.strokeWidth}
-            strokeDasharray={strokeDasharray}
-            strokeDashoffset={0}
-            strokeLinecap="round"
-            className={scoreDetails.color}
-            style={{
-              transform: "rotate(-90deg)",
-              transformOrigin: "50% 50%",
-              transition: "stroke-dasharray 0.5s ease-in-out",
-            }}
-          />
-        </svg>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className={cn("font-bold", config.score, scoreDetails.color)}>
-            {score}
-          </span>
-        </div>
-      </div>
-    );
-  };
 
   // Badge variant
   if (variant === "badge") {
@@ -236,10 +184,7 @@ export function CreditScoreDisplay({
                 </div>
               )}
             </div>
-            <CircularProgress
-              percentage={scoreDetails.percentage}
-              size={size === "lg" ? 64 : size === "md" ? 48 : 32}
-            />
+           
           </div>
 
           {showTrend && previousScore && (
@@ -274,10 +219,7 @@ export function CreditScoreDisplay({
   // Default variant
   const DefaultContent = (
     <div className={cn("flex items-center gap-3", className)}>
-      <CircularProgress
-        percentage={scoreDetails.percentage}
-        size={size === "lg" ? 64 : size === "md" ? 48 : 32}
-      />
+     
 
       <div className="space-y-1">
         <div className="flex items-center gap-2">

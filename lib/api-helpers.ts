@@ -423,10 +423,13 @@ export function createMatchStage(filters: Record<string, any>) {
   return { $match: match };
 }
 
-export function createSortStage(sortBy: string, sortOrder: 'asc' | 'desc') {
-  return { $sort: { [sortBy]: sortOrder === 'asc' ? 1 : -1 } };
+export function createSortStage(sortBy: string, sortOrder: string) {
+  return {
+    $sort: {
+      [sortBy]: (sortOrder === 'asc' ? 1 : -1) as 1 | -1
+    }
+  };
 }
-
 export function createPaginationStages(page: number, limit: number) {
   return [
     { $skip: (page - 1) * limit },

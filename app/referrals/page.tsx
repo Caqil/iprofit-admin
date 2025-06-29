@@ -126,6 +126,8 @@ export default function ReferralsPage() {
       />
 
       {/* Filters */}
+      <div className="*:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:shadow-xs">
+        
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center">
@@ -205,7 +207,7 @@ export default function ReferralsPage() {
           </div>
         </CardContent>
       </Card>
-
+</div>
       {/* Main Content Tabs */}
       <Tabs defaultValue="referrals" className="space-y-4">
         <TabsList>
