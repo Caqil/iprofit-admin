@@ -1,3 +1,4 @@
+// app/api/users/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { User, IUser } from '@/models/User';
@@ -14,10 +15,15 @@ import { objectIdValidator } from '@/utils/validators';
 import { UserProfile, UserStatistics } from '@/types';
 import mongoose from 'mongoose';
 
+// Next.js 15 Route Handler with proper params typing
+interface RouteContext {
+  params: Promise<{ id: string }>;
+}
+
 // GET /api/users/[id] - Get user details with profile information
 async function getUserHandler(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: RouteContext
 ): Promise<NextResponse> {
   const apiHandler = ApiHandler.create(request);
 
@@ -35,7 +41,8 @@ async function getUserHandler(
   try {
     await connectToDatabase();
 
-    const { id } = params;
+    // Await the params Promise (Next.js 15 requirement)
+    const { id } = await context.params;
 
     // Validate user ID
     const idValidation = objectIdValidator.safeParse(id);
@@ -53,88 +60,93 @@ async function getUserHandler(
           from: 'plans',
           localField: 'planId',
           foreignField: '_id',
-          as: 'plan'
+          as: 'plan',
+          pipeline: [
+            {
+              $project: {
+                name: 1,
+                description: 1,
+                price: 1,
+                features: 1,
+                limits: 1,
+                isActive: 1
+              }
+            }
+          ]
         }
       },
       { $unwind: { path: '$plan', preserveNullAndEmptyArrays: true } },
-      
+
       // Lookup recent transactions
       {
         $lookup: {
           from: 'transactions',
-          let: { userId: '$_id' },
+          localField: '_id',
+          foreignField: 'userId',
+          as: 'recentTransactions',
           pipeline: [
-            { $match: { $expr: { $eq: ['$userId', '$$userId'] } } },
             { $sort: { createdAt: -1 } },
-            { $limit: 10 }
-          ],
-          as: 'recentTransactions'
+            { $limit: 10 },
+            {
+              $project: {
+                type: 1,
+                amount: 1,
+                currency: 1,
+                status: 1,
+                gateway: 1,
+                createdAt: 1,
+                description: 1
+              }
+            }
+          ]
         }
       },
-      
-      // Lookup referrals
+
+      // Lookup referrals (users referred by this user)
       {
         $lookup: {
           from: 'users',
-          let: { referralCode: '$referralCode' },
+          localField: 'referralCode',
+          foreignField: 'referredBy',
+          as: 'referrals',
           pipeline: [
-            { $match: { $expr: { $eq: ['$referredBy', '$$referralCode'] } } },
-            { $project: { _id: 1, name: 1, email: 1, createdAt: 1, balance: 1 } }
-          ],
-          as: 'referrals'
+            {
+              $project: {
+                name: 1,
+                email: 1,
+                createdAt: 1,
+                status: 1
+              }
+            }
+          ]
         }
       },
-      
+
       // Calculate statistics
       {
         $addFields: {
           statistics: {
-            totalDeposits: {
-              $reduce: {
-                input: {
-                  $filter: {
-                    input: '$recentTransactions',
-                    cond: { $eq: ['$$this.type', 'deposit'] }
-                  }
-                },
-                initialValue: 0,
-                in: { $add: ['$$value', '$$this.amount'] }
-              }
-            },
-            totalWithdrawals: {
-              $reduce: {
-                input: {
-                  $filter: {
-                    input: '$recentTransactions',
-                    cond: { $eq: ['$$this.type', 'withdrawal'] }
-                  }
-                },
-                initialValue: 0,
-                in: { $add: ['$$value', '$$this.amount'] }
-              }
-            },
+            totalTransactions: { $size: '$recentTransactions' },
             totalReferrals: { $size: '$referrals' },
             accountAge: {
               $divide: [
                 { $subtract: [new Date(), '$createdAt'] },
-                1000 * 60 * 60 * 24
+                1000 * 60 * 60 * 24 // Convert to days
               ]
-            },
-            lastActivity: '$lastLogin'
+            }
           }
         }
       }
     ];
 
-    const results = await User.aggregate(pipeline);
-    const userProfile = results[0];
+    const [userProfile] = await User.aggregate(pipeline);
 
     if (!userProfile) {
       return apiHandler.notFound('User not found');
     }
 
     // Format response
-    const response: UserProfile = {
+    const response = {
       user: {
         _id: userProfile._id,
         name: userProfile.name,
@@ -143,11 +155,8 @@ async function getUserHandler(
         balance: userProfile.balance,
         status: userProfile.status,
         kycStatus: userProfile.kycStatus,
-        kycDocuments: userProfile.kycDocuments,
-        kycRejectionReason: userProfile.kycRejectionReason,
         referralCode: userProfile.referralCode,
         referredBy: userProfile.referredBy,
-        deviceId: userProfile.deviceId,
         profilePicture: userProfile.profilePicture,
         dateOfBirth: userProfile.dateOfBirth,
         address: userProfile.address,
@@ -155,11 +164,9 @@ async function getUserHandler(
         phoneVerified: userProfile.phoneVerified,
         twoFactorEnabled: userProfile.twoFactorEnabled,
         lastLogin: userProfile.lastLogin,
-        loginAttempts: userProfile.loginAttempts,
-        lockedUntil: userProfile.lockedUntil,
         createdAt: userProfile.createdAt,
         updatedAt: userProfile.updatedAt,
-        planId: userProfile.plan?._id ?? userProfile.planId // add planId to satisfy User type
+        planId: userProfile.planId // add planId to satisfy User type
       },
       plan: userProfile.plan,
       statistics: userProfile.statistics,
@@ -195,7 +202,7 @@ async function getUserHandler(
 // PUT /api/users/[id] - Update user information
 async function updateUserHandler(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: RouteContext
 ): Promise<NextResponse> {
   const apiHandler = ApiHandler.create(request);
 
@@ -213,7 +220,8 @@ async function updateUserHandler(
   try {
     await connectToDatabase();
 
-    const { id } = params;
+    // Await the params Promise (Next.js 15 requirement)
+    const { id } = await context.params;
     const adminId = request.headers.get('x-user-id');
 
     // Validate user ID
@@ -262,53 +270,89 @@ async function updateUserHandler(
       }
     }
 
-    // Validate plan if being updated
-    if (updateData.planId) {
-      const plan = await Plan.findById(updateData.planId);
-      if (!plan) {
-        return apiHandler.badRequest('Invalid plan ID');
-      }
-    }
-
-    // Store original values for audit
-    const originalValues = {
+    // Store original data for audit log
+    const originalData = {
       name: existingUser.name,
       email: existingUser.email,
       phone: existingUser.phone,
       status: existingUser.status,
-      planId: existingUser.planId?.toString()
+      balance: existingUser.balance,
+      planId: existingUser.planId
     };
 
     // Update user
     const updatedUser = await User.findByIdAndUpdate(
       id,
       { 
-        ...updateData,
-        updatedAt: new Date()
+        ...updateData, 
+        updatedAt: new Date() 
       },
-      { new: true, runValidators: true }
-    ).populate('planId', 'name type description');
+      { 
+        new: true, 
+        runValidators: true 
+      }
+    ).populate('planId', 'name description price features limits');
 
     if (!updatedUser) {
       return apiHandler.notFound('User not found');
     }
 
-    // Send notification email if status changed
-    if (updateData.status && updateData.status !== originalValues.status) {
-      try {
+    // Send notification email if status changed or important updates
+    try {
+      const statusChanged = originalData.status !== updateData.status;
+      const emailChanged = originalData.email !== updateData.email;
+      
+      if (statusChanged && updateData.status) {
+        let emailTemplate = '';
+        let emailSubject = '';
+        
+        switch (updateData.status) {
+          case 'Active':
+            emailTemplate = 'account_activated';
+            emailSubject = 'Account Activated';
+            break;
+          case 'Suspended':
+            emailTemplate = 'account_suspended';
+            emailSubject = 'Account Suspended';
+            break;
+          case 'Banned':
+            emailTemplate = 'account_banned';
+            emailSubject = 'Account Banned';
+            break;
+        }
+        
+        if (emailTemplate) {
+          await sendEmail({
+            to: updatedUser.email,
+            subject: emailSubject,
+            templateId: emailTemplate,
+            variables: {
+              userName: updatedUser.name,
+              status: updateData.status,
+              updateDate: new Date().toLocaleDateString(),
+              supportEmail: process.env.SUPPORT_EMAIL || 'support@example.com',
+              loginUrl: `${process.env.NEXTAUTH_URL}/login`
+            }
+          });
+        }
+      }
+      
+      if (emailChanged) {
         await sendEmail({
-          to: updatedUser.email,
-          templateId: 'account_status_update',
-          subject: `Account Status Update - ${updateData.status}`,
+          to: updateData.email!,
+          subject: 'Email Address Updated',
+          templateId: 'email_updated',
           variables: {
-            name: updatedUser.name,
-            status: updateData.status,
-            supportEmail: process.env.SUPPORT_EMAIL
+            userName: updatedUser.name,
+            newEmail: updateData.email!,
+            updateDate: new Date().toLocaleDateString(),
+            supportEmail: process.env.SUPPORT_EMAIL || 'support@example.com'
           }
         });
-      } catch (emailError) {
-        console.error('Failed to send status update email:', emailError);
       }
+    } catch (emailError) {
+      console.error('Failed to send user update notification email:', emailError);
+      // Don't fail the request if email fails
     }
 
     // Log audit
@@ -317,11 +361,11 @@ async function updateUserHandler(
       action: 'users.update',
       entity: 'User',
       entityId: id,
+      oldData: originalData,
+      newData: updateData,
       status: 'Success',
       metadata: {
-        originalValues,
-        updatedValues: updateData,
-        changedFields: Object.keys(updateData)
+        updatedFields: Object.keys(updateData)
       },
       ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
       userAgent: request.headers.get('user-agent') || 'unknown'
@@ -359,7 +403,7 @@ async function updateUserHandler(
 // DELETE /api/users/[id] - Delete user (soft delete)
 async function deleteUserHandler(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: RouteContext
 ): Promise<NextResponse> {
   const apiHandler = ApiHandler.create(request);
 
@@ -374,7 +418,8 @@ async function deleteUserHandler(
   try {
     await connectToDatabase();
 
-    const { id } = params;
+    // Await the params Promise (Next.js 15 requirement)
+    const { id } = await context.params;
     const adminId = request.headers.get('x-user-id');
 
     // Validate user ID
@@ -398,13 +443,41 @@ async function deleteUserHandler(
       return apiHandler.badRequest('Cannot delete user with active transactions');
     }
 
+    // Store user data for audit log before soft delete
+    const userData = {
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      balance: user.balance,
+      status: user.status,
+      kycStatus: user.kycStatus
+    };
+
     // Soft delete - mark as banned instead of actual deletion
-    await User.findByIdAndUpdate(id, {
+    const updatedUser = await User.findByIdAndUpdate(id, {
       status: 'Banned',
       email: `deleted_${Date.now()}_${user.email}`,
       phone: `deleted_${Date.now()}_${user.phone}`,
       updatedAt: new Date()
-    });
+    }, { new: true });
+
+    // Send account deletion notification email (to original email before masking)
+    try {
+      await sendEmail({
+        to: user.email, // Use original email before it was masked
+        subject: 'Account Deleted',
+        templateId: 'account_deleted',
+        variables: {
+          userName: user.name,
+          deletionDate: new Date().toLocaleDateString(),
+          reason: 'Administrative action',
+          supportEmail: process.env.SUPPORT_EMAIL || 'support@example.com'
+        }
+      });
+    } catch (emailError) {
+      console.error('Failed to send account deletion email:', emailError);
+      // Don't fail the request if email fails
+    }
 
     // Log audit
     await AuditLog.create({
@@ -412,31 +485,41 @@ async function deleteUserHandler(
       action: 'users.delete',
       entity: 'User',
       entityId: id,
+      oldData: userData,
       status: 'Success',
       metadata: {
         userName: user.name,
         userEmail: user.email,
-        deletionType: 'soft'
+        deletionType: 'soft',
+        hasActiveTransactions: !!activeTransactions
       },
       ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
       userAgent: request.headers.get('user-agent') || 'unknown'
     });
 
-    return apiHandler.success({ message: 'User deleted successfully' });
+    return apiHandler.success({ 
+      message: 'User deleted successfully',
+      deletedUser: {
+        id: updatedUser?._id,
+        name: userData.name,
+        deletedAt: new Date().toISOString()
+      }
+    });
 
   } catch (error) {
     return apiHandler.handleError(error);
   }
 }
 
-export async function GET(request: NextRequest, context: { params: { id: string } }) {
+// Export handlers with Next.js 15 compatible context
+export async function GET(request: NextRequest, context: RouteContext) {
   return withErrorHandler(getUserHandler)(request, context);
 }
 
-export async function PUT(request: NextRequest, context: { params: { id: string } }) {
+export async function PUT(request: NextRequest, context: RouteContext) {
   return withErrorHandler(updateUserHandler)(request, context);
 }
 
-export async function DELETE(request: NextRequest, context: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, context: RouteContext) {
   return withErrorHandler(deleteUserHandler)(request, context);
 }

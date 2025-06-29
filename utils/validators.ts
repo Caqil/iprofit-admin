@@ -61,10 +61,6 @@ export function isValidLoanTenure(tenure: number): boolean {
   return tenure >= LOAN_CONFIG.TENURE.MINIMUM_MONTHS && tenure <= LOAN_CONFIG.TENURE.MAXIMUM_MONTHS;
 }
 
-export function isValidCreditScore(score: number): boolean {
-  return score >= LOAN_CONFIG.CREDIT_SCORE.MINIMUM && score <= LOAN_CONFIG.CREDIT_SCORE.MAXIMUM;
-}
-
 export function isValidWithdrawalAmount(amount: number): boolean {
   return amount >= TRANSACTION_CONFIG.MINIMUM_AMOUNTS.WITHDRAWAL;
 }
@@ -157,10 +153,6 @@ export const tenureValidator = z.number()
   .min(LOAN_CONFIG.TENURE.MINIMUM_MONTHS, `Minimum tenure is ${LOAN_CONFIG.TENURE.MINIMUM_MONTHS} months`)
   .max(LOAN_CONFIG.TENURE.MAXIMUM_MONTHS, `Maximum tenure is ${LOAN_CONFIG.TENURE.MAXIMUM_MONTHS} months`);
 
-export const creditScoreValidator = z.number()
-  .int('Credit score must be a whole number')
-  .min(LOAN_CONFIG.CREDIT_SCORE.MINIMUM, `Minimum credit score is ${LOAN_CONFIG.CREDIT_SCORE.MINIMUM}`)
-  .max(LOAN_CONFIG.CREDIT_SCORE.MAXIMUM, `Maximum credit score is ${LOAN_CONFIG.CREDIT_SCORE.MAXIMUM}`);
 
 export const withdrawalAmountValidator = z.number()
   .positive('Amount must be positive')
@@ -386,11 +378,6 @@ export function validateLoanEligibility(
   const debtToIncomeRatio = existingLoans / income;
   if (debtToIncomeRatio > 0.4) {
     reasons.push('Debt-to-income ratio too high (max 40%)');
-  }
-  
-  // Credit score requirement
-  if (creditScore < LOAN_CONFIG.CREDIT_SCORE.MINIMUM + 200) {
-    reasons.push(`Credit score too low (minimum ${LOAN_CONFIG.CREDIT_SCORE.MINIMUM + 200})`);
   }
   
   // Maximum loan amount based on income
