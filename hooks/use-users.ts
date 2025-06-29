@@ -26,13 +26,21 @@ interface UsersHookReturn {
   refreshUsers: () => void;
 }
 
+// FIXED: API Response wrapper type to match actual response structure
+interface ApiResponseWrapper<T> {
+  success: boolean;
+  data: T;
+  message?: string;
+  timestamp: string;
+}
+
 export function useUsers(
   filters?: UserFilter,
   pagination?: PaginationParams
 ): UsersHookReturn {
   const queryClient = useQueryClient();
 
-  // Users list query
+  // FIXED: Users list query with proper response type handling
   const usersQuery = useQuery({
     queryKey: ['users', filters, pagination],
     queryFn: async (): Promise<ListResponse<User>> => {
@@ -40,7 +48,7 @@ export function useUsers(
       
       if (filters) {
         Object.entries(filters).forEach(([key, value]) => {
-          if (value !== undefined && value !== null) {
+          if (value !== undefined && value !== null && value !== '') {
             params.append(key, value.toString());
           }
         });
@@ -53,14 +61,28 @@ export function useUsers(
         if (pagination.sortOrder) params.append('sortOrder', pagination.sortOrder);
       }
 
+      console.log('Fetching users with params:', params.toString()); // Debug log
+
       const response = await fetch(`/api/users?${params}`);
       if (!response.ok) {
-        throw new Error('Failed to fetch users');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP ${response.status}: Failed to fetch users`);
       }
 
-      return response.json();
+      const result: ApiResponseWrapper<ListResponse<User>> = await response.json();
+      
+      console.log('Raw API response:', result); // Debug log
+      
+      // Extract the actual data from the ApiHandler wrapper
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to fetch users');
+      }
+
+      return result.data; // This contains { data: User[], pagination: {...} }
     },
-    staleTime: 2 * 60 * 1000 // 2 minutes
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    retry: 3,
+    retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 30000)
   });
 
   // Create user mutation
@@ -73,11 +95,16 @@ export function useUsers(
       });
 
       if (!response.ok) {
-        const error = await response.json();
+        const error = await response.json().catch(() => ({}));
         throw new Error(error.message || 'Failed to create user');
       }
 
-      const result = await response.json();
+      const result: ApiResponseWrapper<User> = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to create user');
+      }
+
       return result.data;
     },
     onSuccess: () => {
@@ -99,11 +126,16 @@ export function useUsers(
       });
 
       if (!response.ok) {
-        const error = await response.json();
+        const error = await response.json().catch(() => ({}));
         throw new Error(error.message || 'Failed to update user');
       }
 
-      const result = await response.json();
+      const result: ApiResponseWrapper<User> = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to update user');
+      }
+
       return result.data;
     },
     onSuccess: () => {
@@ -123,11 +155,17 @@ export function useUsers(
       });
 
       if (!response.ok) {
-        const error = await response.json();
+        const error = await response.json().catch(() => ({}));
         throw new Error(error.message || 'Failed to delete user');
       }
 
-      return response.json();
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to delete user');
+      }
+
+      return result.data;
     },
     onSuccess: () => {
       toast.success('User deleted successfully');
@@ -148,11 +186,17 @@ export function useUsers(
       });
 
       if (!response.ok) {
-        const error = await response.json();
+        const error = await response.json().catch(() => ({}));
         throw new Error(error.message || 'Failed to process KYC');
       }
 
-      return response.json();
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to process KYC');
+      }
+
+      return result.data;
     },
     onSuccess: (_, variables) => {
       const action = variables.action === 'approve' ? 'approved' : 'rejected';
@@ -174,14 +218,22 @@ export function useUsers(
       });
 
       if (!response.ok) {
-        const error = await response.json();
+        const error = await response.json().catch(() => ({}));
         throw new Error(error.message || 'Failed to execute bulk action');
       }
 
-      return response.json();
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to execute bulk action');
+      }
+
+      return result.data;
     },
     onSuccess: (data) => {
-      toast.success(`Bulk action completed: ${data.success} successful, ${data.failed} failed`);
+      const successCount = data?.success || data?.successful || 0;
+      const failedCount = data?.failed || 0;
+      toast.success(`Bulk action completed: ${successCount} successful, ${failedCount} failed`);
       queryClient.invalidateQueries({ queryKey: ['users'] });
     },
     onError: (error) => {
@@ -193,15 +245,24 @@ export function useUsers(
   const getUserProfile = async (userId: string): Promise<UserProfile> => {
     const response = await fetch(`/api/users/${userId}/profile`);
     if (!response.ok) {
-      throw new Error('Failed to fetch user profile');
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.message || 'Failed to fetch user profile');
     }
-    const result = await response.json();
+    
+    const result: ApiResponseWrapper<UserProfile> = await response.json();
+    
+    if (!result.success) {
+      throw new Error(result.message || 'Failed to fetch user profile');
+    }
+
     return result.data;
   };
 
+  console.log('Users query data:', usersQuery.data); // Debug log
+
   return {
     users: usersQuery.data?.data || [],
-    totalUsers: usersQuery.data?.pagination.total || 0,
+    totalUsers: usersQuery.data?.pagination?.total || 0,
     isLoading: usersQuery.isLoading,
     error: usersQuery.error?.message || null,
     createUser: createUserMutation.mutateAsync,

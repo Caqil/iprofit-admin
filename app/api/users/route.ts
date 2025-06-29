@@ -10,14 +10,23 @@ import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler, createPaginatedResponse, createMatchStage, createSortStage, createPaginationStages } from '@/lib/api-helpers';
 import { generateReferralCode } from '@/lib/utils';
 import { sendEmail } from '@/lib/email';
-import { userCreateSchema, paginationSchema, dateRangeSchema } from '@/lib/validation';
+import { userCreateSchema } from '@/lib/validation';
 import { objectIdValidator } from '@/utils/validators';
 import { UserFilter, PaginationParams } from '@/types';
 import { z } from 'zod';
 import mongoose from 'mongoose';
 
-// User list query validation schema
-const userListQuerySchema = paginationSchema.extend({
+// FIXED: User list query validation schema - Proper URL parameter handling
+const userListQuerySchema = z.object({
+  // Pagination - URL params are always strings
+  page: z.string().optional().default('1').transform(val => {
+    const num = parseInt(val, 10);
+    return isNaN(num) || num < 1 ? 1 : num;
+  }),
+  limit: z.string().optional().default('10').transform(val => {
+    const num = parseInt(val, 10);
+    return isNaN(num) || num < 1 ? 10 : Math.min(num, 100);
+  }),
   sortBy: z.string().optional().default('createdAt'),
   sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
   
@@ -25,14 +34,50 @@ const userListQuerySchema = paginationSchema.extend({
   search: z.string().optional(),
   status: z.enum(['Active', 'Suspended', 'Banned']).optional(),
   kycStatus: z.enum(['Pending', 'Approved', 'Rejected']).optional(),
-  planId: objectIdValidator.optional(),
-  hasReferrals: z.string().transform(Boolean).optional(),
-  minBalance: z.string().transform(Number).pipe(z.number().min(0)).optional(),
-  maxBalance: z.string().transform(Number).pipe(z.number().min(0)).optional(),
-  emailVerified: z.string().transform(Boolean).optional(),
-  phoneVerified: z.string().transform(Boolean).optional(),
-  twoFactorEnabled: z.string().transform(Boolean).optional()
-}).merge(dateRangeSchema);
+  planId: z.string().optional().refine(val => !val || /^[0-9a-fA-F]{24}$/.test(val), 'Invalid plan ID'),
+  
+  // FIXED: Proper boolean handling for optional filters
+  hasReferrals: z.string().optional().transform(val => {
+    if (!val || val === '') return undefined;
+    return val === 'true';
+  }),
+  emailVerified: z.string().optional().transform(val => {
+    if (!val || val === '') return undefined;
+    return val === 'true';
+  }),
+  phoneVerified: z.string().optional().transform(val => {
+    if (!val || val === '') return undefined;
+    return val === 'true';
+  }),
+  twoFactorEnabled: z.string().optional().transform(val => {
+    if (!val || val === '') return undefined;
+    return val === 'true';
+  }),
+  
+  // FIXED: Proper number handling for optional filters
+  minBalance: z.string().optional().transform(val => {
+    if (!val || val === '') return undefined;
+    const num = parseFloat(val);
+    return isNaN(num) ? undefined : num;
+  }),
+  maxBalance: z.string().optional().transform(val => {
+    if (!val || val === '') return undefined;
+    const num = parseFloat(val);
+    return isNaN(num) ? undefined : num;
+  }),
+  
+  // Date range
+  dateFrom: z.string().optional().transform(val => {
+    if (!val || val === '') return undefined;
+    const date = new Date(val);
+    return isNaN(date.getTime()) ? undefined : date;
+  }),
+  dateTo: z.string().optional().transform(val => {
+    if (!val || val === '') return undefined;
+    const date = new Date(val);
+    return isNaN(date.getTime()) ? undefined : date;
+  })
+});
 
 // Enhanced user creation schema with additional fields
 const userCreateExtendedSchema = userCreateSchema.extend({
@@ -68,9 +113,13 @@ async function getUsersHandler(request: NextRequest): Promise<NextResponse> {
     // Parse and validate query parameters
     const url = new URL(request.url);
     const queryParams = Object.fromEntries(url.searchParams.entries());
+    
+    console.log('Raw query params:', queryParams); // Debug log
+    
     const validationResult = userListQuerySchema.safeParse(queryParams);
 
     if (!validationResult.success) {
+      console.log('Validation errors:', validationResult.error.errors); // Debug log
       return apiHandler.validationError(
         validationResult.error.errors.map(err => ({
           field: err.path.join('.'),
@@ -99,10 +148,14 @@ async function getUsersHandler(request: NextRequest): Promise<NextResponse> {
       twoFactorEnabled
     } = validationResult.data;
 
+    console.log('Parsed params:', { // Debug log
+      page, limit, sortBy, sortOrder, hasReferrals, emailVerified, phoneVerified, twoFactorEnabled
+    });
+
     // Build aggregation pipeline
     const pipeline: any[] = [];
 
-    // Match stage for filtering
+    // FIXED: Build match conditions properly
     const matchConditions: any = {};
 
     if (search) {
@@ -117,6 +170,8 @@ async function getUsersHandler(request: NextRequest): Promise<NextResponse> {
     if (status) matchConditions.status = status;
     if (kycStatus) matchConditions.kycStatus = kycStatus;
     if (planId) matchConditions.planId = new mongoose.Types.ObjectId(planId);
+    
+    // FIXED: Only apply filters when they are explicitly set (not undefined)
     if (emailVerified !== undefined) matchConditions.emailVerified = emailVerified;
     if (phoneVerified !== undefined) matchConditions.phoneVerified = phoneVerified;
     if (twoFactorEnabled !== undefined) matchConditions.twoFactorEnabled = twoFactorEnabled;
@@ -129,19 +184,32 @@ async function getUsersHandler(request: NextRequest): Promise<NextResponse> {
 
     if (dateFrom || dateTo) {
       matchConditions.createdAt = {};
-      if (dateFrom) matchConditions.createdAt.$gte = new Date(dateFrom);
-      if (dateTo) matchConditions.createdAt.$lte = new Date(dateTo);
+      if (dateFrom) matchConditions.createdAt.$gte = dateFrom;
+      if (dateTo) matchConditions.createdAt.$lte = dateTo;
     }
 
+    // FIXED: Referral filtering logic - only apply when explicitly requested
     if (hasReferrals !== undefined) {
       if (hasReferrals) {
-        matchConditions.referredBy = { $exists: true, $ne: null };
+        // Show only users who were referred by someone
+        matchConditions.referredBy = { $exists: true, $nin: [null, ''] };
       } else {
-        matchConditions.referredBy = { $exists: false };
+        // Show only users who were NOT referred by anyone
+        matchConditions.$or = [
+          { referredBy: { $exists: false } },
+          { referredBy: null },
+          { referredBy: '' }
+        ];
       }
     }
+    // If hasReferrals is undefined, don't apply any referral filtering at all
 
-    pipeline.push({ $match: matchConditions });
+    console.log('Match conditions:', JSON.stringify(matchConditions, null, 2)); // Debug log
+
+    // Only add match stage if there are conditions
+    if (Object.keys(matchConditions).length > 0) {
+      pipeline.push({ $match: matchConditions });
+    }
 
     // Lookup plan information
     pipeline.push({
@@ -160,20 +228,35 @@ async function getUsersHandler(request: NextRequest): Promise<NextResponse> {
       }
     });
 
-    // Lookup referral statistics
+    // Lookup referral statistics - count users who used this user's referral code
     pipeline.push({
       $lookup: {
         from: 'users',
-        localField: 'referralCode',
-        foreignField: 'referredBy',
-        as: 'referrals'
+        let: { userReferralCode: '$referralCode' },
+        pipeline: [
+          { 
+            $match: { 
+              $expr: { 
+                $and: [
+                  { $eq: ['$referredBy', '$$userReferralCode'] },
+                  { $ne: ['$$userReferralCode', null] },
+                  { $ne: ['$$userReferralCode', ''] }
+                ]
+              } 
+            } 
+          },
+          { $count: 'count' }
+        ],
+        as: 'referralStats'
       }
     });
 
     // Add computed fields
     pipeline.push({
       $addFields: {
-        referralCount: { $size: '$referrals' },
+        referralCount: {
+          $ifNull: [{ $arrayElemAt: ['$referralStats.count', 0] }, 0]
+        },
         accountAge: {
           $divide: [
             { $subtract: [new Date(), '$createdAt'] },
@@ -189,10 +272,12 @@ async function getUsersHandler(request: NextRequest): Promise<NextResponse> {
       }
     });
 
-    // Get total count for pagination
+    // Get total count for pagination BEFORE applying sort and pagination
     const countPipeline = [...pipeline, { $count: 'total' }];
     const countResult = await User.aggregate(countPipeline);
     const total = countResult[0]?.total || 0;
+
+    console.log('Total users found:', total); // Debug log
 
     // Add sorting
     pipeline.push(createSortStage(sortBy, sortOrder));
@@ -216,7 +301,7 @@ async function getUsersHandler(request: NextRequest): Promise<NextResponse> {
         emailVerified: 1,
         phoneVerified: 1,
         twoFactorEnabled: 1,
-        lastLogin: 1,
+        lastLoginAt: 1,
         createdAt: 1,
         updatedAt: 1,
         referralCount: 1,
@@ -231,6 +316,8 @@ async function getUsersHandler(request: NextRequest): Promise<NextResponse> {
 
     const users = await User.aggregate(pipeline);
 
+    console.log('Users returned:', users.length); // Debug log
+
     const paginatedResponse = createPaginatedResponse(users, total, page, limit);
 
     // Log audit
@@ -238,11 +325,14 @@ async function getUsersHandler(request: NextRequest): Promise<NextResponse> {
       adminId: request.headers.get('x-user-id'),
       action: 'users.list',
       entity: 'User',
+      entityId: 'bulk',
       status: 'Success',
       metadata: {
-        filters: { search, status, kycStatus, planId },
+        filters: { search, status, kycStatus, planId, hasReferrals },
         resultCount: users.length,
-        totalCount: total
+        totalCount: total,
+        page,
+        limit
       },
       ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
       userAgent: request.headers.get('user-agent') || 'unknown'
@@ -251,10 +341,12 @@ async function getUsersHandler(request: NextRequest): Promise<NextResponse> {
     return apiHandler.success(paginatedResponse);
 
   } catch (error) {
-    return apiHandler.handleError(error);
+    console.error('Get users error:', error);
+    return apiHandler.internalError('Failed to fetch users');
   }
 }
 
+// POST /api/users - Create a new user (Admin only)
 async function createUserHandler(request: NextRequest): Promise<NextResponse> {
   const apiHandler = ApiHandler.create(request);
 
@@ -269,12 +361,10 @@ async function createUserHandler(request: NextRequest): Promise<NextResponse> {
   const rateLimitResult = await apiRateLimit(request);
   if (rateLimitResult) return rateLimitResult;
 
-  const deviceCheckResult = await deviceCheckMiddleware(request);
-  if (deviceCheckResult) return deviceCheckResult;
-
   try {
     await connectToDatabase();
 
+    const adminId = request.headers.get('x-user-id');
     const body = await request.json();
     const validationResult = userCreateExtendedSchema.safeParse(body);
 
@@ -292,106 +382,102 @@ async function createUserHandler(request: NextRequest): Promise<NextResponse> {
       name,
       email,
       phone,
+      password,
       planId,
-      deviceId,
-      referralCode,
+      referredBy,
       address,
       dateOfBirth,
       initialBalance
     } = validationResult.data;
 
-    // Check if user already exists
+    // Check for existing user
     const existingUser = await User.findOne({
-      $or: [
-        { email },
-        { phone },
-        { deviceId }
-      ]
+      $or: [{ email }, { phone }]
     });
 
     if (existingUser) {
-      const duplicateField = existingUser.email === email ? 'email' :
-                            existingUser.phone === phone ? 'phone' : 'device';
-      return apiHandler.conflict(`User with this ${duplicateField} already exists`);
+      return apiHandler.conflict(
+        existingUser.email === email 
+          ? 'Email already registered' 
+          : 'Phone number already registered'
+      );
     }
 
-    // Validate plan exists
-    const plan = await Plan.findById(planId);
-    if (!plan) {
-      return apiHandler.badRequest('Invalid plan ID');
+    // Get or create default plan
+    let userPlan: any = null;
+    if (planId) {
+      userPlan = await Plan.findById(planId);
+      if (!userPlan) {
+        return apiHandler.badRequest('Invalid plan ID');
+      }
+    } else {
+      userPlan = await Plan.findOne({ 
+        name: 'Free Plan',
+        status: 'Active' 
+      });
+      
+      if (!userPlan) {
+        return apiHandler.internalError('Default plan not found');
+      }
     }
 
-    // Validate referral code if provided
-    let referrerUser = null;
-    if (referralCode) {
-      referrerUser = await User.findOne({ referralCode });
+    // Validate referrer if provided
+    let referrerUser: any = null;
+    if (referredBy) {
+      referrerUser = await User.findOne({
+        $or: [
+          { referralCode: referredBy },
+          { _id: mongoose.Types.ObjectId.isValid(referredBy) ? referredBy : null }
+        ]
+      });
+
       if (!referrerUser) {
         return apiHandler.badRequest('Invalid referral code');
       }
     }
 
-    // Generate unique referral code for new user
-    let newReferralCode: string;
-    do {
-      newReferralCode = generateReferralCode();
-    } while (await User.findOne({ referralCode: newReferralCode }));
+    // Generate unique referral code
+    const referralCode = await generateReferralCode();
 
-    // Create user
-    const userData = {
+    // Create new user
+    const newUser = new User({
       name,
       email,
       phone,
-      planId: new mongoose.Types.ObjectId(planId),
+      password, // Will be hashed by the model middleware
+      planId: userPlan._id,
+      referralCode,
+      referredBy: referrerUser?._id,
       balance: initialBalance || 0,
-      kycStatus: 'Pending' as const,
-      kycDocuments: [],
-      referralCode: newReferralCode,
-      referredBy: referralCode || undefined,
-      deviceId,
-      address,
       dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
-      status: 'Active' as const,
-      loginAttempts: 0,
+      address,
+      status: 'Active',
+      kycStatus: 'Pending',
       emailVerified: false,
       phoneVerified: false,
-      twoFactorEnabled: false
-    };
+      twoFactorEnabled: false,
+      lastLoginAt: null,
+      metadata: {
+        source: 'admin_created',
+        createdBy: adminId
+      }
+    });
 
-    const newUser = await User.create(userData);
-
-    // Populate plan information
-    await newUser.populate('planId', 'name type description features pricing');
-
-    // Send welcome email
-    try {
-      await sendEmail({
-        to: email,
-        templateId: 'welcome',
-        subject: 'Welcome to Financial Admin Panel',
-        variables: {
-          name,
-          referralCode: newReferralCode,
-          planName: plan.name,
-          loginUrl: process.env.NEXTAUTH_URL + '/user/login'
-        }
-      });
-    } catch (emailError) {
-      console.error('Failed to send welcome email:', emailError);
-      // Don't fail the user creation if email fails
-    }
+    await newUser.save();
 
     // Log audit
     await AuditLog.create({
-      adminId: request.headers.get('x-user-id'),
+      adminId,
       action: 'users.create',
       entity: 'User',
       entityId: newUser._id.toString(),
       status: 'Success',
       metadata: {
-        userName: name,
-        userEmail: email,
-        planId,
-        referralCode: referralCode || null,
+        userName: newUser.name,
+        userEmail: newUser.email,
+        planId: userPlan._id,
+        initialBalance,
+        hasReferrer: !!referrerUser,
         hasAddress: !!address
       },
       ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
@@ -418,14 +504,11 @@ async function createUserHandler(request: NextRequest): Promise<NextResponse> {
     });
 
   } catch (error) {
-    return apiHandler.handleError(error);
+    console.error('Create user error:', error);
+    return apiHandler.internalError('Failed to create user');
   }
 }
 
-export async function GET(request: NextRequest) {
-  return withErrorHandler(getUsersHandler)(request);
-}
-
-export async function POST(request: NextRequest) {
-  return withErrorHandler(createUserHandler)(request);
-}
+// Export handlers wrapped with error handling
+export const GET = withErrorHandler(getUsersHandler);
+export const POST = withErrorHandler(createUserHandler);

@@ -1,4 +1,3 @@
-
 "use client";
 
 import React from "react";
@@ -71,8 +70,14 @@ export function UsersTable({
   const { user: currentUser } = useAuth();
 
   const canView = hasPermission(currentUser?.role || "Moderator", "users.view");
-  const canEdit = hasPermission(currentUser?.role || "Moderator", "users.update");
-  const canManageKYC = hasPermission(currentUser?.role || "Moderator", "users.kyc.approve");
+  const canEdit = hasPermission(
+    currentUser?.role || "Moderator",
+    "users.update"
+  );
+  const canManageKYC = hasPermission(
+    currentUser?.role || "Moderator",
+    "users.kyc.approve"
+  );
 
   const getStatusBadge = (status: string) => {
     const variants = {
@@ -80,7 +85,9 @@ export function UsersTable({
       Suspended: "bg-orange-100 text-orange-800",
       Banned: "bg-red-100 text-red-800",
     };
-    return variants[status as keyof typeof variants] || "bg-gray-100 text-gray-800";
+    return (
+      variants[status as keyof typeof variants] || "bg-gray-100 text-gray-800"
+    );
   };
 
   const getKYCBadge = (status: string) => {
@@ -89,7 +96,9 @@ export function UsersTable({
       Pending: "bg-yellow-100 text-yellow-800",
       Rejected: "bg-red-100 text-red-800",
     };
-    return variants[status as keyof typeof variants] || "bg-gray-100 text-gray-800";
+    return (
+      variants[status as keyof typeof variants] || "bg-gray-100 text-gray-800"
+    );
   };
 
   const handleStatusChange = async (userId: string, newStatus: string) => {
@@ -113,7 +122,10 @@ export function UsersTable({
     }
   };
 
-  const handleKYCAction = async (userId: string, action: "approve" | "reject") => {
+  const handleKYCAction = async (
+    userId: string,
+    action: "approve" | "reject"
+  ) => {
     try {
       const response = await fetch(`/api/users/${userId}/kyc`, {
         method: "POST",
@@ -145,11 +157,7 @@ export function UsersTable({
           }
           onCheckedChange={(value) => {
             table.toggleAllPageRowsSelected(!!value);
-            onSelectionChange(
-              value
-                ? users.map((user) => user._id)
-                : []
-            );
+            onSelectionChange(value ? users.map((user) => user._id) : []);
           }}
           aria-label="Select all"
         />
@@ -163,7 +171,9 @@ export function UsersTable({
             if (value) {
               onSelectionChange([...currentSelected, row.original._id]);
             } else {
-              onSelectionChange(currentSelected.filter(id => id !== row.original._id));
+              onSelectionChange(
+                currentSelected.filter((id) => id !== row.original._id)
+              );
             }
           }}
           aria-label="Select row"
@@ -182,7 +192,11 @@ export function UsersTable({
             <Avatar className="h-8 w-8">
               <AvatarImage src={user.profilePicture} />
               <AvatarFallback>
-                {user.name.split(' ').map(n => n[0]).join('').toUpperCase()}
+                {user.name
+                  .split(" ")
+                  .map((n) => n[0])
+                  .join("")
+                  .toUpperCase()}
               </AvatarFallback>
             </Avatar>
             <div>
@@ -196,20 +210,14 @@ export function UsersTable({
     {
       accessorKey: "phone",
       header: "Phone",
-      cell: ({ row }) => (
-        <div className="text-sm">{row.getValue("phone")}</div>
-      ),
+      cell: ({ row }) => <div className="text-sm">{row.getValue("phone")}</div>,
     },
     {
       accessorKey: "status",
       header: "Status",
       cell: ({ row }) => {
         const status = row.getValue("status") as string;
-        return (
-          <Badge className={getStatusBadge(status)}>
-            {status}
-          </Badge>
-        );
+        return <Badge className={getStatusBadge(status)}>{status}</Badge>;
       },
     },
     {
@@ -217,11 +225,7 @@ export function UsersTable({
       header: "KYC",
       cell: ({ row }) => {
         const kycStatus = row.getValue("kycStatus") as string;
-        return (
-          <Badge className={getKYCBadge(kycStatus)}>
-            {kycStatus}
-          </Badge>
-        );
+        return <Badge className={getKYCBadge(kycStatus)}>{kycStatus}</Badge>;
       },
     },
     {
@@ -229,11 +233,7 @@ export function UsersTable({
       header: "Balance",
       cell: ({ row }) => {
         const balance = row.getValue("balance") as number;
-        return (
-          <div className="font-medium">
-            ${balance.toLocaleString()}
-          </div>
-        );
+        return <div className="font-medium">${balance.toLocaleString()}</div>;
       },
     },
     {
@@ -242,9 +242,7 @@ export function UsersTable({
       cell: ({ row }) => {
         const user = row.original;
         return user.plan ? (
-          <Badge variant="outline">
-            {user.plan.name}
-          </Badge>
+          <Badge variant="outline">{user.plan.name}</Badge>
         ) : (
           <span className="text-muted-foreground">No plan</span>
         );
@@ -255,11 +253,7 @@ export function UsersTable({
       header: "Joined",
       cell: ({ row }) => {
         const date = new Date(row.getValue("createdAt"));
-        return (
-          <div className="text-sm">
-            {date.toLocaleDateString()}
-          </div>
-        );
+        return <div className="text-sm">{date.toLocaleDateString()}</div>;
       },
     },
     {
@@ -275,12 +269,18 @@ export function UsersTable({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => router.push(`/dashboard/users/${user._id}`)}>
+              <DropdownMenuItem
+                onClick={() => router.push(`/dashboard/users/${user._id}`)}
+              >
                 <Eye className="mr-2 h-4 w-4" />
                 View Details
               </DropdownMenuItem>
               {canEdit && (
-                <DropdownMenuItem onClick={() => router.push(`/dashboard/users/${user._id}/edit`)}>
+                <DropdownMenuItem
+                  onClick={() =>
+                    router.push(`/dashboard/users/${user._id}/edit`)
+                  }
+                >
                   <Edit className="mr-2 h-4 w-4" />
                   Edit User
                 </DropdownMenuItem>
@@ -288,11 +288,15 @@ export function UsersTable({
               <DropdownMenuSeparator />
               {canManageKYC && user.kycStatus === "Pending" && (
                 <>
-                  <DropdownMenuItem onClick={() => handleKYCAction(user._id, "approve")}>
+                  <DropdownMenuItem
+                    onClick={() => handleKYCAction(user._id, "approve")}
+                  >
                     <CheckCircle className="mr-2 h-4 w-4" />
                     Approve KYC
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleKYCAction(user._id, "reject")}>
+                  <DropdownMenuItem
+                    onClick={() => handleKYCAction(user._id, "reject")}
+                  >
                     <XCircle className="mr-2 h-4 w-4" />
                     Reject KYC
                   </DropdownMenuItem>
@@ -302,19 +306,25 @@ export function UsersTable({
               {canEdit && (
                 <>
                   {user.status !== "Active" && (
-                    <DropdownMenuItem onClick={() => handleStatusChange(user._id, "Active")}>
+                    <DropdownMenuItem
+                      onClick={() => handleStatusChange(user._id, "Active")}
+                    >
                       <Shield className="mr-2 h-4 w-4" />
                       Activate
                     </DropdownMenuItem>
                   )}
                   {user.status !== "Suspended" && (
-                    <DropdownMenuItem onClick={() => handleStatusChange(user._id, "Suspended")}>
+                    <DropdownMenuItem
+                      onClick={() => handleStatusChange(user._id, "Suspended")}
+                    >
                       <Ban className="mr-2 h-4 w-4" />
                       Suspend
                     </DropdownMenuItem>
                   )}
                   {user.status !== "Banned" && (
-                    <DropdownMenuItem onClick={() => handleStatusChange(user._id, "Banned")}>
+                    <DropdownMenuItem
+                      onClick={() => handleStatusChange(user._id, "Banned")}
+                    >
                       <Ban className="mr-2 h-4 w-4" />
                       Ban User
                     </DropdownMenuItem>
@@ -342,7 +352,9 @@ export function UsersTable({
     return (
       <div className="flex items-center justify-center py-10">
         <div className="text-center">
-          <div className="text-red-500 text-sm font-medium">Error loading users</div>
+          <div className="text-red-500 text-sm font-medium">
+            Error loading users
+          </div>
           <div className="text-muted-foreground text-sm mt-1">{error}</div>
         </div>
       </div>
@@ -352,7 +364,7 @@ export function UsersTable({
   return (
     <div className="space-y-4">
       {/* Table */}
-      <div className="rounded-md border">
+      <div className="*:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:shadow-xs rounded-md border">
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -373,7 +385,10 @@ export function UsersTable({
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center">
+                <TableCell
+                  colSpan={columns.length}
+                  className="h-24 text-center"
+                >
                   <LoadingSpinner />
                 </TableCell>
               </TableRow>
@@ -390,22 +405,31 @@ export function UsersTable({
                   }}
                 >
                   {row.getVisibleCells().map((cell) => (
-                    <TableCell 
+                    <TableCell
                       key={cell.id}
                       onClick={(e) => {
-                        if (cell.column.id === "select" || cell.column.id === "actions") {
+                        if (
+                          cell.column.id === "select" ||
+                          cell.column.id === "actions"
+                        ) {
                           e.stopPropagation();
                         }
                       }}
                     >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext()
+                      )}
                     </TableCell>
                   ))}
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center">
+                <TableCell
+                  colSpan={columns.length}
+                  className="h-24 text-center"
+                >
                   No users found
                 </TableCell>
               </TableRow>
@@ -418,7 +442,9 @@ export function UsersTable({
       <div className="flex items-center justify-between space-x-2 py-4">
         <div className="flex-1 text-sm text-muted-foreground">
           {selectedUsers.length > 0 && (
-            <span>{selectedUsers.length} of {users.length} row(s) selected.</span>
+            <span>
+              {selectedUsers.length} of {users.length} row(s) selected.
+            </span>
           )}
         </div>
         <div className="flex items-center space-x-6 lg:space-x-8">
@@ -458,7 +484,9 @@ export function UsersTable({
             <Button
               variant="outline"
               className="h-8 w-8 p-0"
-              onClick={() => onPaginationChange({ ...pagination, page: pagination.page - 1 })}
+              onClick={() =>
+                onPaginationChange({ ...pagination, page: pagination.page - 1 })
+              }
               disabled={pagination.page <= 1}
             >
               <span className="sr-only">Go to previous page</span>
@@ -467,7 +495,9 @@ export function UsersTable({
             <Button
               variant="outline"
               className="h-8 w-8 p-0"
-              onClick={() => onPaginationChange({ ...pagination, page: pagination.page + 1 })}
+              onClick={() =>
+                onPaginationChange({ ...pagination, page: pagination.page + 1 })
+              }
               disabled={pagination.page >= totalPages}
             >
               <span className="sr-only">Go to next page</span>
@@ -476,7 +506,9 @@ export function UsersTable({
             <Button
               variant="outline"
               className="h-8 w-8 p-0"
-              onClick={() => onPaginationChange({ ...pagination, page: totalPages })}
+              onClick={() =>
+                onPaginationChange({ ...pagination, page: totalPages })
+              }
               disabled={pagination.page >= totalPages}
             >
               <span className="sr-only">Go to last page</span>

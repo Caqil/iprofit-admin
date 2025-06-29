@@ -1,77 +1,84 @@
 import { z } from 'zod';
 
-// Common validation schemas
-export const emailSchema = z.string().email('Invalid email address');
-export const phoneSchema = z.string().regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone number');
-export const passwordSchema = z.string()
-  .min(8, 'Password must be at least 8 characters')
-  .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/, 
-    'Password must contain uppercase, lowercase, number and special character');
-
-// Admin schemas
-export const adminCreateSchema = z.object({
-  email: emailSchema,
-  password: passwordSchema,
-  name: z.string().min(2, 'Name must be at least 2 characters'),
-  role: z.enum(['SuperAdmin', 'Moderator'] as const)
-});
-
-export const adminUpdateSchema = z.object({
-  name: z.string().min(2).optional(),
-  role: z.enum(['SuperAdmin', 'Moderator'] as const).optional(),
-  isActive: z.boolean().optional(),
-  permissions: z.array(z.string()).optional()
-});
-
-export const loginSchema = z.object({
-  email: emailSchema,
-  password: z.string().min(1, 'Password is required'),
-  userType: z.enum(['admin', 'user']),
-  twoFactorToken: z.string().optional(),
-  rememberMe: z.boolean().optional().default(false),
-  deviceId: z.string().optional(),
-  fingerprint: z.string().optional()
-}).refine((data) => {
-  // For user login, deviceId and fingerprint are required
-  if (data.userType === 'user') {
-    return data.deviceId && data.fingerprint;
-  }
-  return true;
-}, {
-  message: 'Device ID and fingerprint are required for user login',
-  path: ['deviceId']
-});
-
 // User schemas
 export const userCreateSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
-  email: emailSchema,
-  phone: phoneSchema,
-  planId: z.string().min(1, 'Plan is required'),
-  deviceId: z.string().min(1, 'Device ID is required'),
-  referralCode: z.string().optional()
+  name: z.string().min(2, 'Name must be at least 2 characters').max(100),
+  email: z.string().email('Invalid email address'),
+  phone: z.string().min(10, 'Phone number must be at least 10 digits').max(20),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  planId: z.string().optional(),
+  referredBy: z.string().optional()
 });
 
 export const userUpdateSchema = z.object({
-  name: z.string().min(2).optional(),
-  email: emailSchema.optional(),
-  phone: phoneSchema.optional(),
+  name: z.string().min(2).max(100).optional(),
+  email: z.string().email().optional(),
+  phone: z.string().min(10).max(20).optional(),
   status: z.enum(['Active', 'Suspended', 'Banned'] as const).optional(),
+  kycStatus: z.enum(['Pending', 'Approved', 'Rejected'] as const).optional(),
   planId: z.string().optional(),
-  address: z.object({
-    street: z.string(),
-    city: z.string(),
-    state: z.string(),
-    country: z.string(),
-    zipCode: z.string()
-  }).optional(),
-  dateOfBirth: z.coerce.date().optional()
+  balance: z.number().min(0).optional(),
+  emailVerified: z.boolean().optional(),
+  phoneVerified: z.boolean().optional(),
+  twoFactorEnabled: z.boolean().optional()
 });
 
-export const kycApprovalSchema = z.object({
-  userId: z.string().min(1),
-  action: z.enum(['approve', 'reject']),
-  rejectionReason: z.string().optional()
+export const userRegistrationValidator = z.object({
+  name: z.string().min(2, 'Name must be at least 2 characters'),
+  email: z.string().email('Invalid email address'),
+  phone: z.string().min(10, 'Phone number must be at least 10 digits'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  confirmPassword: z.string().min(8),
+  deviceId: z.string().min(1),
+  fingerprint: z.string().min(1),
+  referralCode: z.string().optional(),
+  terms: z.boolean().refine(val => val === true, 'You must accept the terms and conditions')
+}).refine(data => data.password === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ["confirmPassword"]
+});
+
+// Admin schemas
+export const adminCreateSchema = z.object({
+  name: z.string().min(2).max(100),
+  email: z.string().email(),
+  password: z.string().min(8),
+  role: z.enum(['SuperAdmin', 'Admin', 'Moderator', 'Support'] as const),
+  permissions: z.array(z.string()).optional(),
+  isActive: z.boolean().default(true)
+});
+
+export const adminUpdateSchema = z.object({
+  name: z.string().min(2).max(100).optional(),
+  email: z.string().email().optional(),
+  role: z.enum(['SuperAdmin', 'Admin', 'Moderator', 'Support'] as const).optional(),
+  permissions: z.array(z.string()).optional(),
+  isActive: z.boolean().optional(),
+  password: z.string().min(8).optional()
+});
+
+// Authentication schemas
+export const loginSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  password: z.string().min(1, 'Password is required'),
+  userType: z.enum(['admin', 'user'] as const),
+  twoFactorToken: z.string().optional(),
+  rememberMe: z.boolean().optional(),
+  deviceId: z.string().optional(),
+  fingerprint: z.string().optional()
+});
+
+export const passwordResetSchema = z.object({
+  email: z.string().email('Invalid email address')
+});
+
+export const passwordUpdateSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required'),
+  newPassword: z.string().min(8, 'New password must be at least 8 characters'),
+  confirmPassword: z.string().min(8)
+}).refine(data => data.newPassword === data.confirmPassword, {
+  message: "New passwords don't match",
+  path: ["confirmPassword"]
 });
 
 // Transaction schemas
@@ -79,130 +86,87 @@ export const transactionCreateSchema = z.object({
   userId: z.string().min(1),
   type: z.enum(['deposit', 'withdrawal', 'bonus', 'profit', 'penalty'] as const),
   amount: z.number().positive('Amount must be positive'),
-  currency: z.enum(['USD', 'BDT'] as const),
+  currency: z.enum(['USD', 'BDT'] as const).default('BDT'),
   gateway: z.enum(['CoinGate', 'UddoktaPay', 'Manual', 'System'] as const),
-  description: z.string().optional()
+  description: z.string().min(1).max(500),
+  reference: z.string().optional(),
+  metadata: z.any().optional()
 });
 
-export const transactionApprovalSchema = z.object({
-  transactionId: z.string().min(1),
-  action: z.enum(['approve', 'reject']),
-  reason: z.string().optional(),
-  adminNotes: z.string().optional()
-});
-
-export const withdrawalRequestSchema = z.object({
-  userId: z.string().min(1),
-  amount: z.number().positive().min(100, 'Minimum withdrawal is 100 BDT'),
-  currency: z.enum(['USD', 'BDT'] as const),
-  withdrawalMethod: z.string().min(1),
-  accountDetails: z.object({
-    accountNumber: z.string().optional(),
-    routingNumber: z.string().optional(),
-    bankName: z.string().optional(),
-    walletAddress: z.string().optional()
-  })
+export const transactionUpdateSchema = z.object({
+  status: z.enum(['Pending', 'Approved', 'Rejected', 'Processing', 'Failed'] as const),
+  adminNotes: z.string().max(1000).optional(),
+  processedAt: z.coerce.date().optional()
 });
 
 // Plan schemas
 export const planCreateSchema = z.object({
-  name: z.string().min(2, 'Plan name must be at least 2 characters'),
-  description: z.string().min(10, 'Description must be at least 10 characters'),
-  price: z.number().min(0, 'Price cannot be negative'),
-  currency: z.enum(['USD', 'BDT'] as const),
-  depositLimit: z.number().positive(),
-  withdrawalLimit: z.number().positive(),
-  profitLimit: z.number().positive(),
-  minimumDeposit: z.number().positive(),
-  minimumWithdrawal: z.number().positive(),
-  dailyWithdrawalLimit: z.number().positive(),
-  monthlyWithdrawalLimit: z.number().positive(),
+  name: z.string().min(2).max(100),
+  description: z.string().min(10).max(1000),
+  type: z.enum(['Free', 'Basic', 'Premium', 'Enterprise'] as const),
+  price: z.number().min(0),
+  currency: z.enum(['USD', 'BDT'] as const).default('BDT'),
+  duration: z.number().positive(), // in days
   features: z.array(z.string()),
-  duration: z.number().positive().optional(),
-  color: z.string().regex(/^#[0-9A-F]{6}$/i, 'Invalid color format'),
-  priority: z.number().min(0).optional()
+  limitations: z.object({
+    maxTransactions: z.number().optional(),
+    maxWithdrawal: z.number().optional(),
+    dailyLimit: z.number().optional()
+  }).optional(),
+  isActive: z.boolean().default(true)
 });
 
+export const planUpdateSchema = planCreateSchema.partial();
+
 // Loan schemas
-export const loanApplicationSchema = z.object({
+export const loanCreateSchema = z.object({
   userId: z.string().min(1),
   amount: z.number().positive().max(5500, 'Maximum loan amount is $5,500'),
-  currency: z.enum(['USD', 'BDT'] as const),
-  purpose: z.string().min(10, 'Purpose must be at least 10 characters'),
-  tenure: z.number().min(6).max(60, 'Tenure must be between 6-60 months'),
-  monthlyIncome: z.number().positive(),
-  employmentStatus: z.string().min(1),
-  employmentDetails: z.object({
-    company: z.string().min(1),
-    position: z.string().min(1),
-    workingSince: z.coerce.date(),
-    salary: z.number().positive()
-  }),
-  personalDetails: z.object({
-    maritalStatus: z.string(),
-    dependents: z.number().min(0),
-    education: z.string()
-  }),
-  financialDetails: z.object({
-    bankBalance: z.number().min(0),
-    monthlyExpenses: z.number().positive(),
-    existingLoans: z.number().min(0),
-    assets: z.array(z.object({
-      type: z.string(),
-      value: z.number().positive(),
-      description: z.string()
-    }))
+  purpose: z.string().min(10).max(500),
+  termMonths: z.number().min(1).max(60),
+  interestRate: z.number().min(0).max(100),
+  collateral: z.string().optional(),
+  guarantorInfo: z.object({
+    name: z.string().min(2),
+    phone: z.string().min(10),
+    email: z.string().email(),
+    relationship: z.string().min(2)
+  }).optional()
+});
+
+export const loanUpdateSchema = z.object({
+  status: z.enum(['Pending', 'Approved', 'Rejected', 'Active', 'Completed', 'Defaulted'] as const),
+  approvedAmount: z.number().positive().optional(),
+  approvedRate: z.number().min(0).max(100).optional(),
+  rejectionReason: z.string().max(500).optional(),
+  adminNotes: z.string().max(1000).optional()
+});
+
+// KYC schemas
+export const kycSubmissionSchema = z.object({
+  documentType: z.enum(['passport', 'national_id', 'driving_license'] as const),
+  documentNumber: z.string().min(5).max(50),
+  frontImage: z.string().url(),
+  backImage: z.string().url().optional(),
+  selfieImage: z.string().url(),
+  address: z.object({
+    street: z.string().min(5),
+    city: z.string().min(2),
+    state: z.string().min(2),
+    country: z.string().min(2),
+    zipCode: z.string().min(3)
   })
 });
 
-export const emiCalculatorSchema = z.object({
-  loanAmount: z.number().positive().max(5500),
-  interestRate: z.number().positive().max(50),
-  tenure: z.number().min(6).max(60)
-});
-
-export const loanApprovalSchema = z.object({
-  loanId: z.string().min(1),
-  action: z.enum(['approve', 'reject']),
-  rejectionReason: z.string().optional(),
-  interestRate: z.number().positive().optional(),
-  conditions: z.string().optional()
-});
-
-// Task schemas
-export const taskCreateSchema = z.object({
-  name: z.string().min(3, 'Task name must be at least 3 characters'),
-  description: z.string().min(10, 'Description must be at least 10 characters'),
-  criteria: z.string().min(10, 'Criteria must be at least 10 characters'),
-  reward: z.number().positive(),
-  currency: z.enum(['USD', 'BDT'] as const),
-  category: z.string().min(1),
-  difficulty: z.enum(['Easy', 'Medium', 'Hard'] as const),
-  estimatedTime: z.number().positive(),
-  instructions: z.array(z.string()),
-  requiredProof: z.array(z.string()),
-  validFrom: z.coerce.date(),
-  validUntil: z.coerce.date().optional(),
-  maxCompletions: z.number().positive().optional(),
-  isRepeatable: z.boolean().optional(),
-  cooldownPeriod: z.number().positive().optional()
-});
-
-export const taskSubmissionSchema = z.object({
-  taskId: z.string().min(1),
-  userId: z.string().min(1),
-  proof: z.array(z.object({
-    type: z.string(),
-    content: z.string(),
-    uploadedAt: z.coerce.date()
-  })),
-  submissionNote: z.string().optional()
+export const kycApprovalSchema = z.object({
+  status: z.enum(['Approved', 'Rejected'] as const),
+  rejectionReason: z.string().max(500).optional(),
+  adminNotes: z.string().max(1000).optional()
 });
 
 // Notification schemas
 export const notificationCreateSchema = z.object({
-  userId: z.string().optional(),
-  type: z.enum(['KYC', 'Withdrawal', 'Loan', 'Task', 'Referral', 'System', 'Marketing'] as const),
+  type: z.enum(['system', 'promotion', 'alert', 'reminder'] as const),
   channel: z.enum(['email', 'sms', 'in_app', 'push'] as const),
   title: z.string().min(1),
   message: z.string().min(1),
@@ -245,17 +209,18 @@ export const ticketResponseSchema = z.object({
   })).optional()
 });
 
-// Pagination and filtering schemas
+// FIXED: Pagination and filtering schemas for URL query parameters
+// URL parameters are always strings, so we need to transform them
 export const paginationSchema = z.object({
-  page: z.number().positive().default(1),
-  limit: z.number().positive().max(100).default(10),
+  page: z.string().transform(Number).pipe(z.number().positive()).default('1').or(z.number().positive().default(1)),
+  limit: z.string().transform(Number).pipe(z.number().positive().max(100)).default('10').or(z.number().positive().max(100).default(10)),
   sortBy: z.string().optional(),
   sortOrder: z.enum(['asc', 'desc']).optional()
 });
 
 export const dateRangeSchema = z.object({
-  dateFrom: z.coerce.date().optional(),
-  dateTo: z.coerce.date().optional()
+  dateFrom: z.string().optional().transform(val => val ? new Date(val) : undefined),
+  dateTo: z.string().optional().transform(val => val ? new Date(val) : undefined)
 });
 
 // File upload schema
@@ -274,3 +239,30 @@ export const deviceInfoSchema = z.object({
   ipAddress: z.string().ip()
 });
 
+// Enhanced pagination schema that properly handles string inputs from URL
+export const urlPaginationSchema = z.object({
+  page: z.string().optional().default('1').transform(val => {
+    const num = parseInt(val, 10);
+    return isNaN(num) || num < 1 ? 1 : num;
+  }),
+  limit: z.string().optional().default('10').transform(val => {
+    const num = parseInt(val, 10);
+    return isNaN(num) || num < 1 ? 10 : Math.min(num, 100);
+  }),
+  sortBy: z.string().optional(),
+  sortOrder: z.enum(['asc', 'desc']).optional()
+});
+
+// Enhanced date range schema for URL parameters
+export const urlDateRangeSchema = z.object({
+  dateFrom: z.string().optional().transform(val => {
+    if (!val) return undefined;
+    const date = new Date(val);
+    return isNaN(date.getTime()) ? undefined : date;
+  }),
+  dateTo: z.string().optional().transform(val => {
+    if (!val) return undefined;
+    const date = new Date(val);
+    return isNaN(date.getTime()) ? undefined : date;
+  })
+});

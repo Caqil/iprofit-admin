@@ -180,22 +180,11 @@ export async function authMiddleware(
       return NextResponse.redirect(loginUrl);
     }
 
-    // Add user info to request headers for API routes
-    if (pathname.startsWith('/api/')) {
-      const requestHeaders = new Headers(request.headers);
-      requestHeaders.set('x-user-id', token.sub || '');
-      requestHeaders.set('x-user-type', userType);
-      requestHeaders.set('x-user-role', token.role as string || '');
-      requestHeaders.set('x-user-permissions', JSON.stringify(token.permissions || []));
-
-      return NextResponse.next({
-        request: {
-          headers: requestHeaders,
-        },
-      });
-    }
-
+    // For API routes, we don't need to modify the request
+    // The middleware will proceed to the actual handler
+    // IMPORTANT: Remove NextResponse.next() call - it's not supported in App Router
     return null;
+
   } catch (error) {
     console.error('Auth middleware error:', error);
     

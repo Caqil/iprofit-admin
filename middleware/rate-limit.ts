@@ -114,27 +114,9 @@ export async function rateLimitMiddleware(
   entry.hits.push(now);
   entry.count = entry.hits.length;
 
-  // Create response to add headers
-  const response = NextResponse.next();
-
-  // Add rate limit headers to successful requests
-  if (headers) {
-    const remaining = maxRequests - entry.count;
-    
-    if (standardHeaders) {
-      response.headers.set('RateLimit-Limit', maxRequests.toString());
-      response.headers.set('RateLimit-Remaining', remaining.toString());
-      response.headers.set('RateLimit-Reset', new Date(entry.resetTime).toISOString());
-    }
-
-    if (legacyHeaders) {
-      response.headers.set('X-RateLimit-Limit', maxRequests.toString());
-      response.headers.set('X-RateLimit-Remaining', remaining.toString());
-      response.headers.set('X-RateLimit-Reset', Math.ceil(entry.resetTime / 1000).toString());
-    }
-  }
-
-  return response;
+  // IMPORTANT: Don't use NextResponse.next() in API route middleware
+  // Instead, return null to allow the request to continue
+  return null;
 }
 
 // Default key generator
@@ -166,7 +148,7 @@ const env = {
   RATE_LIMIT_UPLOAD_REQUESTS: Number(process.env.RATE_LIMIT_UPLOAD_REQUESTS) || 10,
 };
 
- // Predefined rate limiters
+// Predefined rate limiters
 export const authRateLimit = createRateLimit({
   windowMs: env.RATE_LIMIT_AUTH_WINDOW, // 15 minutes
   maxRequests: env.RATE_LIMIT_AUTH_REQUESTS, // 5 attempts

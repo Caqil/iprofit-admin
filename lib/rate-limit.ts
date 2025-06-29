@@ -1,5 +1,4 @@
-
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
 interface RateLimitConfig {
   windowMs: number;
@@ -77,26 +76,81 @@ export function createRateLimit(config: RateLimitConfig) {
   };
 }
 
-// Predefined rate limiters
-export const authRateLimit = createRateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  maxRequests: 5 // 5 login attempts per 15 minutes
-});
+// Helper function to convert rate limit result to NextResponse
+export function createRateLimitResponse(result: {
+  success: boolean;
+  limit: number;
+  remaining: number;
+  resetTime: number;
+}, message = 'Too many requests'): NextResponse | null {
+  if (result.success) {
+    return null; // Allow request to continue
+  }
 
-export const apiRateLimit = createRateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  maxRequests: 100 // 100 API calls per minute
-});
+  const response = NextResponse.json(
+    {
+      success: false,
+      error: message,
+      code: 429,
+      details: {
+        limit: result.limit,
+        remaining: result.remaining,
+        retryAfter: Math.ceil((result.resetTime - Date.now()) / 1000)
+      },
+      timestamp: new Date().toISOString()
+    },
+    { status: 429 }
+  );
 
-export const uploadRateLimit = createRateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  maxRequests: 10 // 10 uploads per minute
-});
+  // Add standard rate limit headers
+  response.headers.set('RateLimit-Limit', result.limit.toString());
+  response.headers.set('RateLimit-Remaining', result.remaining.toString());
+  response.headers.set('RateLimit-Reset', new Date(result.resetTime).toISOString());
+  response.headers.set('Retry-After', Math.ceil((result.resetTime - Date.now()) / 1000).toString());
 
-export const strictRateLimit = createRateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  maxRequests: 20 // 20 requests per minute for sensitive operations
-});
+  return response;
+}
+
+// Predefined rate limiters that return NextResponse | null
+export async function authRateLimit(req: NextRequest): Promise<NextResponse | null> {
+  const rateLimiter = createRateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    maxRequests: 5 // 5 login attempts per 15 minutes
+  });
+  
+  const result = await rateLimiter(req);
+  return createRateLimitResponse(result, 'Too many authentication attempts');
+}
+
+export async function apiRateLimit(req: NextRequest): Promise<NextResponse | null> {
+  const rateLimiter = createRateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    maxRequests: 100 // 100 API calls per minute
+  });
+  
+  const result = await rateLimiter(req);
+  return createRateLimitResponse(result, 'API rate limit exceeded');
+}
+
+export async function uploadRateLimit(req: NextRequest): Promise<NextResponse | null> {
+  const rateLimiter = createRateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    maxRequests: 10 // 10 uploads per minute
+  });
+  
+  const result = await rateLimiter(req);
+  return createRateLimitResponse(result, 'Upload rate limit exceeded');
+}
+
+export async function strictRateLimit(req: NextRequest): Promise<NextResponse | null> {
+  const rateLimiter = createRateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    maxRequests: 20 // 20 requests per minute for sensitive operations
+  });
+  
+  const result = await rateLimiter(req);
+  return createRateLimitResponse(result, 'Rate limit exceeded for sensitive operation');
+}
 
 function getClientIP(req: NextRequest): string {
   return (

@@ -64,37 +64,33 @@ export async function deviceCheckMiddleware(
       );
     }
 
-    // Skip further checks if device info not provided for optional routes
+    // Skip further checks if device info not provided (for optional routes)
     if (!deviceId || !fingerprint) {
       return null;
     }
 
-    // Check device limit (for user operations)
-    if (pathname.includes('user') || pathname.includes('signup')) {
-      const deviceLimitCheck = await checkDeviceLimit(deviceId, fingerprint);
-      
-      if (!deviceLimitCheck.isAllowed) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: 'Multiple accounts detected',
-            code: 403,
-            details: {
-              reason: deviceLimitCheck.reason,
-              action: 'Contact support to resolve this issue',
-              supportEmail: env.SUPPORT_EMAIL
-            },
-            timestamp: new Date().toISOString()
+    // Check device limit
+    const deviceCheck = await checkDeviceLimit(deviceId, fingerprint);
+    if (!deviceCheck.isAllowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: deviceCheck.reason || 'Device limit exceeded',
+          code: 403,
+          details: {
+            maxDevicesReached: true,
+            action: 'Contact support to manage your devices'
           },
-          { status: 403 }
-        );
-      }
+          timestamp: new Date().toISOString()
+        },
+        { status: 403 }
+      );
     }
 
-    // Analyze device for suspicious patterns
-    const deviceAnalysis: DeviceCheckResult = await analyzeDevice(fingerprint);
+    // Analyze device for security threats
+    const deviceAnalysis = await analyzeDevice(fingerprint);
 
-    // Block emulators if enabled
+    // Check for emulators
     if (blockEmulators && deviceAnalysis.isEmulator) {
       return NextResponse.json(
         {
@@ -102,7 +98,7 @@ export async function deviceCheckMiddleware(
           error: 'Emulated devices are not allowed',
           code: 403,
           details: {
-            reason: 'Virtual device detected',
+            reason: 'Emulator detected',
             deviceInfo: deviceAnalysis.metadata
           },
           timestamp: new Date().toISOString()
@@ -111,7 +107,7 @@ export async function deviceCheckMiddleware(
       );
     }
 
-    // Block virtual devices if enabled
+    // Check for virtual devices
     if (blockVirtualDevices && deviceAnalysis.isVirtualDevice) {
       return NextResponse.json(
         {
@@ -146,17 +142,10 @@ export async function deviceCheckMiddleware(
       );
     }
 
-    // Add device info to request headers for further processing
-    const requestHeaders = new Headers(request.headers);
-    requestHeaders.set('x-device-validated', 'true');
-    requestHeaders.set('x-device-risk-score', deviceAnalysis.riskScore.toString());
-    requestHeaders.set('x-device-fingerprint', fingerprint);
-
-    return NextResponse.next({
-      request: {
-        headers: requestHeaders,
-      },
-    });
+    // IMPORTANT: Don't use NextResponse.next() in API route middleware
+    // Instead, return null to allow the request to continue
+    // The device validation info can be accessed via headers in the actual handler
+    return null;
 
   } catch (error) {
     console.error('Device check middleware error:', error);
