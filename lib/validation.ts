@@ -264,3 +264,131 @@ export const urlDateRangeSchema = z.object({
     return isNaN(date.getTime()) ? undefined : date;
   })
 });
+
+export const loanApplicationSchema = z.object({
+  userId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid user ID'),
+  amount: z.number().min(500, 'Minimum loan amount is $500').max(5500, 'Maximum loan amount is $5,500'),
+  purpose: z.string().min(10, 'Purpose must be at least 10 characters').max(500, 'Purpose too long'),
+  tenure: z.number().min(6, 'Minimum tenure is 6 months').max(60, 'Maximum tenure is 60 months'),
+  monthlyIncome: z.number().min(1000, 'Monthly income must be at least $1,000'),
+  employmentStatus: z.string().min(1, 'Employment status is required'),
+  collateral: z.object({
+    type: z.string(),
+    value: z.number().min(0),
+    description: z.string()
+  }).optional(),
+  documents: z.array(z.object({
+    type: z.string(),
+    url: z.string().url(),
+    uploadedAt: z.date().optional().default(() => new Date())
+  })).optional().default([]),
+  employmentDetails: z.object({
+    company: z.string().min(1, 'Company name is required'),
+    position: z.string().min(1, 'Position is required'),
+    workingSince: z.date(),
+    salary: z.number().min(0)
+  }).optional(),
+  personalDetails: z.object({
+    maritalStatus: z.enum(['Single', 'Married', 'Divorced', 'Widowed']),
+    dependents: z.number().min(0).max(10),
+    education: z.string().min(1, 'Education is required')
+  }).optional(),
+  financialDetails: z.object({
+    bankBalance: z.number().min(0),
+    monthlyExpenses: z.number().min(0),
+    existingLoans: z.number().min(0),
+    assets: z.array(z.object({
+      type: z.string(),
+      value: z.number().min(0),
+      description: z.string()
+    })).optional().default([])
+  })
+});
+
+// Loan approval validation schema
+export const loanApprovalSchema = z.object({
+  action: z.enum(['approve', 'reject'], { required_error: 'Action is required' }),
+  rejectionReason: z.string().optional(),
+  interestRate: z.number().min(8).max(25).optional(),
+  conditions: z.string().optional(),
+  adminNotes: z.string().optional()
+}).refine(
+  (data) => {
+    if (data.action === 'reject' && !data.rejectionReason) {
+      return false;
+    }
+    if (data.action === 'approve' && !data.interestRate) {
+      return false;
+    }
+    return true;
+  },
+  {
+    message: 'Rejection reason is required for rejection, interest rate is required for approval'
+  }
+);
+
+// Loan filter validation schema
+export const loanFilterSchema = z.object({
+  userId: z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
+  status: z.enum(['Pending', 'Approved', 'Rejected', 'Active', 'Completed', 'Defaulted']).optional(),
+  amountMin: z.number().min(0).optional(),
+  amountMax: z.number().min(0).optional(),
+  creditScoreMin: z.number().min(300).max(850).optional(),
+  creditScoreMax: z.number().min(300).max(850).optional(),
+  dateFrom: z.string().optional(),
+  dateTo: z.string().optional(),
+  isOverdue: z.boolean().optional(),
+  search: z.string().optional()
+});
+
+// EMI calculator validation schema
+export const emiCalculatorSchema = z.object({
+  loanAmount: z.number().min(500).max(5500),
+  interestRate: z.number().min(8).max(25),
+  tenure: z.number().min(6).max(60)
+});
+
+// Repayment validation schema
+export const repaymentSchema = z.object({
+  installmentNumber: z.number().min(1),
+  amount: z.number().min(0.01),
+  paymentMethod: z.enum(['Bank Transfer', 'Mobile Banking', 'Cash', 'Cheque', 'Online']),
+  transactionReference: z.string().optional(),
+  notes: z.string().optional(),
+  paidAt: z.date().optional().default(() => new Date())
+});
+
+// User loan application schema (for user portal)
+export const userLoanApplicationSchema = z.object({
+  amount: z.number().min(500).max(5500),
+  purpose: z.string().min(10).max(500),
+  tenure: z.number().min(6).max(60),
+  monthlyIncome: z.number().min(1000),
+  employmentStatus: z.string().min(1),
+  employmentDetails: z.object({
+    company: z.string().min(1),
+    position: z.string().min(1),
+    workingSince: z.date(),
+    salary: z.number().min(0)
+  }),
+  personalDetails: z.object({
+    maritalStatus: z.enum(['Single', 'Married', 'Divorced', 'Widowed']),
+    dependents: z.number().min(0).max(10),
+    education: z.string().min(1)
+  }),
+  financialDetails: z.object({
+    bankBalance: z.number().min(0),
+    monthlyExpenses: z.number().min(0),
+    existingLoans: z.number().min(0),
+    assets: z.array(z.object({
+      type: z.string(),
+      value: z.number().min(0),
+      description: z.string()
+    })).optional().default([])
+  }),
+  documents: z.array(z.object({
+    type: z.string(),
+    url: z.string().url(),
+    uploadedAt: z.date().optional().default(() => new Date())
+  })).optional().default([])
+});

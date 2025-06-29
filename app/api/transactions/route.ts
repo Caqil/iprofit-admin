@@ -1,3 +1,4 @@
+// app/api/transactions/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { Transaction, ITransaction } from '@/models/Transaction';
@@ -108,7 +109,7 @@ async function getTransactionsHandler(request: NextRequest): Promise<NextRespons
       if (dateTo) matchStage.createdAt.$lte = new Date(dateTo);
     }
 
-    // Search filter
+    // Search filter - Enhanced to include user name and email
     if (search) {
       matchStage.$or = [
         { transactionId: { $regex: search, $options: 'i' } },
@@ -121,7 +122,7 @@ async function getTransactionsHandler(request: NextRequest): Promise<NextRespons
     const pipeline: mongoose.PipelineStage[] = [
       { $match: matchStage },
       
-      // Lookup user information
+      // Lookup user information - Enhanced with more user details
       {
         $lookup: {
           from: 'users',
@@ -129,203 +130,205 @@ async function getTransactionsHandler(request: NextRequest): Promise<NextRespons
           foreignField: '_id',
           as: 'user',
           pipeline: [
-            { $project: { name: 1, email: 1, phone: 1, kycStatus: 1 } }
+            {
+              $project: {
+                _id: 1,
+                name: 1,
+                email: 1,
+                phone: 1,
+                profilePicture: 1,
+                status: 1
+              }
+            }
           ]
         }
       },
-      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
       
-      // Lookup approver information
+      // Unwind user array to object
+      {
+        $unwind: {
+          path: '$user',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      
+      // Lookup admin information for approvedBy field
       {
         $lookup: {
           from: 'admins',
           localField: 'approvedBy',
           foreignField: '_id',
-          as: 'approver',
+          as: 'approvedByAdmin',
           pipeline: [
-            { $project: { name: 1, email: 1 } }
+            {
+              $project: {
+                _id: 1,
+                name: 1,
+                email: 1
+              }
+            }
           ]
         }
       },
-      { $unwind: { path: '$approver', preserveNullAndEmptyArrays: true } },
       
-      // Add computed fields
+      // Unwind approvedBy array to object (optional)
+      {
+        $unwind: {
+          path: '$approvedByAdmin',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+
+      // If search includes user name/email, add additional matching after lookup
+      ...(search ? [
+        {
+          $match: {
+            $or: [
+              { transactionId: { $regex: search, $options: 'i' } },
+              { gatewayTransactionId: { $regex: search, $options: 'i' } },
+              { description: { $regex: search, $options: 'i' } },
+              { 'user.name': { $regex: search, $options: 'i' } },
+              { 'user.email': { $regex: search, $options: 'i' } }
+            ]
+          }
+        }
+      ] : []),
+      
+      // Add computed fields for better frontend usage
       {
         $addFields: {
-          formattedAmount: {
-            $concat: [
-              '$currency',
-              ' ',
-              { $toString: '$amount' }
+          // Keep original userId for compatibility
+          originalUserId: '$userId',
+          // Add formatted user display name
+          userDisplayName: {
+            $cond: [
+              { $ne: ['$user', null] },
+              '$user.name',
+              'Unknown User'
             ]
           },
-          processingTime: {
-            $cond: {
-              if: '$processedAt',
-              then: {
-                $divide: [
-                  { $subtract: ['$processedAt', '$createdAt'] },
-                  1000 * 60 // Convert to minutes
-                ]
-              },
-              else: null
-            }
+          // Add user subtitle (userId)
+          userSubtitle: {
+            $toString: '$userId'
           }
         }
       },
       
-      // Sort stage
-      createSortStage(sortBy, sortOrder),
-      
-      // Add pagination stages
-      ...createPaginationStages(page, limit)
+      // Count total documents for pagination
+      {
+        $facet: {
+          data: [
+            createSortStage(sortBy, sortOrder),
+            { $skip: (page - 1) * limit },
+            { $limit: limit }
+          ],
+          totalCount: [
+            { $count: 'count' }
+          ],
+          summary: [
+            {
+              $group: {
+                _id: null,
+                totalTransactions: { $sum: 1 },
+                totalDeposits: {
+                  $sum: {
+                    $cond: [{ $eq: ['$type', 'deposit'] }, '$amount', 0]
+                  }
+                },
+                totalWithdrawals: {
+                  $sum: {
+                    $cond: [{ $eq: ['$type', 'withdrawal'] }, '$amount', 0]
+                  }
+                },
+                totalFees: { $sum: '$fees' },
+                pendingAmount: {
+                  $sum: {
+                    $cond: [{ $eq: ['$status', 'Pending'] }, '$amount', 0]
+                  }
+                },
+                approvedAmount: {
+                  $sum: {
+                    $cond: [{ $eq: ['$status', 'Approved'] }, '$amount', 0]
+                  }
+                },
+                rejectedAmount: {
+                  $sum: {
+                    $cond: [{ $eq: ['$status', 'Rejected'] }, '$amount', 0]
+                  }
+                },
+                approvedTransactions: {
+                  $sum: {
+                    $cond: [{ $eq: ['$status', 'Approved'] }, 1, 0]
+                  }
+                },
+                pendingTransactions: {
+                  $sum: {
+                    $cond: [{ $eq: ['$status', 'Pending'] }, 1, 0]
+                  }
+                },
+                rejectedTransactions: {
+                  $sum: {
+                    $cond: [{ $eq: ['$status', 'Rejected'] }, 1, 0]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
     ];
 
-    // Execute aggregation
-    const [transactions, totalDocs] = await Promise.all([
-      Transaction.aggregate(pipeline),
-      Transaction.countDocuments(matchStage)
-    ]);
+    const [result] = await Transaction.aggregate(pipeline);
+    const transactions = result.data || [];
+    const total = result.totalCount[0]?.count || 0;
+    const summary = result.summary[0] || {
+      totalTransactions: 0,
+      totalDeposits: 0,
+      totalWithdrawals: 0,
+      totalFees: 0,
+      pendingAmount: 0,
+      approvedAmount: 0,
+      rejectedAmount: 0,
+      approvedTransactions: 0,
+      pendingTransactions: 0,
+      rejectedTransactions: 0
+    };
 
-    // Create paginated response
-    const response = createPaginatedResponse(transactions, totalDocs, page, limit);
+    // Calculate success rate
+    const successRate = summary.totalTransactions > 0 
+      ? (summary.approvedTransactions / summary.totalTransactions) * 100 
+      : 0;
 
-    return apiHandler.success(response);
+    const paginatedResponse = createPaginatedResponse(transactions, total, page, limit);
 
-  } catch (error) {
-    console.error('Get transactions error:', error);
-    return apiHandler.handleError(error);
-  }
-}
-
-// POST /api/transactions - Create a new transaction (for manual entries)
-const manualTransactionSchema = z.object({
-  userId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid user ID'),
-  type: z.enum(['deposit', 'withdrawal', 'bonus', 'profit', 'penalty']),
-  amount: z.number().min(0.01, 'Amount must be greater than 0'),
-  currency: z.enum(['USD', 'BDT']),
-  description: z.string().min(1, 'Description is required'),
-  gateway: z.enum(['Manual', 'System']).optional().default('Manual'),
-  metadata: z.object({
-    adminReason: z.string().optional(),
-    referenceId: z.string().optional()
-  }).optional()
-});
-
-async function createTransactionHandler(request: NextRequest): Promise<NextResponse> {
-  const apiHandler = ApiHandler.create(request);
-
-  // Apply middleware
-  const authResult = await authMiddleware(request, {
-    requireAuth: true,
-    allowedUserTypes: ['admin'],
-    requiredPermission: 'transactions.create'
-  });
-  if (authResult) return authResult;
-
-  const rateLimitResult = await apiRateLimit(request);
-  if (rateLimitResult) return rateLimitResult;
-
-  try {
-    await connectToDatabase();
-
-    const adminId = request.headers.get('x-user-id');
-    const body = await request.json();
-    const validationResult = manualTransactionSchema.safeParse(body);
-
-    if (!validationResult.success) {
-      return apiHandler.validationError(
-        validationResult.error.errors.map(err => ({
-          field: err.path.join('.'),
-          message: err.message,
-          code: err.code
-        }))
-      );
-    }
-
-    const { userId, type, amount, currency, description, gateway, metadata } = validationResult.data;
-
-    // Verify user exists
-    const user = await User.findById(userId);
-    if (!user) {
-      return apiHandler.notFound('User not found');
-    }
-
-    // Generate transaction ID
-    const transactionId = `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-
-    // Calculate fees (0 for manual transactions)
-    const fees = 0;
-    const netAmount = amount;
-
-    // Create transaction
-    const transaction = await Transaction.create({
-      userId: new mongoose.Types.ObjectId(userId),
-      type,
-      amount,
-      currency,
-      gateway,
-      status: gateway === 'Manual' ? 'Approved' : 'Pending',
-      description,
-      transactionId,
-      fees,
-      netAmount,
-      approvedBy: gateway === 'Manual' && adminId ? new mongoose.Types.ObjectId(adminId) : undefined,
-      processedAt: gateway === 'Manual' ? new Date() : undefined,
+    // Log audit
+    await AuditLog.create({
+      adminId: request.headers.get('x-user-id'),
+      action: 'transactions.view_list',
+      entity: 'Transaction',
+      status: 'Success',
       metadata: {
-        ...metadata,
-        ipAddress: apiHandler.getClientIP(),
-        adminCreated: true
+        filters: { type, status, gateway, currency, userId, search },
+        resultCount: transactions.length,
+        page,
+        limit
+      },
+      ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
+      userAgent: request.headers.get('user-agent') || 'unknown'
+    });
+
+    return apiHandler.success({
+      ...paginatedResponse,
+      summary: {
+        ...summary,
+        successRate: Math.round(successRate * 100) / 100
       }
     });
 
-    // Update user balance for approved transactions
-    if (transaction.status === 'Approved') {
-      const balanceChange = type === 'deposit' || type === 'bonus' || type === 'profit' 
-        ? netAmount 
-        : -netAmount;
-      
-      await User.findByIdAndUpdate(userId, {
-        $inc: { balance: balanceChange }
-      });
-    }
-
-    // Log audit trail
-    await AuditLog.create({
-      userId: adminId,
-      userType: 'admin',
-      action: 'transaction.create',
-      resource: 'Transaction',
-      resourceId: transaction._id,
-      details: {
-        transactionType: type,
-        amount,
-        currency,
-        gateway,
-        targetUserId: userId,
-        manual: true
-      },
-      ipAddress: apiHandler.getClientIP(),
-      userAgent: request.headers.get('user-agent'),
-      status: 'Success'
-    });
-
-    // Populate transaction with user data
-    const populatedTransaction = await Transaction.findById(transaction._id)
-      .populate('userId', 'name email phone')
-      .populate('approvedBy', 'name email');
-
-    return apiHandler.created({
-      transaction: populatedTransaction,
-      message: 'Transaction created successfully'
-    });
-
   } catch (error) {
-    console.error('Create transaction error:', error);
+    console.error('Error fetching transactions:', error);
     return apiHandler.handleError(error);
   }
 }
 
-// Export handlers with error wrapper
 export const GET = withErrorHandler(getTransactionsHandler);
-export const POST = withErrorHandler(createTransactionHandler);

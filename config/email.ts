@@ -104,17 +104,53 @@ export const emailTemplates = {
     variables: ['userName', 'amount', 'currency', 'transactionId', 'accountUrl']
   },
 
-  // Loan Templates
+  // Loan Templates - Following same pattern
+  loanApplicationReceived: {
+    subject: '📋 Loan Application Received - {{applicationId}}',
+    template: 'loan-application-received',
+    variables: ['userName', 'loanAmount', 'applicationId', 'expectedProcessingTime']
+  },
+
   loanApproved: {
-    subject: '🎉 Loan Application Approved - {{loanAmount}}',
-    template: 'loan-approved',
-    variables: ['userName', 'loanAmount', 'emiAmount', 'approvalDate', 'loanUrl']
+    subject: '🎉 Loan Application Approved - ${{loanAmount}}',
+    template: 'loan-approved', 
+    variables: ['userName', 'loanAmount', 'emiAmount', 'interestRate', 'tenure', 'loanId']
   },
 
   loanRejected: {
-    subject: '❌ Loan Application Rejected',
+    subject: '❌ Loan Application Update',
     template: 'loan-rejected',
-    variables: ['userName', 'rejectionReason', 'reapplyUrl', 'supportEmail']
+    variables: ['userName', 'loanAmount', 'loanId', 'rejectionReason']
+  },
+
+  loanDisbursed: {
+    subject: '💰 Loan Disbursed Successfully - ${{loanAmount}}',
+    template: 'loan-disbursed',
+    variables: ['userName', 'loanAmount', 'emiAmount', 'interestRate', 'tenure', 'loanId']
+  },
+
+  loanCompleted: {
+    subject: '🎊 Loan Successfully Completed - Congratulations!',
+    template: 'loan-completed',
+    variables: ['userName', 'loanAmount', 'loanId']
+  },
+
+  loanRepaymentConfirmed: {
+    subject: '✅ Loan Payment Confirmed - ${{paidAmount}}',
+    template: 'loan-repayment-confirmed',
+    variables: ['userName', 'loanId', 'installmentNumber', 'paidAmount', 'remainingAmount', 'transactionId', 'paidAt', 'isCompleted']
+  },
+
+  loanPaymentReminder: {
+    subject: '⏰ Loan Payment Reminder - ${{emiAmount}} Due {{dueDate}}',
+    template: 'loan-payment-reminder',
+    variables: ['userName', 'loanId', 'emiAmount', 'dueDate', 'installmentNumber', 'paymentUrl']
+  },
+
+  loanPaymentOverdue: {
+    subject: '🚨 Overdue Loan Payment - Action Required',
+    template: 'loan-payment-overdue',
+    variables: ['userName', 'loanId', 'emiAmount', 'overdueAmount', 'penaltyAmount', 'paymentUrl', 'supportEmail']
   },
 
   loanReminder: {

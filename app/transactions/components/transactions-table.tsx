@@ -1,3 +1,4 @@
+// app/transactions/components/transactions-table.tsx
 "use client";
 
 import React, { useState } from "react";
@@ -35,6 +36,7 @@ import {
   AlertTriangle,
   DollarSign,
   Calendar,
+  User,
 } from "lucide-react";
 import { Transaction, TransactionApproval, PaginationParams } from "@/types";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
@@ -210,6 +212,46 @@ export function TransactionsTable({
     toast.success("Transaction ID copied to clipboard");
   };
 
+  // Copy user ID
+  const copyUserId = (userId: string) => {
+    navigator.clipboard.writeText(userId);
+    toast.success("User ID copied to clipboard");
+  };
+
+  // Get user display information
+  const getUserDisplay = (transaction: any) => {
+    // Handle both old format (string userId) and new format (populated user object)
+    if (transaction.user && typeof transaction.user === "object") {
+      return {
+        name: transaction.user.name || "Unknown User",
+        email: transaction.user.email || "",
+        profilePicture: transaction.user.profilePicture,
+        userId:
+          transaction.userSubtitle ||
+          transaction.originalUserId ||
+          transaction.userId,
+        initials: transaction.user.name
+          ? transaction.user.name
+              .split(" ")
+              .map((n: string) => n[0])
+              .join("")
+              .toUpperCase()
+          : "UU",
+      };
+    } else {
+      // Fallback for old format or missing user data
+      const userId =
+        transaction.userSubtitle || transaction.userId || "Unknown";
+      return {
+        name: transaction.userDisplayName || "Unknown User",
+        email: "",
+        profilePicture: null,
+        userId: userId,
+        initials: userId.slice(0, 2).toUpperCase(),
+      };
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -236,11 +278,11 @@ export function TransactionsTable({
               <TableHead>
                 <Button
                   variant="ghost"
-                  onClick={() => handleSort("userId")}
+                  onClick={() => handleSort("user.name")}
                   className="h-auto p-0 font-semibold"
                 >
                   User
-                  {getSortIcon("userId")}
+                  {getSortIcon("user.name")}
                 </Button>
               </TableHead>
               <TableHead>
@@ -302,6 +344,7 @@ export function TransactionsTable({
             ) : (
               transactions.map((transaction) => {
                 const typeDisplay = getTypeDisplay(transaction.type);
+                const userDisplay = getUserDisplay(transaction);
                 const isSelected = selectedTransactions.includes(
                   transaction._id
                 );
@@ -325,44 +368,55 @@ export function TransactionsTable({
                     </TableCell>
 
                     <TableCell>
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center space-x-3">
                         <Avatar className="h-8 w-8">
-                          <AvatarImage
-                            src={`/avatars/${transaction.userId}.png`}
-                          />
+                          <AvatarImage src={userDisplay.profilePicture} />
                           <AvatarFallback>
-                            {transaction.userId.slice(0, 2).toUpperCase()}
+                            {userDisplay.initials}
                           </AvatarFallback>
                         </Avatar>
-                        <div>
-                          <p className="text-sm font-medium">
-                            {transaction.userId}
-                          </p>
-                          {transaction.userNotes && (
-                            <p className="text-xs text-muted-foreground truncate max-w-[150px]">
-                              {transaction.userNotes}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center space-x-2">
+                            <p className="text-sm font-medium truncate">
+                              {userDisplay.name}
                             </p>
-                          )}
+                            {transaction.flagged && (
+                              <Flag className="h-3 w-3 text-orange-500" />
+                            )}
+                          </div>
+                          {/* <div className="flex items-center space-x-2">
+                            <p className="text-xs text-muted-foreground truncate">
+                              {userDisplay.email && (
+                                <span className="mr-2">{userDisplay.email}</span>
+                              )}
+                            </p>
+                          </div> */}
+                          <div className="flex items-center space-x-1 mt-1">
+                            <User className="h-3 w-3 text-muted-foreground" />
+                            <button
+                              onClick={() => copyUserId(userDisplay.userId)}
+                              className="text-xs text-muted-foreground hover:text-foreground font-mono"
+                              title="Click to copy User ID"
+                            >
+                              {userDisplay.userId.slice(0, 8)}...
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </TableCell>
 
                     <TableCell>
-                      <div
-                        className={cn(
-                          "flex items-center space-x-2 px-2 py-1 rounded-md w-fit",
-                          typeDisplay.bg
-                        )}
-                      >
-                        <span className={typeDisplay.color}>
-                          {typeDisplay.icon}
-                        </span>
-                        <span
+                      <div className="flex items-center space-x-2">
+                        <div
                           className={cn(
-                            "text-xs font-medium capitalize",
+                            "p-1 rounded-full",
+                            typeDisplay.bg,
                             typeDisplay.color
                           )}
                         >
+                          {typeDisplay.icon}
+                        </div>
+                        <span className="text-sm font-medium capitalize">
                           {transaction.type}
                         </span>
                       </div>
@@ -370,80 +424,86 @@ export function TransactionsTable({
 
                     <TableCell>
                       <div className="space-y-1">
-                        <p className="font-medium">
+                        <div className="font-medium">
                           {formatCurrency(
                             transaction.amount,
                             transaction.currency
                           )}
-                        </p>
+                        </div>
                         {transaction.fees > 0 && (
-                          <p className="text-xs text-muted-foreground">
+                          <div className="text-xs text-muted-foreground">
                             Fee:{" "}
                             {formatCurrency(
                               transaction.fees,
                               transaction.currency
                             )}
-                          </p>
+                          </div>
                         )}
-                        <p className="text-xs font-medium text-green-600">
+                        <div className="text-xs font-medium text-green-600">
                           Net:{" "}
                           {formatCurrency(
                             transaction.netAmount,
                             transaction.currency
                           )}
-                        </p>
+                        </div>
                       </div>
                     </TableCell>
 
                     <TableCell>
-                      <Badge variant="outline" className="text-xs">
-                        {transaction.gateway}
-                      </Badge>
-                    </TableCell>
-
-                    <TableCell>
                       <div className="space-y-1">
-                        <Badge
-                          variant={
-                            getStatusBadgeVariant(transaction.status) as any
-                          }
-                        >
-                          {transaction.status}
-                        </Badge>
-                        {transaction.flagged && (
-                          <div className="flex items-center space-x-1">
-                            <Flag className="h-3 w-3 text-orange-500" />
-                            <span className="text-xs text-orange-600">
-                              Flagged
-                            </span>
-                          </div>
+                        <div className="text-sm font-medium">
+                          {transaction.gateway}
+                        </div>
+                        {transaction.transactionId && (
+                          <button
+                            onClick={() =>
+                              copyTransactionId(transaction.transactionId!)
+                            }
+                            className="text-xs text-muted-foreground hover:text-foreground font-mono"
+                            title="Click to copy Transaction ID"
+                          >
+                            {transaction.transactionId.slice(0, 8)}...
+                          </button>
                         )}
                       </div>
                     </TableCell>
 
                     <TableCell>
+                      <Badge
+                        variant={
+                          getStatusBadgeVariant(transaction.status) as any
+                        }
+                        className="text-xs"
+                      >
+                        {transaction.status}
+                      </Badge>
+                    </TableCell>
+
+                    <TableCell>
                       <div className="space-y-1">
-                        <p className="text-sm">
+                        <div className="text-sm">
                           {format(
                             new Date(transaction.createdAt),
                             "MMM dd, yyyy"
                           )}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {format(new Date(transaction.createdAt), "HH:mm")}
-                        </p>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {format(new Date(transaction.createdAt), "hh:mm a")}
+                        </div>
                       </div>
                     </TableCell>
 
                     <TableCell>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" className="h-8 w-8 p-0">
+                          <Button variant="ghost" size="sm">
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+
                           <DropdownMenuItem
                             onClick={() => {
                               setSelectedTransaction(transaction);
@@ -453,46 +513,51 @@ export function TransactionsTable({
                             <Eye className="mr-2 h-4 w-4" />
                             View Details
                           </DropdownMenuItem>
+
+                          {transaction.transactionId && (
+                            <DropdownMenuItem
+                              onClick={() =>
+                                copyTransactionId(transaction.transactionId!)
+                              }
+                            >
+                              <Copy className="mr-2 h-4 w-4" />
+                              Copy Transaction ID
+                            </DropdownMenuItem>
+                          )}
+
                           <DropdownMenuItem
-                            onClick={() => copyTransactionId(transaction._id)}
+                            onClick={() => copyUserId(userDisplay.userId)}
                           >
-                            <Copy className="mr-2 h-4 w-4" />
-                            Copy ID
+                            <User className="mr-2 h-4 w-4" />
+                            Copy User ID
                           </DropdownMenuItem>
 
-                          {transaction.status === "Pending" && (
+                          {transaction.status === "Pending" && canApprove && (
                             <>
                               <DropdownMenuSeparator />
-                              {canApprove && (
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    handleApprovalAction(transaction, "approve")
-                                  }
-                                  className="text-green-600"
-                                >
-                                  <CheckCircle className="mr-2 h-4 w-4" />
-                                  Approve
-                                </DropdownMenuItem>
-                              )}
-                              {canReject && (
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    handleApprovalAction(transaction, "reject")
-                                  }
-                                  className="text-red-600"
-                                >
-                                  <XCircle className="mr-2 h-4 w-4" />
-                                  Reject
-                                </DropdownMenuItem>
-                              )}
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  handleApprovalAction(transaction, "approve")
+                                }
+                                className="text-green-600"
+                              >
+                                <CheckCircle className="mr-2 h-4 w-4" />
+                                Approve
+                              </DropdownMenuItem>
                             </>
                           )}
 
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem>
-                            <Download className="mr-2 h-4 w-4" />
-                            Export
-                          </DropdownMenuItem>
+                          {transaction.status === "Pending" && canReject && (
+                            <DropdownMenuItem
+                              onClick={() =>
+                                handleApprovalAction(transaction, "reject")
+                              }
+                              className="text-red-600"
+                            >
+                              <XCircle className="mr-2 h-4 w-4" />
+                              Reject
+                            </DropdownMenuItem>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
@@ -507,39 +572,43 @@ export function TransactionsTable({
       {/* Pagination */}
       <DataTablePagination
         currentPage={pagination.page}
-        totalPages={Math.ceil(totalTransactions / pagination.limit)}
         pageSize={pagination.limit}
+        totalPages={Math.ceil(totalTransactions / pagination.limit)}
         totalItems={totalTransactions}
-        onPageChange={(page) => onPaginationChange({ ...pagination, page })}
-        onPageSizeChange={(limit) =>
-          onPaginationChange({ ...pagination, limit, page: 1 })
+        onPageChange={(currentPage) =>
+          onPaginationChange({ ...pagination, page: currentPage })
+        }
+        onPageSizeChange={(pageSize) =>
+          onPaginationChange({ ...pagination, limit: pageSize, page: 1 })
         }
       />
 
       {/* Dialogs */}
-      <TransactionDetailDialog
-        transaction={selectedTransaction}
-        open={showDetailDialog}
-        onOpenChange={setShowDetailDialog}
-      />
+      {selectedTransaction && (
+        <>
+          <TransactionDetailDialog
+            transaction={selectedTransaction}
+            open={showDetailDialog}
+            onOpenChange={setShowDetailDialog}
+          />
 
-      <TransactionApprovalDialog
-        transaction={selectedTransaction}
-        action={approvalAction}
-        open={showApprovalDialog}
-        onOpenChange={setShowApprovalDialog}
-        onConfirm={async (data) => {
-          if (selectedTransaction) {
-            await onApprove({
-              transactionId: selectedTransaction._id,
-              action: data.action,
-              reason: data.reason,
-              adminNotes: data.adminNotes,
-            });
-          }
-          setShowApprovalDialog(false);
-        }}
-      />
+          <TransactionApprovalDialog
+            transaction={selectedTransaction}
+            action={approvalAction}
+            open={showApprovalDialog}
+            onOpenChange={setShowApprovalDialog}
+            onConfirm={async (data) => {
+              if (!selectedTransaction) return;
+              await onApprove({
+                transactionId: selectedTransaction._id,
+                action: data.action,
+                reason: data.reason,
+                adminNotes: data.adminNotes,
+              });
+            }}
+          />
+        </>
+      )}
     </>
   );
 }

@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler } from '@/lib/api-helpers';
@@ -52,7 +51,66 @@ async function emiCalculatorHandler(request: NextRequest): Promise<NextResponse>
         emi: item.amount,
         principal: item.principal,
         interest: item.interest,
-        balance: item.remainingBalance || (loanAmount - (item.principal * item.installmentNumber))
+        balance: item.remainingBalance
+      }))
+    };
+
+    return apiHandler.success(response);
+
+  } catch (error) {
+    console.error('EMI calculation error:', error);
+    return apiHandler.internalError('EMI calculation failed');
+  }
+}
+
+// GET /api/loans/emi-calculator - Calculate EMI with query parameters
+async function emiCalculatorGetHandler(request: NextRequest): Promise<NextResponse> {
+  const apiHandler = ApiHandler.create(request);
+
+  try {
+    const url = new URL(request.url);
+    const queryParams = {
+      loanAmount: parseFloat(url.searchParams.get('loanAmount') || '0'),
+      interestRate: parseFloat(url.searchParams.get('interestRate') || '0'),
+      tenure: parseInt(url.searchParams.get('tenure') || '0', 10)
+    };
+
+    const validationResult = emiCalculatorSchema.safeParse(queryParams);
+
+    if (!validationResult.success) {
+      return apiHandler.validationError(
+        validationResult.error.errors.map(err => ({
+          field: err.path.join('.'),
+          message: err.message,
+          code: err.code
+        }))
+      );
+    }
+
+    const { loanAmount, interestRate, tenure } = validationResult.data;
+
+    // Calculate EMI
+    const emiAmount = calculateEMI(loanAmount, interestRate, tenure);
+    const totalAmount = emiAmount * tenure;
+    const totalInterest = totalAmount - loanAmount;
+
+    // Generate basic schedule (first 5 months for preview)
+    const schedule = await generateRepaymentSchedule(loanAmount, interestRate, Math.min(tenure, 5));
+
+    const response = {
+      loanAmount,
+      interestRate,
+      tenure,
+      emiAmount: Math.round(emiAmount * 100) / 100,
+      totalAmount: Math.round(totalAmount * 100) / 100,
+      totalInterest: Math.round(totalInterest * 100) / 100,
+      monthlyPayment: Math.round(emiAmount * 100) / 100,
+      preview: schedule.map(item => ({
+        month: item.installmentNumber,
+        emi: item.amount,
+        principal: item.principal,
+        interest: item.interest,
+        balance: item.remainingBalance
       }))
     };
 
@@ -65,3 +123,4 @@ async function emiCalculatorHandler(request: NextRequest): Promise<NextResponse>
 }
 
 export const POST = withErrorHandler(emiCalculatorHandler);
+export const GET = withErrorHandler(emiCalculatorGetHandler);

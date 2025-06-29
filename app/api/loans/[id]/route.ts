@@ -1,34 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { Loan, ILoan } from '@/models/Loan';
-import { User, IUser } from '@/models/User';
+import { User } from '@/models/User';
 import { AuditLog } from '@/models/AuditLog';
 import { authMiddleware } from '@/middleware/auth';
 import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler } from '@/lib/api-helpers';
 import { sendEmail } from '@/lib/email';
 import { z } from 'zod';
+import mongoose from 'mongoose';
 
-// Loan approval validation schema
-const loanApprovalSchema = z.object({
-  action: z.enum(['approve', 'reject'], { required_error: 'Action is required' }),
-  rejectionReason: z.string().optional(),
+// Loan update validation schema
+const loanUpdateSchema = z.object({
   interestRate: z.number().min(8).max(25).optional(),
-  conditions: z.string().optional()
-}).refine(
-  (data) => {
-    if (data.action === 'reject' && !data.rejectionReason) {
-      return false;
-    }
-    if (data.action === 'approve' && !data.interestRate) {
-      return false;
-    }
-    return true;
-  },
-  {
-    message: 'Rejection reason is required for rejection, interest rate is required for approval'
-  }
-);
+  status: z.enum(['Pending', 'Approved', 'Rejected', 'Active', 'Completed', 'Defaulted']).optional(),
+  rejectionReason: z.string().optional(),
+  approvedBy: z.string().optional(),
+  disbursedAt: z.string().transform(str => new Date(str)).optional(),
+  completedAt: z.string().transform(str => new Date(str)).optional(),
+  metadata: z.object({
+    adminNotes: z.string().optional(),
+    conditions: z.string().optional()
+  }).optional()
+});
 
 // GET /api/loans/[id] - Get specific loan details
 async function getLoanHandler(
@@ -40,7 +34,7 @@ async function getLoanHandler(
   // Apply middleware
   const authResult = await authMiddleware(request, {
     requireAuth: true,
-    allowedUserTypes: ['admin'],
+    allowedUserTypes: ['admin', 'user'],
     requiredPermission: 'loans.view'
   });
   if (authResult) return authResult;
@@ -54,7 +48,18 @@ async function getLoanHandler(
       return apiHandler.badRequest('Invalid loan ID format');
     }
 
-    const loan = await Loan.findById(id)
+    const userType = request.headers.get('x-user-type');
+    const userId = request.headers.get('x-user-id');
+
+    // Build query based on user type
+    let query: any = { _id: id };
+    
+    // Users can only view their own loans
+    if (userType === 'user') {
+      query.userId = userId;
+    }
+
+    const loan = await Loan.findOne(query)
       .populate('userId', 'name email phone kycStatus planId')
       .populate('approvedBy', 'name email') as ILoan | null;
 
@@ -62,7 +67,32 @@ async function getLoanHandler(
       return apiHandler.notFound('Loan not found');
     }
 
-    return apiHandler.success({ loan });
+    // Calculate additional metrics
+    const overdueInstallments = loan.repaymentSchedule.filter(
+      installment => installment.status === 'Overdue'
+    );
+
+    const nextPayment = loan.repaymentSchedule.find(
+      installment => installment.status === 'Pending'
+    );
+
+    const paidInstallments = loan.repaymentSchedule.filter(
+      installment => installment.status === 'Paid'
+    ).length;
+
+    const response = {
+      ...loan.toObject(),
+      analytics: {
+        overdueInstallments: overdueInstallments.length,
+        overdueAmount: overdueInstallments.reduce((sum, inst) => sum + inst.amount, 0),
+        nextPaymentDate: nextPayment?.dueDate,
+        nextPaymentAmount: nextPayment?.amount,
+        completionPercentage: (paidInstallments / loan.repaymentSchedule.length) * 100,
+        remainingInstallments: loan.repaymentSchedule.length - paidInstallments
+      }
+    };
+
+    return apiHandler.success({ loan: response });
 
   } catch (error) {
     console.error('Get loan error:', error);
@@ -70,8 +100,8 @@ async function getLoanHandler(
   }
 }
 
-// POST /api/loans/[id] - Approve or reject loan application
-async function approveLoanHandler(
+// PUT /api/loans/[id] - Update loan details (admin only)
+async function updateLoanHandler(
   request: NextRequest,
   { params }: { params: { id: string } }
 ): Promise<NextResponse> {
@@ -81,7 +111,7 @@ async function approveLoanHandler(
   const authResult = await authMiddleware(request, {
     requireAuth: true,
     allowedUserTypes: ['admin'],
-    requiredPermission: 'loans.approve'
+    requiredPermission: 'loans.update'
   });
   if (authResult) return authResult;
 
@@ -89,15 +119,13 @@ async function approveLoanHandler(
     await connectToDatabase();
 
     const { id } = params;
-    const adminId = request.headers.get('x-user-id');
+    const body = await request.json();
 
     if (!id || !/^[0-9a-fA-F]{24}$/.test(id)) {
       return apiHandler.badRequest('Invalid loan ID format');
     }
 
-    const body = await request.json();
-    const validationResult = loanApprovalSchema.safeParse(body);
-
+    const validationResult = loanUpdateSchema.safeParse(body);
     if (!validationResult.success) {
       return apiHandler.validationError(
         validationResult.error.errors.map(err => ({
@@ -108,141 +136,232 @@ async function approveLoanHandler(
       );
     }
 
-    const { action, rejectionReason, interestRate, conditions } = validationResult.data;
+    const updateData = validationResult.data;
+    const adminId = request.headers.get('x-user-id');
 
-    const loan = await Loan.findById(id).populate('userId', 'name email') as ILoan | null;
+    // Find existing loan
+    const existingLoan = await Loan.findById(id) as ILoan | null;
+    if (!existingLoan) {
+      return apiHandler.notFound('Loan not found');
+    }
+
+    // Track changes for audit
+    const oldData = existingLoan.toObject();
+    const changes: any[] = [];
+
+    // Build update object
+    const updateObject: any = {};
+
+    if (updateData.interestRate !== undefined) {
+      updateObject.interestRate = updateData.interestRate;
+      changes.push({
+        field: 'interestRate',
+        oldValue: existingLoan.interestRate,
+        newValue: updateData.interestRate
+      });
+
+      // Recalculate EMI and schedule if interest rate changes
+      const { calculateEMI, generateRepaymentSchedule } = await import('@/utils/helpers');
+      const newEmiAmount = calculateEMI(existingLoan.amount, updateData.interestRate, existingLoan.tenure);
+      const newSchedule = await generateRepaymentSchedule(
+        existingLoan.amount,
+        updateData.interestRate,
+        existingLoan.tenure
+      );
+
+      updateObject.emiAmount = newEmiAmount;
+      updateObject.repaymentSchedule = newSchedule.map((item, index) => ({
+        installmentNumber: item.installmentNumber,
+        dueDate: new Date(existingLoan.createdAt.getTime() + (index + 1) * 30 * 24 * 60 * 60 * 1000),
+        amount: item.amount,
+        principal: item.principal,
+        interest: item.interest,
+        status: 'Pending' as const
+      }));
+      updateObject.remainingAmount = existingLoan.amount;
+    }
+
+    if (updateData.status !== undefined) {
+      updateObject.status = updateData.status;
+      changes.push({
+        field: 'status',
+        oldValue: existingLoan.status,
+        newValue: updateData.status
+      });
+
+      // Set additional fields based on status
+      if (updateData.status === 'Approved') {
+        updateObject.approvedBy = adminId;
+        updateObject.approvedAt = new Date();
+      } else if (updateData.status === 'Rejected' && updateData.rejectionReason) {
+        updateObject.rejectionReason = updateData.rejectionReason;
+      } else if (updateData.status === 'Active') {
+        updateObject.disbursedAt = updateData.disbursedAt || new Date();
+      } else if (updateData.status === 'Completed') {
+        updateObject.completedAt = updateData.completedAt || new Date();
+      }
+    }
+
+    if (updateData.metadata) {
+      updateObject.metadata = {
+        ...existingLoan.metadata,
+        ...updateData.metadata,
+        lastModifiedBy: adminId,
+        lastModifiedAt: new Date()
+      };
+    }
+
+    // Update loan
+    const updatedLoan = await Loan.findByIdAndUpdate(
+      id,
+      { $set: updateObject },
+      { new: true, runValidators: true }
+    ).populate('userId', 'name email phone') as ILoan;
+
+    // Log audit trail
+    await AuditLog.create({
+      adminId: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+      action: 'LOAN_UPDATED',
+      entity: 'loan',
+      entityId: id,
+      oldData: {
+        status: oldData.status,
+        interestRate: oldData.interestRate
+      },
+      newData: {
+        status: updatedLoan.status,
+        interestRate: updatedLoan.interestRate
+      },
+      changes,
+      ipAddress: apiHandler.getClientIP(),
+      userAgent: request.headers.get('user-agent') || 'Unknown',
+      severity: 'High'
+    });
+
+    // Send notification email if status changed
+    if (updateData.status && updateData.status !== existingLoan.status) {
+      try {
+        const user = await User.findById(existingLoan.userId);
+        if (user) {
+          let emailTemplate = '';
+          let subject = '';
+
+          switch (updateData.status) {
+            case 'Approved':
+              emailTemplate = 'loan-approved';
+              subject = 'Loan Application Approved';
+              break;
+            case 'Rejected':
+              emailTemplate = 'loan-rejected';
+              subject = 'Loan Application Update';
+              break;
+            case 'Active':
+              emailTemplate = 'loan-disbursed';
+              subject = 'Loan Disbursed';
+              break;
+            case 'Completed':
+              emailTemplate = 'loan-completed';
+              subject = 'Loan Completed';
+              break;
+          }
+
+          if (emailTemplate) {
+            await sendEmail({
+              to: user.email,
+              subject,
+              templateId: emailTemplate,
+              data: {
+                userName: user.name,
+                loanAmount: updatedLoan.amount,
+                loanId: updatedLoan._id.toString(),
+                rejectionReason: updateData.rejectionReason,
+                emiAmount: updatedLoan.emiAmount,
+                interestRate: updatedLoan.interestRate,
+                tenure: updatedLoan.tenure
+              }
+            });
+          }
+        }
+      } catch (emailError) {
+        console.error('Failed to send notification email:', emailError);
+        // Don't fail the request if email fails
+      }
+    }
+
+    return apiHandler.success({
+      loan: updatedLoan,
+      message: 'Loan updated successfully'
+    });
+
+  } catch (error) {
+    console.error('Update loan error:', error);
+    return apiHandler.internalError('Failed to update loan');
+  }
+}
+
+// DELETE /api/loans/[id] - Delete loan (admin only, only if pending)
+async function deleteLoanHandler(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+): Promise<NextResponse> {
+  const apiHandler = ApiHandler.create(request);
+
+  // Apply middleware
+  const authResult = await authMiddleware(request, {
+    requireAuth: true,
+    allowedUserTypes: ['admin'],
+    requiredPermission: 'loans.delete'
+  });
+  if (authResult) return authResult;
+
+  try {
+    await connectToDatabase();
+
+    const { id } = params;
+
+    if (!id || !/^[0-9a-fA-F]{24}$/.test(id)) {
+      return apiHandler.badRequest('Invalid loan ID format');
+    }
+
+    const loan = await Loan.findById(id) as ILoan | null;
     if (!loan) {
       return apiHandler.notFound('Loan not found');
     }
 
+    // Only allow deletion of pending loans
     if (loan.status !== 'Pending') {
-      return apiHandler.badRequest('Loan has already been processed');
+      return apiHandler.badRequest('Can only delete pending loan applications');
     }
 
-    if (action === 'approve') {
-      // Approve the loan
-      const { calculateEMI, generateRepaymentSchedule } = await import('@/utils/helpers');
-      const emiAmount = calculateEMI(loan.amount, interestRate!, loan.tenure);
-      const repaymentSchedule = generateRepaymentSchedule(loan.amount, interestRate!, loan.tenure);
+    await Loan.findByIdAndDelete(id);
 
-      await Loan.findByIdAndUpdate(id, {
-        status: 'Approved',
-        interestRate: interestRate!,
-        emiAmount,
-        repaymentSchedule,
-        approvedBy: adminId,
-        approvedAt: new Date(),
-        disbursedAt: new Date(), // Automatically disburse on approval
-        conditions
-      });
+    // Log audit trail
+    const adminId = request.headers.get('x-user-id');
+    await AuditLog.create({
+      adminId: adminId ? new mongoose.Types.ObjectId(adminId) : null,
+      action: 'LOAN_DELETED',
+      entity: 'loan',
+      entityId: id,
+      oldData: {
+        amount: loan.amount,
+        userId: loan.userId,
+        status: loan.status
+      },
+      ipAddress: apiHandler.getClientIP(),
+      userAgent: request.headers.get('user-agent') || 'Unknown',
+      severity: 'High'
+    });
 
-      // Update user balance
-      await User.findByIdAndUpdate(loan.userId, {
-        $inc: { balance: loan.amount }
-      });
-
-      // Send approval email
-      try {
-        await sendEmail({
-          to: (loan.userId as any).email,
-          subject: 'Loan Application Approved',
-          templateId: 'loan_approved',
-          variables: {
-            userName: (loan.userId as any).name,
-            loanAmount: `$${loan.amount}`,
-            emiAmount: `$${emiAmount}`,
-            approvalDate: new Date().toLocaleDateString(),
-            loanUrl: `${process.env.NEXTAUTH_URL}/user/loans`
-          }
-        });
-      } catch (emailError) {
-        console.error('Failed to send approval email:', emailError);
-      }
-
-      // Log audit trail
-      await AuditLog.create({
-        adminId,
-        action: 'LOAN_APPROVED',
-        entity: 'loan',
-        entityId: id,
-        oldData: { status: 'Pending' },
-        newData: { 
-          status: 'Approved', 
-          interestRate: interestRate!,
-          emiAmount 
-        },
-        ipAddress: apiHandler.getClientIP(),
-        userAgent: request.headers.get('user-agent') || 'Unknown',
-        severity: 'High'
-      });
-
-      return apiHandler.success({
-        message: 'Loan approved successfully',
-        loan: {
-          id,
-          status: 'Approved',
-          emiAmount,
-          interestRate: interestRate!
-        }
-      });
-
-    } else {
-      // Reject the loan
-      await Loan.findByIdAndUpdate(id, {
-        status: 'Rejected',
-        rejectionReason,
-        approvedBy: adminId,
-        approvedAt: new Date()
-      });
-
-      // Send rejection email
-      try {
-        await sendEmail({
-          to: (loan.userId as any).email,
-          subject: 'Loan Application Rejected',
-          templateId: 'loan_rejected',
-          variables: {
-            userName: (loan.userId as any).name,
-            rejectionReason: rejectionReason!,
-            reapplyUrl: `${process.env.NEXTAUTH_URL}/user/loans/apply`,
-            supportEmail: process.env.SUPPORT_EMAIL
-          }
-        });
-      } catch (emailError) {
-        console.error('Failed to send rejection email:', emailError);
-      }
-
-      // Log audit trail
-      await AuditLog.create({
-        adminId,
-        action: 'LOAN_REJECTED',
-        entity: 'loan',
-        entityId: id,
-        oldData: { status: 'Pending' },
-        newData: { 
-          status: 'Rejected', 
-          rejectionReason 
-        },
-        ipAddress: apiHandler.getClientIP(),
-        userAgent: request.headers.get('user-agent') || 'Unknown',
-        severity: 'Medium'
-      });
-
-      return apiHandler.success({
-        message: 'Loan rejected successfully',
-        loan: {
-          id,
-          status: 'Rejected',
-          rejectionReason
-        }
-      });
-    }
+    return apiHandler.success({
+      message: 'Loan application deleted successfully'
+    });
 
   } catch (error) {
-    console.error('Loan approval error:', error);
-    return apiHandler.internalError('Failed to process loan application');
+    console.error('Delete loan error:', error);
+    return apiHandler.internalError('Failed to delete loan');
   }
 }
 
 export const GET = withErrorHandler(getLoanHandler);
-export const POST = withErrorHandler(approveLoanHandler);
+export const PUT = withErrorHandler(updateLoanHandler);
+export const DELETE = withErrorHandler(deleteLoanHandler);

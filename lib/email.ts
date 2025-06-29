@@ -22,7 +22,7 @@ const emailConfig: EmailConfig = {
   }
 };
 
-const transporter = nodemailer.createTransport(emailConfig);
+const transporter = nodemailer.createTransporter(emailConfig);
 
 export async function sendEmail(emailData: EmailTemplateData): Promise<boolean> {
   try {
@@ -79,6 +79,7 @@ export async function sendEmail(emailData: EmailTemplateData): Promise<boolean> 
   }
 }
 
+// Existing helper functions
 export async function sendKYCApprovalEmail(userEmail: string, userName: string): Promise<boolean> {
   return sendEmail({
     to: userEmail,
@@ -166,6 +167,163 @@ export async function sendReferralBonusEmail(
       refereeName,
       creditDate: new Date().toLocaleDateString(),
       accountUrl: `${process.env.NEXTAUTH_URL}/account`
+    }
+  });
+}
+
+// NEW LOAN HELPER FUNCTIONS - Following same pattern
+export async function sendLoanApplicationReceivedEmail(
+  userEmail: string,
+  userName: string,
+  loanAmount: number,
+  applicationId: string
+): Promise<boolean> {
+  return sendEmail({
+    to: userEmail,
+    subject: 'Loan Application Received',
+    templateId: 'loan_application_received',
+    variables: {
+      userName,
+      loanAmount,
+      applicationId,
+      expectedProcessingTime: '3-5 business days'
+    }
+  });
+}
+
+export async function sendLoanRejectionEmail(
+  userEmail: string,
+  userName: string,
+  loanAmount: number,
+  loanId: string,
+  rejectionReason: string
+): Promise<boolean> {
+  return sendEmail({
+    to: userEmail,
+    subject: 'Loan Application Update',
+    templateId: 'loan_rejected',
+    variables: {
+      userName,
+      loanAmount,
+      loanId,
+      rejectionReason
+    }
+  });
+}
+
+export async function sendLoanDisbursedEmail(
+  userEmail: string,
+  userName: string,
+  loanAmount: number,
+  emiAmount: number,
+  interestRate: number,
+  tenure: number,
+  loanId: string
+): Promise<boolean> {
+  return sendEmail({
+    to: userEmail,
+    subject: 'Loan Disbursed Successfully',
+    templateId: 'loan_disbursed',
+    variables: {
+      userName,
+      loanAmount,
+      emiAmount,
+      interestRate,
+      tenure,
+      loanId
+    }
+  });
+}
+
+export async function sendLoanCompletedEmail(
+  userEmail: string,
+  userName: string,
+  loanAmount: number,
+  loanId: string
+): Promise<boolean> {
+  return sendEmail({
+    to: userEmail,
+    subject: 'Loan Successfully Completed',
+    templateId: 'loan_completed',
+    variables: {
+      userName,
+      loanAmount,
+      loanId
+    }
+  });
+}
+
+export async function sendLoanRepaymentConfirmationEmail(
+  userEmail: string,
+  userName: string,
+  loanId: string,
+  installmentNumber: number,
+  paidAmount: number,
+  remainingAmount: number,
+  transactionId: string,
+  paidAt: string,
+  isCompleted: boolean
+): Promise<boolean> {
+  return sendEmail({
+    to: userEmail,
+    subject: 'Loan Payment Confirmed',
+    templateId: 'loan_repayment_confirmed',
+    variables: {
+      userName,
+      loanId,
+      installmentNumber,
+      paidAmount,
+      remainingAmount,
+      transactionId,
+      paidAt,
+      isCompleted
+    }
+  });
+}
+
+export async function sendLoanPaymentReminderEmail(
+  userEmail: string,
+  userName: string,
+  loanId: string,
+  emiAmount: number,
+  dueDate: string,
+  installmentNumber: number
+): Promise<boolean> {
+  return sendEmail({
+    to: userEmail,
+    subject: 'Loan Payment Reminder',
+    templateId: 'loan_payment_reminder',
+    variables: {
+      userName,
+      loanId,
+      emiAmount,
+      dueDate,
+      installmentNumber,
+      paymentUrl: `${process.env.NEXTAUTH_URL}/user/loans/${loanId}/pay`
+    }
+  });
+}
+
+export async function sendLoanPaymentOverdueEmail(
+  userEmail: string,
+  userName: string,
+  loanId: string,
+  emiAmount: number,
+  overdueAmount: number,
+  penaltyAmount: number
+): Promise<boolean> {
+  return sendEmail({
+    to: userEmail,
+    subject: 'Overdue Loan Payment - Action Required',
+    templateId: 'loan_payment_overdue',
+    variables: {
+      userName,
+      loanId,
+      emiAmount,
+      overdueAmount,
+      penaltyAmount,
+      paymentUrl: `${process.env.NEXTAUTH_URL}/user/loans/${loanId}/pay`,
+      supportEmail: process.env.SUPPORT_EMAIL
     }
   });
 }
@@ -264,6 +422,141 @@ async function getEmailTemplate(templateId: string) {
           <a href="{{accountUrl}}" style="background: #8b5cf6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; margin: 20px 0;">
             View Account
           </a>
+        </div>
+      `
+    },
+
+    // NEW LOAN TEMPLATES - Following same pattern
+    loan_application_received: {
+      subject: '📋 Loan Application Received - {{applicationId}}',
+      content: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #3b82f6;">Loan Application Received</h2>
+          <p>Dear {{userName}},</p>
+          <p>We have successfully received your loan application and our team is now reviewing it.</p>
+          <div style="background: #eff6ff; border: 1px solid #3b82f6; padding: 16px; margin: 20px 0; border-radius: 6px;">
+            <strong>Application ID:</strong> {{applicationId}}<br>
+            <strong>Loan Amount:</strong> ${{loanAmount}}<br>
+            <strong>Expected Processing Time:</strong> {{expectedProcessingTime}}
+          </div>
+          <p>We will notify you via email once the review is complete. Thank you for choosing our services.</p>
+        </div>
+      `
+    },
+
+    loan_rejected: {
+      subject: '❌ Loan Application Update',
+      content: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #ef4444;">Loan Application Update</h2>
+          <p>Dear {{userName}},</p>
+          <p>We regret to inform you that your loan application has been declined after careful review.</p>
+          <div style="background: #fef2f2; border: 1px solid #ef4444; padding: 16px; margin: 20px 0; border-radius: 6px;">
+            <strong>Loan Amount:</strong> ${{loanAmount}}<br>
+            <strong>Application ID:</strong> {{loanId}}<br>
+            <strong>Reason:</strong> {{rejectionReason}}
+          </div>
+          <p>You can reapply after 30 days or contact our support team for guidance.</p>
+        </div>
+      `
+    },
+
+    loan_disbursed: {
+      subject: '💰 Loan Disbursed Successfully - ${{loanAmount}}',
+      content: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #8b5cf6;">Loan Disbursed!</h2>
+          <p>Dear {{userName}},</p>
+          <p>Your loan amount has been successfully disbursed to your registered account.</p>
+          <div style="background: #faf5ff; border: 1px solid #8b5cf6; padding: 16px; margin: 20px 0; border-radius: 6px;">
+            <strong>Disbursed Amount:</strong> ${{loanAmount}}<br>
+            <strong>Monthly EMI:</strong> ${{emiAmount}}<br>
+            <strong>Interest Rate:</strong> {{interestRate}}% per annum<br>
+            <strong>Loan ID:</strong> {{loanId}}
+          </div>
+          <p>Your first EMI payment is due 30 days from today.</p>
+        </div>
+      `
+    },
+
+    loan_completed: {
+      subject: '🎊 Loan Successfully Completed!',
+      content: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #059669;">Loan Completed!</h2>
+          <p>Dear {{userName}},</p>
+          <p>Congratulations! You have successfully completed your loan repayment!</p>
+          <div style="background: #ecfdf5; border: 1px solid #059669; padding: 16px; margin: 20px 0; border-radius: 6px;">
+            <strong>Loan Amount:</strong> ${{loanAmount}}<br>
+            <strong>Loan ID:</strong> {{loanId}}<br>
+            <strong>Status:</strong> <span style="color: #059669; font-weight: bold;">COMPLETED</span>
+          </div>
+          <p>This achievement demonstrates excellent financial responsibility.</p>
+        </div>
+      `
+    },
+
+    loan_repayment_confirmed: {
+      subject: '✅ Loan Payment Confirmed - ${{paidAmount}}',
+      content: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #22c55e;">Payment Confirmed</h2>
+          <p>Dear {{userName}},</p>
+          <p>Your loan payment has been successfully processed and recorded.</p>
+          <div style="background: #f0fdf4; border: 1px solid #22c55e; padding: 16px; margin: 20px 0; border-radius: 6px;">
+            <strong>Loan ID:</strong> {{loanId}}<br>
+            <strong>Installment:</strong> {{installmentNumber}}<br>
+            <strong>Amount Paid:</strong> ${{paidAmount}}<br>
+            <strong>Payment Date:</strong> {{paidAt}}<br>
+            <strong>Transaction ID:</strong> {{transactionId}}<br>
+            <strong>Remaining Balance:</strong> ${{remainingAmount}}
+          </div>
+          {{#if isCompleted}}
+          <p style="color: #059669; font-weight: bold;">🎉 Congratulations! You have completed all loan payments!</p>
+          {{/if}}
+        </div>
+      `
+    },
+
+    loan_payment_reminder: {
+      subject: '⏰ Loan Payment Reminder - ${{emiAmount}} Due {{dueDate}}',
+      content: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #f59e0b;">Payment Reminder</h2>
+          <p>Dear {{userName}},</p>
+          <p>This is a friendly reminder that your loan payment is due soon.</p>
+          <div style="background: #fffbeb; border: 1px solid #f59e0b; padding: 16px; margin: 20px 0; border-radius: 6px;">
+            <strong>Loan ID:</strong> {{loanId}}<br>
+            <strong>Installment:</strong> {{installmentNumber}}<br>
+            <strong>Amount Due:</strong> ${{emiAmount}}<br>
+            <strong>Due Date:</strong> {{dueDate}}
+          </div>
+          <p>Please ensure you have sufficient funds in your account.</p>
+          <a href="{{paymentUrl}}" style="background: #f59e0b; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; margin: 20px 0;">
+            Make Payment Now
+          </a>
+        </div>
+      `
+    },
+
+    loan_payment_overdue: {
+      subject: '🚨 Overdue Loan Payment - Action Required',
+      content: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #dc2626;">Payment Overdue</h2>
+          <p>Dear {{userName}},</p>
+          <p>Your loan payment is now overdue. Please make the payment immediately to avoid additional penalties.</p>
+          <div style="background: #fef2f2; border: 1px solid #dc2626; padding: 16px; margin: 20px 0; border-radius: 6px;">
+            <strong>Loan ID:</strong> {{loanId}}<br>
+            <strong>Original EMI:</strong> ${{emiAmount}}<br>
+            <strong>Overdue Amount:</strong> ${{overdueAmount}}<br>
+            <strong>Penalty:</strong> ${{penaltyAmount}}
+          </div>
+          <p>Please pay the overdue amount within 7 days to avoid further penalties.</p>
+          <a href="{{paymentUrl}}" style="background: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; margin: 20px 0;">
+            Pay Now
+          </a>
+          <p>Need help? Contact us at {{supportEmail}}</p>
         </div>
       `
     }

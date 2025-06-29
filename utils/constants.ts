@@ -140,35 +140,6 @@ export const TRANSACTION_CONFIG = {
   }
 } as const;
 
-// Loan Configuration
-export const LOAN_CONFIG = {
-  AMOUNTS: {
-    MINIMUM: 500,
-    MAXIMUM: 5500, // $5,500 as per requirement
-    DEFAULT: 1000
-  },
-  INTEREST_RATES: {
-    MINIMUM: 8,
-    MAXIMUM: 25,
-    DEFAULT: 12
-  },
-  TENURE: {
-    MINIMUM_MONTHS: 6,
-    MAXIMUM_MONTHS: 60,
-    DEFAULT_MONTHS: 12
-  },
-  CREDIT_SCORE: {
-    MINIMUM: 300,
-    MAXIMUM: 850,
-    EXCELLENT: 750,
-    GOOD: 650,
-    FAIR: 550,
-    POOR: 450
-  },
-  PROCESSING_FEE: 2, // 2% of loan amount
-  EARLY_PAYMENT_PENALTY: 3, // 3% of remaining amount
-  LATE_PAYMENT_PENALTY: 5 // 5% of overdue amount
-} as const;
 
 // Referral Configuration
 export const REFERRAL_CONFIG = {
@@ -378,3 +349,154 @@ export const SUCCESS_MESSAGES = {
   PASSWORD_RESET: 'Password reset successfully',
   TWO_FA_ENABLED: '2FA enabled successfully'
 } as const;
+
+export const LOAN_CONFIG = {
+  AMOUNTS: {
+    MINIMUM: 500,
+    MAXIMUM: 5500,
+    DEFAULT: 1000
+  },
+  INTEREST_RATES: {
+    MINIMUM: 8,
+    MAXIMUM: 25,
+    DEFAULT_ADMIN: 12,
+    DEFAULT_USER: 15
+  },
+  TENURE: {
+    MINIMUM_MONTHS: 6,
+    MAXIMUM_MONTHS: 60,
+    DEFAULT_MONTHS: 24
+  },
+  ELIGIBILITY: {
+    MIN_MONTHLY_INCOME: 1000,
+    MIN_CREDIT_SCORE: 500,
+    MAX_DEBT_TO_INCOME_RATIO: 0.4, // 40%
+    MIN_AGE: 18,
+    MAX_AGE: 65
+  },
+  PROCESSING: {
+    EXPECTED_DAYS: 5,
+    MAX_PENDING_DAYS: 30
+  }
+};
+
+export const LOAN_STATUSES = {
+  PENDING: 'Pending',
+  APPROVED: 'Approved',
+  REJECTED: 'Rejected',
+  ACTIVE: 'Active',
+  COMPLETED: 'Completed',
+  DEFAULTED: 'Defaulted'
+} as const;
+
+export const REPAYMENT_STATUSES = {
+  PENDING: 'Pending',
+  PAID: 'Paid',
+  OVERDUE: 'Overdue'
+} as const;
+
+export const PAYMENT_METHODS = {
+  BANK_TRANSFER: 'Bank Transfer',
+  MOBILE_BANKING: 'Mobile Banking',
+  CASH: 'Cash',
+  CHEQUE: 'Cheque',
+  ONLINE: 'Online'
+} as const;
+
+export const EMPLOYMENT_STATUSES = [
+  'Full-time Employee',
+  'Part-time Employee',
+  'Self-employed',
+  'Business Owner',
+  'Freelancer',
+  'Contract Worker',
+  'Retired',
+  'Student',
+  'Unemployed'
+];
+
+export const EDUCATION_LEVELS = [
+  'High School',
+  'Diploma',
+  'Bachelor\'s Degree',
+  'Master\'s Degree',
+  'PhD',
+  'Professional Certification',
+  'Other'
+];
+
+export const LOAN_PURPOSES = [
+  'Personal Expenses',
+  'Medical Emergency',
+  'Education',
+  'Home Improvement',
+  'Debt Consolidation',
+  'Business Investment',
+  'Vehicle Purchase',
+  'Wedding Expenses',
+  'Travel',
+  'Other'
+];
+
+export const DOCUMENT_TYPES = [
+  'National ID',
+  'Passport',
+  'Driver\'s License',
+  'Salary Certificate',
+  'Bank Statement',
+  'Employment Letter',
+  'Tax Returns',
+  'Utility Bill',
+  'Property Documents',
+  'Other'
+];
+
+export const COLLATERAL_TYPES = [
+  'Real Estate',
+  'Vehicle',
+  'Fixed Deposits',
+  'Securities',
+  'Jewelry',
+  'Equipment',
+  'Inventory',
+  'Other'
+];
+
+export const CREDIT_SCORE_RANGES = {
+  EXCELLENT: { min: 750, max: 850, label: 'Excellent' },
+  GOOD: { min: 650, max: 749, label: 'Good' },
+  FAIR: { min: 550, max: 649, label: 'Fair' },
+  POOR: { min: 300, max: 549, label: 'Poor' }
+};
+
+export const RISK_LEVELS = {
+  LOW: { score: 0, color: 'green', label: 'Low Risk' },
+  MEDIUM: { score: 25, color: 'yellow', label: 'Medium Risk' },
+  HIGH: { score: 50, color: 'orange', label: 'High Risk' },
+  VERY_HIGH: { score: 75, color: 'red', label: 'Very High Risk' }
+};
+
+export const LOAN_MESSAGES = {
+  APPLICATION_SUBMITTED: 'Your loan application has been submitted successfully. We will review it within 3-5 business days.',
+  APPLICATION_APPROVED: 'Congratulations! Your loan application has been approved.',
+  APPLICATION_REJECTED: 'We regret to inform you that your loan application has been rejected.',
+  PAYMENT_RECORDED: 'Your payment has been recorded successfully.',
+  PAYMENT_OVERDUE: 'Your payment is overdue. Please make the payment as soon as possible to avoid penalties.',
+  LOAN_COMPLETED: 'Congratulations! You have successfully completed your loan repayment.'
+};
+
+// Validation messages
+export const LOAN_VALIDATION_MESSAGES = {
+  AMOUNT_REQUIRED: 'Loan amount is required',
+  AMOUNT_MIN: `Minimum loan amount is ${LOAN_CONFIG.AMOUNTS.MINIMUM}`,
+  AMOUNT_MAX: `Maximum loan amount is ${LOAN_CONFIG.AMOUNTS.MAXIMUM}`,
+  PURPOSE_REQUIRED: 'Loan purpose is required',
+  PURPOSE_MIN_LENGTH: 'Purpose must be at least 10 characters',
+  TENURE_REQUIRED: 'Loan tenure is required',
+  TENURE_MIN: `Minimum tenure is ${LOAN_CONFIG.TENURE.MINIMUM_MONTHS} months`,
+  TENURE_MAX: `Maximum tenure is ${LOAN_CONFIG.TENURE.MAXIMUM_MONTHS} months`,
+  INCOME_REQUIRED: 'Monthly income is required',
+  INCOME_MIN: `Minimum monthly income is ${LOAN_CONFIG.ELIGIBILITY.MIN_MONTHLY_INCOME}`,
+  EMPLOYMENT_REQUIRED: 'Employment status is required',
+  DOCUMENTS_REQUIRED: 'At least one document is required'
+};
