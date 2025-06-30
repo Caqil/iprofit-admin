@@ -124,8 +124,6 @@ export default function LoanApplicationsPage() {
     loans: applications,
     isLoading,
     error,
-    refreshLoans,
-    submitApplication,
   } = useUserLoans(appliedFilters);
 
   // Handle search
@@ -220,37 +218,37 @@ export default function LoanApplicationsPage() {
     }
   };
 
-//   // Summary cards data
-//   const summaryCards = [
-//     {
-//       title: "Total Applications",
-//       value: analytics?.totalLoans || 0,
-//       icon: FileText,
-//       color: "text-blue-600",
-//       bgColor: "bg-blue-100",
-//     },
-//     {
-//       title: "Active Loans",
-//       value: analytics?.activeLoans || 0,
-//       icon: TrendingUp,
-//       color: "text-green-600",
-//       bgColor: "bg-green-100",
-//     },
-//     {
-//       title: "Total Borrowed",
-//       value: `$${analytics?.totalDisbursed?.toLocaleString() || 0}`,
-//       icon: DollarSign,
-//       color: "text-purple-600",
-//       bgColor: "bg-purple-100",
-//     },
-//     {
-//       title: "Outstanding",
-//       value: `$${analytics?.overdueAmount?.toLocaleString() || 0}`,
-//       icon: AlertTriangle,
-//       color: "text-red-600",
-//       bgColor: "bg-red-100",
-//     },
-//   ];
+  //   // Summary cards data
+  //   const summaryCards = [
+  //     {
+  //       title: "Total Applications",
+  //       value: analytics?.totalLoans || 0,
+  //       icon: FileText,
+  //       color: "text-blue-600",
+  //       bgColor: "bg-blue-100",
+  //     },
+  //     {
+  //       title: "Active Loans",
+  //       value: analytics?.activeLoans || 0,
+  //       icon: TrendingUp,
+  //       color: "text-green-600",
+  //       bgColor: "bg-green-100",
+  //     },
+  //     {
+  //       title: "Total Borrowed",
+  //       value: `$${analytics?.totalDisbursed?.toLocaleString() || 0}`,
+  //       icon: DollarSign,
+  //       color: "text-purple-600",
+  //       bgColor: "bg-purple-100",
+  //     },
+  //     {
+  //       title: "Outstanding",
+  //       value: `$${analytics?.overdueAmount?.toLocaleString() || 0}`,
+  //       icon: AlertTriangle,
+  //       color: "text-red-600",
+  //       bgColor: "bg-red-100",
+  //     },
+  //   ];
 
   return (
     <div className="space-y-6">
@@ -282,18 +280,6 @@ export default function LoanApplicationsPage() {
           >
             <Download className="h-4 w-4" />
             Export
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={refreshLoans}
-            disabled={isLoading}
-            className="gap-2"
-          >
-            <RefreshCw
-              className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
-            />
-            Refresh
           </Button>
           <Dialog
             open={showApplicationDialog}
@@ -457,9 +443,6 @@ export default function LoanApplicationsPage() {
                 Error loading applications
               </p>
               <p className="text-sm text-gray-600">{error}</p>
-              <Button onClick={refreshLoans} variant="outline" size="sm">
-                Try Again
-              </Button>
             </div>
           </CardContent>
         </Card>

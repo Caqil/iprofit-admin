@@ -191,72 +191,73 @@ async function createSettingHandler(request: NextRequest): Promise<NextResponse>
     await connectToDatabase();
 
     const body = await request.json();
+    console.log('📝 Create setting request:', body);
+
+    // Validate request body
     const validationResult = createSettingSchema.safeParse(body);
-    
     if (!validationResult.success) {
       return apiHandler.badRequest('Invalid setting data', validationResult.error.errors);
     }
 
-    const data = validationResult.data;
-    const adminId = request.headers.get('X-Admin-Id');
+    const settingData = validationResult.data;
 
-    // Check if setting key already exists
-    const existingSetting = await Setting.findOne({ key: data.key });
+    // Check if setting with this key already exists
+    const existingSetting = await Setting.findOne({ key: settingData.key });
     if (existingSetting) {
-      return apiHandler.conflict('Setting with this key already exists');
+      return apiHandler.badRequest('Setting with this key already exists');
     }
 
-    // Validate setting value against validation rules
-    if (!validateSettingValue(data.value, data.validation, data.dataType)) {
+    // Validate setting value
+    if (!validateSettingValue(settingData.value, settingData.validation, settingData.dataType)) {
       return apiHandler.badRequest('Setting value does not meet validation requirements');
     }
 
-    // Encrypt value if required
-    let processedValue = data.value;
-    if (data.isEncrypted && data.value) {
-      processedValue = encrypt(data.value);
+    // Get admin ID from auth context
+    const adminId = request.headers.get('x-admin-id');
+
+    // Encrypt value if needed
+    let processedValue = settingData.value;
+    if (settingData.isEncrypted && settingData.value) {
+      processedValue = encrypt(String(settingData.value));
     }
 
-    // Create setting with new structure
-    const setting = new Setting({
-      category: data.category,
-      key: data.key,
+    // Create setting
+    const setting = await Setting.create({
+      ...settingData,
       value: processedValue,
-      dataType: data.dataType,
-      description: data.description,
-      isEditable: data.isEditable,
-      isEncrypted: data.isEncrypted,
-      defaultValue: data.defaultValue,
-      validation: data.validation,
-      updatedBy: new mongoose.Types.ObjectId(adminId!)
+      updatedBy: adminId ? new mongoose.Types.ObjectId(adminId) : undefined
     });
 
-    await setting.save();
+    // Create history record
+    await SettingHistory.create({
+      settingId: setting._id,
+      oldValue: null,
+      newValue: settingData.value,
+      updatedBy: adminId ? new mongoose.Types.ObjectId(adminId) : undefined,
+      reason: 'Setting created',
+      ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
+      userAgent: request.headers.get('user-agent') || 'unknown'
+    });
 
     // Create audit log
     await AuditLog.create({
-      adminId: new mongoose.Types.ObjectId(adminId!),
+      adminId: adminId ? new mongoose.Types.ObjectId(adminId) : undefined,
       action: 'settings.create',
       entity: 'Setting',
-      entityId: setting._id.toString(),
-      newData: { 
-        key: data.key, 
-        category: data.category,
-        value: data.value,
-        dataType: data.dataType
+      entityId: setting._id,
+      newData: {
+        key: setting.key,
+        category: setting.category,
+        dataType: setting.dataType
       },
       ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
-      userAgent: request.headers.get('user-agent') || 'unknown',
-      severity: 'Medium'
+      userAgent: request.headers.get('user-agent') || 'unknown'
     });
 
+    // Populate created setting
     const populatedSetting = await Setting.findById(setting._id)
       .populate('updatedBy', 'email role')
       .lean();
-
-    if (!populatedSetting) {
-      return apiHandler.handleError(new Error('Failed to populate setting after creation'));
-    }
 
     return apiHandler.created({
       ...populatedSetting,
@@ -269,8 +270,8 @@ async function createSettingHandler(request: NextRequest): Promise<NextResponse>
   }
 }
 
-// POST /api/settings/bulk-update - Bulk update settings
-async function bulkUpdateSettingsHandler(request: NextRequest): Promise<NextResponse> {
+// PUT /api/settings/reset - Reset settings to default values
+async function resetSettingsHandler(request: NextRequest): Promise<NextResponse> {
   const apiHandler = ApiHandler.create(request);
 
   // Apply middleware
@@ -288,182 +289,36 @@ async function bulkUpdateSettingsHandler(request: NextRequest): Promise<NextResp
     await connectToDatabase();
 
     const body = await request.json();
-    const { settings, reason } = body;
-
-    if (!Array.isArray(settings) || settings.length === 0) {
-      return apiHandler.badRequest('Settings array is required');
-    }
-
-    if (settings.length > 50) {
-      return apiHandler.badRequest('Cannot update more than 50 settings at once');
-    }
-
-    const adminId = request.headers.get('X-Admin-Id');
-    const updatedSettings: any[] = [];
-    const errors: any[] = [];
-
-    // Start a session for transaction
-    const session = await mongoose.startSession();
-    
-    try {
-      await session.withTransaction(async () => {
-        for (const settingUpdate of settings) {
-          try {
-            const { key, value } = settingUpdate;
-
-            // Find the setting
-            const existingSetting = await Setting.findOne({ key }).session(session);
-            if (!existingSetting) {
-              errors.push({ key, error: 'Setting not found' });
-              continue;
-            }
-
-            // Check if setting is editable
-            if (!existingSetting.isEditable) {
-              errors.push({ key, error: 'Setting is not editable' });
-              continue;
-            }
-
-            // Validate the new value
-            if (!validateSettingValue(value, existingSetting.validation, existingSetting.dataType)) {
-              errors.push({ key, error: 'Value does not meet validation requirements' });
-              continue;
-            }
-
-            // Store old value for history
-            const oldValue = processSettingValue(existingSetting);
-
-            // Encrypt new value if needed
-            let processedValue = value;
-            if (existingSetting.isEncrypted && value) {
-              processedValue = encrypt(value);
-            }
-
-            // Update the setting
-            const updatedSetting = await Setting.findByIdAndUpdate(
-              existingSetting._id,
-              {
-                value: processedValue,
-                updatedBy: new mongoose.Types.ObjectId(adminId!)
-              },
-              { new: true, session }
-            ).populate('updatedBy', 'email role');
-
-            // Create history record
-            await SettingHistory.create([{
-              settingId: existingSetting._id,
-              oldValue: oldValue,
-              newValue: value,
-              updatedBy: new mongoose.Types.ObjectId(adminId!),
-              reason: reason || 'Bulk update',
-              ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
-              userAgent: request.headers.get('user-agent') || 'unknown'
-            }], { session });
-
-            if (updatedSetting) {
-              updatedSettings.push({
-                ...updatedSetting.toObject(),
-                value: processSettingValue(updatedSetting)
-              });
-            } else {
-              errors.push({ key, error: 'Failed to update setting' });
-            }
-
-          } catch (error) {
-            console.error(`Error updating setting ${settingUpdate.key}:`, error);
-            errors.push({ 
-              key: settingUpdate.key, 
-              error: error instanceof Error ? error.message : 'Unknown error' 
-            });
-          }
-        }
-      });
-
-      // Create audit log for bulk update
-      await AuditLog.create({
-        adminId: new mongoose.Types.ObjectId(adminId!),
-        action: 'settings.bulk_update',
-        entity: 'Setting',
-        newData: {
-          updatedCount: updatedSettings.length,
-          errorCount: errors.length,
-          reason,
-          updatedKeys: updatedSettings.map(s => s.key)
-        },
-        ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
-        userAgent: request.headers.get('user-agent') || 'unknown',
-        severity: 'High'
-      });
-
-      return apiHandler.success({
-        updated: updatedSettings,
-        errors,
-        summary: {
-          total: settings.length,
-          successful: updatedSettings.length,
-          failed: errors.length
-        }
-      });
-
-    } finally {
-      await session.endSession();
-    }
-
-  } catch (error) {
-    console.error('Bulk update settings error:', error);
-    return apiHandler.handleError(error);
-  }
-}
-
-// POST /api/settings/reset - Reset settings to default values
-async function resetSettingsHandler(request: NextRequest): Promise<NextResponse> {
-  const apiHandler = ApiHandler.create(request);
-
-  // Apply middleware
-  const authResult = await authMiddleware(request, {
-    requireAuth: true,
-    allowedUserTypes: ['admin'],
-    requiredPermission: 'settings.update'
-  });
-  if (authResult) return authResult;
-
-  try {
-    await connectToDatabase();
-
-    const body = await request.json();
     const { keys, reason } = body;
 
-    if (!Array.isArray(keys) || keys.length === 0) {
-      return apiHandler.badRequest('Setting keys array is required');
+    // Get admin ID from auth context
+    const adminId = request.headers.get('x-admin-id');
+
+    let filter: any = {};
+    if (keys && Array.isArray(keys) && keys.length > 0) {
+      filter.key = { $in: keys };
     }
 
-    const adminId = request.headers.get('X-Admin-Id');
-    const resetSettings: { key: any; oldValue: any; newValue: any }[] = [];
+    // Find settings to reset
+    const settings = await Setting.find(filter);
+    const resetSettings: { key: string; oldValue: any; newValue: any }[] = [];
 
-    for (const key of keys) {
-      const setting = await Setting.findOne({ key });
-      if (!setting) {
-        continue;
-      }
-
-      if (!setting.isEditable) {
-        continue;
-      }
-
-      if (setting.defaultValue !== undefined) {
+    for (const setting of settings) {
+      if (setting.defaultValue !== undefined && setting.value !== setting.defaultValue) {
         const oldValue = processSettingValue(setting);
         
-        // Encrypt default value if needed
-        let processedDefaultValue = setting.defaultValue;
+        // Update setting value
+        let processedValue = setting.defaultValue;
         if (setting.isEncrypted && setting.defaultValue) {
-          processedDefaultValue = encrypt(setting.defaultValue);
+          processedValue = encrypt(String(setting.defaultValue));
         }
-
-        // Update to default value
-        await Setting.findByIdAndUpdate(setting._id, {
-          value: processedDefaultValue,
-          updatedBy: new mongoose.Types.ObjectId(adminId!)
-        });
+        
+        setting.value = processedValue;
+        if (adminId) {
+          setting.updatedBy = new mongoose.Types.ObjectId(adminId);
+        }
+        setting.updatedAt = new Date();
+        await setting.save();
 
         // Create history record
         await SettingHistory.create({
@@ -510,29 +365,10 @@ async function resetSettingsHandler(request: NextRequest): Promise<NextResponse>
   }
 }
 
-// Helper function to get settings by category
-async function getSettingsByCategory(category: string): Promise<any[]> {
-  const settings = await Setting.find({ category })
-    .populate('updatedBy', 'email role')
-    .sort({ key: 1 })
-    .lean();
-    
-  return settings.map(setting => ({
-    ...setting,
-    value: processSettingValue(setting as unknown as ISetting)
-  }));
-}
+// REMOVED: Helper functions that were incorrectly exported
+// These functions are moved to lib/settings-helper.ts where they belong
 
-// Helper function to get specific setting value
-async function getSettingValue(key: string): Promise<any> {
-  const setting = await Setting.findOne({ key }).lean();
-  if (!setting) return null;
-  return processSettingValue(setting as unknown as ISetting);
-}
-
-// Export handlers
+// Only export HTTP method handlers (this is what Next.js expects)
 export const GET = withErrorHandler(getSettingsHandler);
 export const POST = withErrorHandler(createSettingHandler);
-
-// Export helper functions for use in other parts of the application
-export { getSettingsByCategory, getSettingValue, processSettingValue };
+export const PUT = withErrorHandler(resetSettingsHandler);
