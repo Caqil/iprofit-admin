@@ -1,3 +1,4 @@
+// app/users/[id]/edit/page.tsx - FIXED VERSION with correct types
 "use client";
 
 import React from "react";
@@ -24,6 +25,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -32,8 +34,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { userUpdateSchema } from "@/lib/validation";
-import { Plan, User, UserUpdateRequest } from "@/types";
+import { userUpdateSchema, UserUpdateFormData } from "@/lib/validation";
+import { Plan, User } from "@/types";
 import { useAuth } from "@/hooks/use-auth";
 import { hasPermission } from "@/lib/permissions";
 import { toast } from "sonner";
@@ -51,7 +53,8 @@ export default function EditUserPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const form = useForm<UserUpdateRequest>({
+  // FIXED: Use the form data type from schema
+  const form = useForm<UserUpdateFormData>({
     resolver: zodResolver(userUpdateSchema),
     defaultValues: {
       name: "",
@@ -62,7 +65,7 @@ export default function EditUserPage() {
       emailVerified: false,
       phoneVerified: false,
       twoFactorEnabled: false,
-      dateOfBirth: undefined,
+      dateOfBirth: "",
       address: {
         street: "",
         city: "",
@@ -96,8 +99,13 @@ export default function EditUserPage() {
         const userData = data.data.user || data.data;
         setUser(userData);
 
-        // FIXED: Properly handle date conversion and form reset
-        const formData: UserUpdateRequest = {
+        // FIXED: Properly format date for input field
+        const dateOfBirth = userData.dateOfBirth
+          ? new Date(userData.dateOfBirth).toISOString().split("T")[0]
+          : "";
+
+        // FIXED: Clean form data structure with correct types
+        const formData: UserUpdateFormData = {
           name: userData.name || "",
           email: userData.email || "",
           phone: userData.phone || "",
@@ -106,11 +114,7 @@ export default function EditUserPage() {
           emailVerified: Boolean(userData.emailVerified),
           phoneVerified: Boolean(userData.phoneVerified),
           twoFactorEnabled: Boolean(userData.twoFactorEnabled),
-          dateOfBirth: userData.dateOfBirth
-            ? (new Date(userData.dateOfBirth)
-                .toISOString()
-                .split("T")[0] as any)
-            : undefined,
+          dateOfBirth,
           address: {
             street: userData.address?.street || "",
             city: userData.address?.city || "",
@@ -150,35 +154,59 @@ export default function EditUserPage() {
     }
   };
 
-  const onSubmit = async (data: UserUpdateRequest) => {
+  const onSubmit = async (data: UserUpdateFormData) => {
     try {
       setIsSaving(true);
 
-      // FIXED: Clean up the data before sending
-      const submitData = {
-        ...data,
-        // Remove empty address fields
-        address:
-          data.address &&
-          Object.values(data.address).some(
-            (value) => typeof value === "string" && value.trim() !== ""
-          )
-            ? data.address
-            : undefined,
-        // Handle date properly
-        dateOfBirth: data.dateOfBirth
-          ? new Date(data.dateOfBirth).toISOString()
-          : undefined,
-        // Remove empty notes
-        notes: data.notes?.trim() || undefined,
-      };
+      // FIXED: Transform form data to API format
+      const submitData: any = {};
 
-      // Remove undefined values
-      Object.keys(submitData).forEach((key) => {
-        if (submitData[key as keyof typeof submitData] === undefined) {
-          delete submitData[key as keyof typeof submitData];
+      // Only include changed/filled fields
+      if (data.name && data.name.trim() !== "")
+        submitData.name = data.name.trim();
+      if (data.email && data.email.trim() !== "")
+        submitData.email = data.email.trim();
+      if (data.phone && data.phone.trim() !== "")
+        submitData.phone = data.phone.trim();
+      if (data.status) submitData.status = data.status;
+      if (data.planId && data.planId.trim() !== "")
+        submitData.planId = data.planId.trim();
+
+      // Boolean fields
+      if (data.emailVerified !== undefined)
+        submitData.emailVerified = data.emailVerified;
+      if (data.phoneVerified !== undefined)
+        submitData.phoneVerified = data.phoneVerified;
+      if (data.twoFactorEnabled !== undefined)
+        submitData.twoFactorEnabled = data.twoFactorEnabled;
+
+      // Date field - convert to ISO string for API
+      if (data.dateOfBirth && data.dateOfBirth.trim() !== "") {
+        submitData.dateOfBirth = new Date(data.dateOfBirth).toISOString();
+      }
+
+      // Address - only include if at least one field is filled
+      if (data.address) {
+        const hasAddressData = Object.values(data.address).some(
+          (value) => typeof value === "string" && value.trim() !== ""
+        );
+        if (hasAddressData) {
+          submitData.address = {
+            street: data.address.street?.trim() || "",
+            city: data.address.city?.trim() || "",
+            state: data.address.state?.trim() || "",
+            country: data.address.country?.trim() || "",
+            zipCode: data.address.zipCode?.trim() || "",
+          };
         }
-      });
+      }
+
+      // Notes
+      if (data.notes && data.notes.trim() !== "") {
+        submitData.notes = data.notes.trim();
+      }
+
+      console.log("Submitting data:", submitData);
 
       const response = await fetch(`/api/users/${userId}`, {
         method: "PUT",
@@ -197,7 +225,7 @@ export default function EditUserPage() {
       const result = await response.json();
       if (result.success) {
         toast.success("User updated successfully");
-        router.push(`/dashboard/users/${userId}`);
+        router.push(`/users/${userId}`);
       } else {
         throw new Error(result.error || "Failed to update user");
       }
@@ -274,18 +302,19 @@ export default function EditUserPage() {
         </div>
       </div>
 
+      {/* Form */}
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          {/* Basic Information */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Basic Information</CardTitle>
-              <CardDescription>
-                Update the user's basic profile information
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* Basic Information */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Basic Information</CardTitle>
+                <CardDescription>
+                  Update the user's basic details
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
                 <FormField
                   control={form.control}
                   name="name"
@@ -299,6 +328,7 @@ export default function EditUserPage() {
                     </FormItem>
                   )}
                 />
+
                 <FormField
                   control={form.control}
                   name="email"
@@ -307,8 +337,8 @@ export default function EditUserPage() {
                       <FormLabel>Email Address</FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="Enter email"
                           type="email"
+                          placeholder="Enter email address"
                           {...field}
                         />
                       </FormControl>
@@ -316,6 +346,7 @@ export default function EditUserPage() {
                     </FormItem>
                   )}
                 />
+
                 <FormField
                   control={form.control}
                   name="phone"
@@ -329,6 +360,7 @@ export default function EditUserPage() {
                     </FormItem>
                   )}
                 />
+
                 <FormField
                   control={form.control}
                   name="dateOfBirth"
@@ -336,37 +368,24 @@ export default function EditUserPage() {
                     <FormItem>
                       <FormLabel>Date of Birth</FormLabel>
                       <FormControl>
-                        <Input
-                          type="date"
-                          {...field}
-                          value={
-                            field.value
-                              ? new Date(field.value)
-                                  .toISOString()
-                                  .split("T")[0]
-                              : ""
-                          }
-                          onChange={(e) => field.onChange(e.target.value)}
-                        />
+                        <Input type="date" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
 
-          {/* Account Settings */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Account Settings</CardTitle>
-              <CardDescription>
-                Manage account status and plan assignment
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Account Settings */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Account Settings</CardTitle>
+                <CardDescription>
+                  Manage user account status and plan
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
                 <FormField
                   control={form.control}
                   name="status"
@@ -392,6 +411,7 @@ export default function EditUserPage() {
                     </FormItem>
                   )}
                 />
+
                 <FormField
                   control={form.control}
                   name="planId"
@@ -409,11 +429,8 @@ export default function EditUserPage() {
                         </FormControl>
                         <SelectContent>
                           {plans.map((plan) => (
-                            <SelectItem
-                              key={plan._id || plan._id}
-                              value={plan._id || plan._id}
-                            >
-                              {plan.name} - ${plan.price || 0}
+                            <SelectItem key={plan._id} value={plan._id}>
+                              {plan.name} - ${plan.price}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -422,102 +439,105 @@ export default function EditUserPage() {
                     </FormItem>
                   )}
                 />
-              </div>
 
-              <div className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="emailVerified"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                      <div className="space-y-0.5">
-                        <FormLabel className="text-base">
-                          Email Verified
-                        </FormLabel>
-                        <FormDescription>
-                          Mark the user's email as verified
-                        </FormDescription>
-                      </div>
-                      <FormControl>
-                        <Switch
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="phoneVerified"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                      <div className="space-y-0.5">
-                        <FormLabel className="text-base">
-                          Phone Verified
-                        </FormLabel>
-                        <FormDescription>
-                          Mark the user's phone as verified
-                        </FormDescription>
-                      </div>
-                      <FormControl>
-                        <Switch
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="twoFactorEnabled"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                      <div className="space-y-0.5">
-                        <FormLabel className="text-base">
-                          Two-Factor Authentication
-                        </FormLabel>
-                        <FormDescription>
-                          Enable or disable 2FA for this user
-                        </FormDescription>
-                      </div>
-                      <FormControl>
-                        <Switch
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-              </div>
-            </CardContent>
-          </Card>
+                <div className="space-y-4">
+                  <FormField
+                    control={form.control}
+                    name="emailVerified"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-base">
+                            Email Verified
+                          </FormLabel>
+                          <FormDescription>
+                            Mark email as verified
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
 
-          {/* Address Information */}
+                  <FormField
+                    control={form.control}
+                    name="phoneVerified"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-base">
+                            Phone Verified
+                          </FormLabel>
+                          <FormDescription>
+                            Mark phone as verified
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="twoFactorEnabled"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-base">
+                            Two-Factor Authentication
+                          </FormLabel>
+                          <FormDescription>
+                            Enable 2FA for this user
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Address */}
           <Card>
             <CardHeader>
               <CardTitle>Address Information</CardTitle>
               <CardDescription>
-                Update the user's address details
+                User's residential address (optional)
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <FormField
-                control={form.control}
-                name="address.street"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Street Address</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Enter street address" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <CardContent>
+              <div className="grid gap-4 md:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="address.street"
+                  render={({ field }) => (
+                    <FormItem className="md:col-span-2">
+                      <FormLabel>Street Address</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Enter street address" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
                 <FormField
                   control={form.control}
                   name="address.city"
@@ -531,6 +551,7 @@ export default function EditUserPage() {
                     </FormItem>
                   )}
                 />
+
                 <FormField
                   control={form.control}
                   name="address.state"
@@ -547,6 +568,7 @@ export default function EditUserPage() {
                     </FormItem>
                   )}
                 />
+
                 <FormField
                   control={form.control}
                   name="address.country"
@@ -560,6 +582,7 @@ export default function EditUserPage() {
                     </FormItem>
                   )}
                 />
+
                 <FormField
                   control={form.control}
                   name="address.zipCode"
@@ -567,7 +590,10 @@ export default function EditUserPage() {
                     <FormItem>
                       <FormLabel>ZIP/Postal Code</FormLabel>
                       <FormControl>
-                        <Input placeholder="Enter ZIP code" {...field} />
+                        <Input
+                          placeholder="Enter ZIP or postal code"
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -582,7 +608,7 @@ export default function EditUserPage() {
             <CardHeader>
               <CardTitle>Admin Notes</CardTitle>
               <CardDescription>
-                Add internal notes about this user update
+                Add any notes about this user update
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -593,14 +619,12 @@ export default function EditUserPage() {
                   <FormItem>
                     <FormLabel>Notes</FormLabel>
                     <FormControl>
-                      <Input
+                      <Textarea
                         placeholder="Enter any notes about this update..."
+                        rows={4}
                         {...field}
                       />
                     </FormControl>
-                    <FormDescription>
-                      These notes will be recorded in the audit log
-                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -608,12 +632,28 @@ export default function EditUserPage() {
             </CardContent>
           </Card>
 
-          {/* Submit Button */}
-          <div className="flex justify-end">
+          {/* Actions */}
+          <div className="flex items-center gap-4">
             <Button type="submit" disabled={isSaving}>
-              {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              <Save className="mr-2 h-4 w-4" />
-              Save Changes
+              {isSaving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  Save Changes
+                </>
+              )}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => router.back()}
+              disabled={isSaving}
+            >
+              Cancel
             </Button>
           </div>
         </form>

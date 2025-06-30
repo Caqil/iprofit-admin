@@ -13,7 +13,7 @@ import { sendEmail } from '@/lib/email';
 import { z } from 'zod';
 import mongoose from 'mongoose';
 import { bulkSubmissionSchema } from '@/lib/validation';
-// POST /api/tasks/submissions/bulk - Bulk process task submissions
+
 async function bulkProcessSubmissionsHandler(request: NextRequest): Promise<NextResponse> {
   const apiHandler = ApiHandler.create(request);
 

@@ -16,8 +16,7 @@ import mongoose from 'mongoose';
 
 // ✅ USE EXISTING SCHEMAS FROM lib/validation.ts
 import { 
-  adminUserCreateSchema,     // For admin user creation
-  urlPaginationSchema, 
+  adminUserCreateSchema, 
   userCreateExtendedSchema,
   userListQuerySchema
 } from '@/lib/validation';

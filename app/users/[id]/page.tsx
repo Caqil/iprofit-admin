@@ -1,3 +1,4 @@
+// app/users/[id]/page.tsx - FIXED VERSION
 "use client";
 
 import React from "react";
@@ -100,33 +101,16 @@ export default function UserDetailsPage() {
         throw new Error("Failed to update user status");
       }
 
-      await fetchUserProfile();
-      toast.success(`User status updated to ${newStatus}`);
-    } catch (error) {
-      toast.error("Failed to update user status");
-    }
-  };
-
-  const handleKYCAction = async (
-    action: "approve" | "reject",
-    reason?: string
-  ) => {
-    try {
-      const response = await fetch(`/api/users/${userId}/kyc`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ action, rejectionReason: reason }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to ${action} KYC`);
+      const result = await response.json();
+      if (result.success) {
+        toast.success(`User status updated to ${newStatus}`);
+        fetchUserProfile(); // Refresh data
+      } else {
+        throw new Error(result.error || "Failed to update status");
       }
-
-      await fetchUserProfile();
-      toast.success(`KYC ${action}d successfully`);
     } catch (error) {
-      toast.error(`Failed to ${action} KYC`);
+      console.error("Error updating status:", error);
+      toast.error("Failed to update user status");
     }
   };
 
@@ -158,36 +142,18 @@ export default function UserDetailsPage() {
     currentUser?.role || "Moderator",
     "users.update"
   );
+
   const canManageKYC = hasPermission(
     currentUser?.role || "Moderator",
     "users.kyc.approve"
   );
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "Active":
-        return "bg-green-100 text-green-800";
-      case "Suspended":
-        return "bg-orange-100 text-orange-800";
-      case "Banned":
-        return "bg-red-100 text-red-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
+  const canViewTransactions = hasPermission(
+    currentUser?.role || "Moderator",
+    "transactions.view"
+  );
 
-  const getKYCStatusColor = (status: string) => {
-    switch (status) {
-      case "Approved":
-        return "bg-green-100 text-green-800";
-      case "Pending":
-        return "bg-yellow-100 text-yellow-800";
-      case "Rejected":
-        return "bg-red-100 text-red-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
+  const user = userProfile.user;
 
   return (
     <div className="space-y-6">
@@ -199,17 +165,18 @@ export default function UserDetailsPage() {
             Back
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">
-              {userProfile.user.name}
-            </h1>
-            <p className="text-muted-foreground">{userProfile.user.email}</p>
+            <h1 className="text-3xl font-bold tracking-tight">{user.name}</h1>
+            <p className="text-muted-foreground">{user.email}</p>
           </div>
         </div>
         <div className="flex items-center space-x-2">
           {canEdit && (
             <Button
               variant="outline"
-              onClick={() => router.push(`/dashboard/users/${userId}/edit`)}
+              onClick={() => {
+                // FIXED: Remove /dashboard from the route
+                router.push(`/users/${userId}/edit`);
+              }}
             >
               <Edit className="mr-2 h-4 w-4" />
               Edit
@@ -243,213 +210,429 @@ export default function UserDetailsPage() {
                 </>
               )}
               <DropdownMenuItem
-                onClick={() =>
-                  router.push(`/dashboard/users/${userId}/transactions`)
-                }
+                onClick={() => {
+                  // FIXED: Remove /dashboard from the route
+                  router.push(`/users/${userId}/transactions`);
+                }}
               >
                 View Transactions
               </DropdownMenuItem>
+              {canManageKYC && (
+                <DropdownMenuItem
+                  onClick={() => {
+                    // FIXED: Remove /dashboard from the route
+                    router.push(`/users/${userId}/kyc`);
+                  }}
+                >
+                  Manage KYC
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </div>
 
-      {/* User Summary Card */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex items-start space-x-4">
-            <Avatar className="h-16 w-16">
-              <AvatarImage src={userProfile.user.profilePicture} />
-              <AvatarFallback className="text-lg">
-                {userProfile.user.name
-                  .split(" ")
-                  .map((n) => n[0])
-                  .join("")
-                  .toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex-1 space-y-2">
-              <div className="flex items-center space-x-2">
-                <h2 className="text-xl font-semibold">
-                  {userProfile.user.name}
-                </h2>
-                <Badge className={getStatusColor(userProfile.user.status)}>
-                  {userProfile.user.status}
-                </Badge>
-                <Badge
-                  className={getKYCStatusColor(userProfile.user.kycStatus)}
-                >
-                  KYC {userProfile.user.kycStatus}
-                </Badge>
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                <div className="flex items-center space-x-2">
-                  <Mail className="h-4 w-4 text-muted-foreground" />
-                  <span>{userProfile.user.email}</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Phone className="h-4 w-4 text-muted-foreground" />
-                  <span>{userProfile.user.phone}</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <DollarSign className="h-4 w-4 text-muted-foreground" />
-                  <span>
-                    Balance: ${userProfile.user.balance.toLocaleString()}
-                  </span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                  <span>
-                    Joined{" "}
-                    {new Date(userProfile.user.createdAt).toLocaleDateString()}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Quick Stats */}
-      <div className="grid gap-4 md:grid-cols-4">
+      {/* User Overview Cards */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Total Deposits
+              Account Status
             </CardTitle>
+            <Shield className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center space-x-2">
+              <Badge
+                variant={
+                  user.status === "Active"
+                    ? "default"
+                    : user.status === "Suspended"
+                    ? "secondary"
+                    : "destructive"
+                }
+              >
+                {user.status}
+              </Badge>
+              <Badge
+                variant={
+                  user.kycStatus === "Approved"
+                    ? "default"
+                    : user.kycStatus === "Pending"
+                    ? "secondary"
+                    : "destructive"
+                }
+              >
+                KYC: {user.kycStatus}
+              </Badge>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Balance</CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              ${userProfile.statistics.totalDeposits.toLocaleString()}
+              ${user.balance?.toLocaleString() || "0.00"}
             </div>
+            <p className="text-xs text-muted-foreground">Available balance</p>
           </CardContent>
         </Card>
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Total Withdrawals
-            </CardTitle>
+            <CardTitle className="text-sm font-medium">Plan</CardTitle>
             <CreditCard className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              ${userProfile.statistics.totalWithdrawals.toLocaleString()}
+              {user.plan?.name || "No Plan"}
             </div>
+            <p className="text-xs text-muted-foreground">
+              {user.plan?.price ? `$${user.plan.price}/month` : "Free"}
+            </p>
           </CardContent>
         </Card>
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Referrals</CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {userProfile.statistics.totalReferrals}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Account Age</CardTitle>
+            <CardTitle className="text-sm font-medium">Member Since</CardTitle>
             <Calendar className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {Math.floor(userProfile.statistics.accountAge)} days
+              {new Date(user.createdAt).toLocaleDateString()}
             </div>
+            <p className="text-xs text-muted-foreground">Registration date</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
+      {/* User Details */}
+      <div className="grid gap-6 md:grid-cols-3">
+        {/* User Information */}
+        <div className="md:col-span-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>User Information</CardTitle>
+              <CardDescription>Personal and contact details</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Profile Section */}
+              <div className="flex items-center space-x-4">
+                <Avatar className="h-16 w-16">
+                  <AvatarImage src={user.profilePicture} alt={user.name} />
+                  <AvatarFallback className="text-lg">
+                    {user.name
+                      .split(" ")
+                      .map((n) => n[0])
+                      .join("")
+                      .toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div>
+                  <h3 className="text-lg font-semibold">{user.name}</h3>
+                  <p className="text-sm text-muted-foreground">
+                    ID: {user._id}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Referral Code: {user.referralCode}
+                  </p>
+                </div>
+              </div>
+
+              {/* Contact Information */}
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="flex items-center space-x-2">
+                  <Mail className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">{user.email}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {user.emailVerified ? "Verified" : "Not verified"}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Phone className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">{user.phone}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {user.phoneVerified ? "Verified" : "Not verified"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Address */}
+              {user.address && (
+                <div className="flex items-start space-x-2">
+                  <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium">Address</p>
+                    <p className="text-xs text-muted-foreground">
+                      {user.address.street && `${user.address.street}, `}
+                      {user.address.city && `${user.address.city}, `}
+                      {user.address.state && `${user.address.state}, `}
+                      {user.address.country}
+                      {user.address.zipCode && ` ${user.address.zipCode}`}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Other Details */}
+              <div className="grid gap-4 md:grid-cols-2">
+                {user.dateOfBirth && (
+                  <div>
+                    <p className="text-sm font-medium">Date of Birth</p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(user.dateOfBirth).toLocaleDateString()}
+                    </p>
+                  </div>
+                )}
+                <div>
+                  <p className="text-sm font-medium">Last Login</p>
+                  <p className="text-xs text-muted-foreground">
+                    {user.lastLogin
+                      ? new Date(user.lastLogin).toLocaleString()
+                      : "Never"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Security Settings */}
+              <div>
+                <p className="text-sm font-medium mb-2">Security Settings</p>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant={user.emailVerified ? "default" : "secondary"}>
+                    Email {user.emailVerified ? "Verified" : "Unverified"}
+                  </Badge>
+                  <Badge variant={user.phoneVerified ? "default" : "secondary"}>
+                    Phone {user.phoneVerified ? "Verified" : "Unverified"}
+                  </Badge>
+                  <Badge
+                    variant={user.twoFactorEnabled ? "default" : "secondary"}
+                  >
+                    2FA {user.twoFactorEnabled ? "Enabled" : "Disabled"}
+                  </Badge>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Statistics */}
+        <div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Statistics</CardTitle>
+              <CardDescription>User activity overview</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {userProfile.statistics && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted-foreground">
+                      Total Deposits:
+                    </span>
+                    <span className="text-sm font-medium">
+                      $
+                      {userProfile.statistics.totalDeposits?.toLocaleString() ||
+                        "0.00"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted-foreground">
+                      Total Withdrawals:
+                    </span>
+                    <span className="text-sm font-medium">
+                      $
+                      {userProfile.statistics.totalWithdrawals?.toLocaleString() ||
+                        "0.00"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted-foreground">
+                      Total Profit:
+                    </span>
+                    <span className="text-sm font-medium">
+                      $
+                      {userProfile.statistics.totalProfit?.toLocaleString() ||
+                        "0.00"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted-foreground">
+                      Referrals:
+                    </span>
+                    <span className="text-sm font-medium">
+                      {userProfile.statistics.totalReferrals || 0}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted-foreground">
+                      Referral Earnings:
+                    </span>
+                    <span className="text-sm font-medium">
+                      $
+                      {userProfile.statistics.referralEarnings?.toLocaleString() ||
+                        "0.00"}
+                    </span>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* Tabs for Additional Information */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="profile">Profile</TabsTrigger>
-          <TabsTrigger value="kyc">
-            KYC Verification
-            {userProfile.user.kycStatus === "Pending" && (
-              <Badge variant="secondary" className="ml-2">
-                Pending
-              </Badge>
-            )}
-          </TabsTrigger>
           <TabsTrigger value="transactions">Transactions</TabsTrigger>
           <TabsTrigger value="referrals">Referrals</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="profile">
-          <UserProfile
-            userProfile={userProfile}
-            onUpdate={fetchUserProfile}
-            canEdit={canEdit}
-          />
-        </TabsContent>
-
-        <TabsContent value="kyc">
-          <KYCVerification
-            user={userProfile.user}
-            onKYCAction={handleKYCAction}
-            canManage={canManageKYC}
-          />
-        </TabsContent>
-
-        <TabsContent value="transactions">
-          <TransactionHistory
-            userId={userId}
-            recentTransactions={userProfile.recentTransactions}
-          />
-        </TabsContent>
-
-        <TabsContent value="referrals">
+        <TabsContent value="profile" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Referrals</CardTitle>
+              <CardTitle>Recent Activity</CardTitle>
               <CardDescription>
-                Users referred by {userProfile.user.name}
+                Latest user activities and system updates
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {userProfile.referrals.length > 0 ? (
+              <div className="space-y-4">
+                <div className="flex items-center space-x-4">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Account Created</p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(user.createdAt).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+                {user.lastLogin && (
+                  <div className="flex items-center space-x-4">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">Last Login</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(user.lastLogin).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="transactions" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Recent Transactions</CardTitle>
+              <CardDescription>Latest transaction history</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {userProfile.recentTransactions &&
+              userProfile.recentTransactions.length > 0 ? (
+                <div className="space-y-4">
+                  {userProfile.recentTransactions
+                    .slice(0, 5)
+                    .map((transaction) => (
+                      <div
+                        key={transaction._id}
+                        className="flex items-center justify-between"
+                      >
+                        <div>
+                          <p className="text-sm font-medium capitalize">
+                            {transaction.type}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(transaction.createdAt).toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-medium">
+                            ${transaction.amount.toLocaleString()}
+                          </p>
+                          <Badge
+                            variant={
+                              transaction.status === "Approved"
+                                ? "default"
+                                : transaction.status === "Pending"
+                                ? "secondary"
+                                : "destructive"
+                            }
+                            className="text-xs"
+                          >
+                            {transaction.status}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => {
+                      // FIXED: Remove /dashboard from the route
+                      router.push(`/users/${userId}/transactions`);
+                    }}
+                  >
+                    View All Transactions
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No transactions found
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="referrals" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Referrals</CardTitle>
+              <CardDescription>Users referred by this user</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {userProfile.referrals && userProfile.referrals.length > 0 ? (
                 <div className="space-y-4">
                   {userProfile.referrals.map((referral) => (
                     <div
                       key={referral.refereeId}
-                      className="flex items-center justify-between p-4 border rounded-lg"
+                      className="flex items-center justify-between"
                     >
                       <div>
-                        <div className="font-medium">
+                        <p className="text-sm font-medium">
                           {referral.refereeName}
-                        </div>
-                        <div className="text-sm text-muted-foreground">
+                        </p>
+                        <p className="text-xs text-muted-foreground">
                           {referral.refereeEmail}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          Joined{" "}
-                          {new Date(referral.joinedAt).toLocaleDateString()}
-                        </div>
+                        </p>
                       </div>
                       <div className="text-right">
-                        <div className="font-medium">
-                          ${referral.bonusEarned}
-                        </div>
-                        <Badge
-                          variant={
-                            referral.status === "Active"
-                              ? "default"
-                              : "secondary"
-                          }
-                        >
-                          {referral.status}
-                        </Badge>
+                        <p className="text-sm font-medium">
+                          ${referral.bonusEarned.toLocaleString()}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(referral.joinedAt).toLocaleDateString()}
+                        </p>
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-8">
-                  <p className="text-muted-foreground">No referrals yet</p>
-                </div>
+                <p className="text-sm text-muted-foreground">
+                  No referrals found
+                </p>
               )}
             </CardContent>
           </Card>

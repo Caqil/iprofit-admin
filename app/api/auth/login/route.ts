@@ -14,16 +14,6 @@ import jwt from 'jsonwebtoken';
 import { env } from '@/config/env';
 import { loginSchema } from '@/lib/validation';
 
-interface LoginRequest {
-  email: string;
-  password: string;
-  userType: 'admin' | 'user';
-  twoFactorToken?: string;
-  rememberMe?: boolean;
-  deviceId?: string;
-  fingerprint?: string;
-}
-
 interface LoginResponse {
   success: boolean;
   user?: {

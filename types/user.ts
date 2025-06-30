@@ -112,7 +112,7 @@ export interface UserUpdateRequest {
   emailVerified?: boolean;
   phoneVerified?: boolean;
   twoFactorEnabled?: boolean;
-  dateOfBirth?: Date | string; // Support both Date object and ISO string
+  dateOfBirth?: string; // Support both Date object and ISO string
   address?: UserAddress;
   notes?: string; // For admin notes during update
 }
@@ -168,4 +168,25 @@ export interface AdminUserCreateRequest {
     zipCode: string;
   };
   dateOfBirth?: string;
+}
+export interface UserUpdateRequest {
+  name?: string;
+  email?: string;
+  phone?: string;
+  status?: 'Active' | 'Suspended' | 'Banned';
+  kycStatus?: 'Pending' | 'Approved' | 'Rejected';
+  planId?: string;
+  balance?: number;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
+  twoFactorEnabled?: boolean;
+  dateOfBirth?: string; // FIXED: Only string, not Date
+  address?: {
+    street?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    zipCode?: string;
+  };
+  notes?: string;
 }

@@ -70,6 +70,11 @@ class DatabaseMigrator {
         description: 'Add advanced indexes and partitioning',
         up: this.migration_1_6_0.bind(this),
       },
+      {
+  version: '1.7.0',
+  description: 'Create proper settings collection with comprehensive data',
+  up: this.migration_1_7_0.bind(this),
+}
     ];
 
     this.collections = [
@@ -101,7 +106,7 @@ class DatabaseMigrator {
       'audit_logs',
       'system_settings',
       'rate_limits',
-      
+      'settings',
       // Migration tracking
       'migrations'
     ];
@@ -607,7 +612,306 @@ class DatabaseMigrator {
       console.error('  ❌ Error creating advanced indexes:', error.message);
     }
   }
+async migration_1_7_0() {
+  console.log('  📝 Creating proper settings collection...');
 
+  const db = mongoose.connection.db;
+
+  try {
+    // Create settings collection
+    await db.createCollection('settings');
+    console.log('  ✅ Settings collection created');
+
+    // Get a sample admin ID for updatedBy field
+    const sampleAdmin = await db.collection('admins').findOne();
+    const adminId = sampleAdmin?._id || new mongoose.Types.ObjectId();
+
+    // Create comprehensive settings data
+    const settingsData = [
+      // System Settings
+      {
+        category: 'system',
+        key: 'app_name',
+        value: 'IProfit Admin',
+        dataType: 'string',
+        description: 'Application name displayed in the interface',
+        isEditable: true,
+        isEncrypted: false,
+        defaultValue: 'IProfit Admin',
+        validation: { required: true, min: 1, max: 100 },
+        updatedBy: adminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        category: 'system',
+        key: 'company_name',
+        value: 'IProfit Technologies',
+        dataType: 'string',
+        description: 'Company name for branding',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { required: true },
+        updatedBy: adminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        category: 'system',
+        key: 'maintenance_mode',
+        value: false,
+        dataType: 'boolean',
+        description: 'Enable maintenance mode',
+        isEditable: true,
+        isEncrypted: false,
+        defaultValue: false,
+        updatedBy: adminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      
+      // Financial Settings
+      {
+        category: 'financial',
+        key: 'primary_currency',
+        value: 'BDT',
+        dataType: 'string',
+        description: 'Primary currency for the platform',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { required: true, enum: ['BDT', 'USD', 'EUR'] },
+        updatedBy: adminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        category: 'financial',
+        key: 'usd_to_bdt_rate',
+        value: 110.50,
+        dataType: 'number',
+        description: 'Current USD to BDT exchange rate',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { required: true, min: 1 },
+        updatedBy: adminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        category: 'financial',
+        key: 'min_deposit',
+        value: 100,
+        dataType: 'number',
+        description: 'Minimum deposit amount in BDT',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { required: true, min: 1 },
+        updatedBy: adminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        category: 'financial',
+        key: 'signup_bonus',
+        value: 100,
+        dataType: 'number',
+        description: 'Signup bonus amount in BDT',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { min: 0 },
+        updatedBy: adminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      
+      // Security Settings
+      {
+        category: 'security',
+        key: 'device_limit_per_user',
+        value: 1,
+        dataType: 'number',
+        description: 'Maximum devices allowed per user',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { required: true, min: 1, max: 10 },
+        updatedBy: adminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        category: 'security',
+        key: 'session_timeout_minutes',
+        value: 30,
+        dataType: 'number',
+        description: 'Admin session timeout in minutes',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { required: true, min: 5, max: 1440 },
+        updatedBy: adminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        category: 'security',
+        key: 'max_failed_login_attempts',
+        value: 5,
+        dataType: 'number',
+        description: 'Maximum failed login attempts',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { required: true, min: 1, max: 20 },
+        updatedBy: adminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      
+      // Email Settings
+      {
+        category: 'email',
+        key: 'smtp_host',
+        value: 'smtp.gmail.com',
+        dataType: 'string',
+        description: 'SMTP server hostname',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { required: true },
+        updatedBy: adminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        category: 'email',
+        key: 'smtp_port',
+        value: 587,
+        dataType: 'number',
+        description: 'SMTP server port',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { required: true, min: 1, max: 65535 },
+        updatedBy: adminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        category: 'email',
+        key: 'smtp_user',
+        value: '',
+        dataType: 'string',
+        description: 'SMTP username',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { required: true },
+        updatedBy: adminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      
+      // Upload Settings
+      {
+        category: 'upload',
+        key: 'max_file_size_mb',
+        value: 10,
+        dataType: 'number',
+        description: 'Maximum file size in MB',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { required: true, min: 1, max: 100 },
+        updatedBy: adminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        category: 'upload',
+        key: 'allowed_file_types',
+        value: ['jpg', 'jpeg', 'png', 'pdf', 'doc', 'docx'],
+        dataType: 'array',
+        description: 'Allowed file extensions',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { required: true },
+        updatedBy: adminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      
+      // Business Settings
+      {
+        category: 'business',
+        key: 'auto_kyc_approval',
+        value: false,
+        dataType: 'boolean',
+        description: 'Auto approve KYC submissions',
+        isEditable: true,
+        isEncrypted: false,
+        defaultValue: false,
+        updatedBy: adminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        category: 'business',
+        key: 'max_tasks_per_user',
+        value: 10,
+        dataType: 'number',
+        description: 'Max tasks per user',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { min: 1, max: 100 },
+        updatedBy: adminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      
+      // API Settings
+      {
+        category: 'api',
+        key: 'api_timeout_seconds',
+        value: 30,
+        dataType: 'number',
+        description: 'API timeout in seconds',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { required: true, min: 1, max: 300 },
+        updatedBy: adminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      
+      // Maintenance Settings
+      {
+        category: 'maintenance',
+        key: 'auto_backup_enabled',
+        value: true,
+        dataType: 'boolean',
+        description: 'Enable auto backups',
+        isEditable: true,
+        isEncrypted: false,
+        defaultValue: true,
+        updatedBy: adminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    ];
+
+    // Insert settings into the database
+    await db.collection('settings').insertMany(settingsData);
+    console.log(`  ✅ Created ${settingsData.length} settings records`);
+
+    // Create indexes for the settings collection
+    await db.collection('settings').createIndexes([
+      { key: { key: 1 }, unique: true },
+      { key: { category: 1 } },
+      { key: { isEditable: 1 } },
+      { key: { updatedAt: -1 } },
+      { key: { category: 1, isEditable: 1 } }
+    ]);
+    console.log('  ✅ Created settings collection indexes');
+
+    console.log('  ✅ Proper settings collection setup completed');
+  } catch (error) {
+    console.error('  ❌ Error setting up settings collection:', error.message);
+  }
+}
   async createSampleData() {
     console.log('📊 Creating sample data...');
 

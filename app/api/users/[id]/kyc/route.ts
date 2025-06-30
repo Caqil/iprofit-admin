@@ -14,22 +14,9 @@ import {
 } from '@/lib/email';
 import { z } from 'zod';
 import mongoose from 'mongoose';
+import { kycDocumentSchema, kycUpdateSchema } from '@/lib/validation';
 
-// KYC update validation schema
-const kycUpdateSchema = z.object({
-  status: z.enum(['pending', 'approved', 'rejected']),
-  rejectionReason: z.string().optional(),
-  adminNotes: z.string().optional(),
-  documentsRequired: z.array(z.string()).optional(),
-});
 
-// KYC document upload schema
-const kycDocumentSchema = z.object({
-  documentType: z.enum(['national_id', 'passport', 'drivers_license', 'utility_bill', 'bank_statement']),
-  documentUrl: z.string().url(),
-  documentNumber: z.string().optional(),
-  expiryDate: z.string().datetime().optional(),
-});
 
 // Next.js 15 Route Handler with proper params typing
 interface RouteContext {

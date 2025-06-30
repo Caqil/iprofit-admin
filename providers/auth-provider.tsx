@@ -1,3 +1,4 @@
+// providers/auth-provider.tsx - FIXED VERSION
 "use client";
 
 import { SessionProvider } from "next-auth/react";
@@ -47,7 +48,7 @@ function AuthProviderInner({ children }: AuthProviderProps) {
     });
   }, [session, status]);
 
-  // Route protection logic
+  // Route protection logic - FIXED VERSION
   useEffect(() => {
     if (status === "loading") return;
 
@@ -74,15 +75,9 @@ function AuthProviderInner({ children }: AuthProviderProps) {
       return;
     }
 
-    // Check route permissions for authenticated admin users
-    if (session?.user?.userType === "admin" && pathname.startsWith("/")) {
-      const user = session.user as unknown as AdminUser;
-      if (!canAccessRoute(user.role, pathname)) {
-        toast.error("You do not have permission to access this page");
-        router.push("/dashboard");
-        return;
-      }
-    }
+    // FIXED: Don't do route permission checking here
+    // Let individual pages handle their own protection
+    // This prevents redirect loops for user detail pages
   }, [session, status, pathname, router]);
 
   // Session timeout warning

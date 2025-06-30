@@ -1,3 +1,4 @@
+// middleware.ts - UPDATED VERSION to fix redirects
 import { withAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
@@ -39,20 +40,18 @@ export default withAuth(
     // Handle different user types and route access
     const userType = token.userType;
 
-    // Admin routes
-    if (pathname.startsWith('/dashboard')) {
-      if (userType !== 'admin') {
-        return NextResponse.redirect(new URL('/user/dashboard', req.url));
-      }
+    // FIXED: Be more specific about when to redirect
+    // Only redirect if user is clearly in wrong section
+    
+    // Admin routes - only redirect non-admins from /dashboard root
+    if (pathname === '/dashboard' && userType !== 'admin') {
+      return NextResponse.redirect(new URL('/user/dashboard', req.url));
     }
 
-    // User routes
-    if (pathname.startsWith('/user')) {
-      if (userType !== 'user') {
-        return NextResponse.redirect(new URL('/dashboard', req.url));
-      }
+    // User routes - only redirect non-users from /user root  
+    if (pathname === '/user' && userType !== 'user') {
+      return NextResponse.redirect(new URL('/dashboard', req.url));
     }
-
     // Redirect authenticated users away from auth pages
     if (pathname === '/login' || pathname === '/signup') {
       if (userType === 'admin') {

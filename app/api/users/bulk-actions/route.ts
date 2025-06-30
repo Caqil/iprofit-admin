@@ -11,17 +11,7 @@ import { sendEmail } from '@/lib/email';
 import { objectIdValidator } from '@/utils/validators';
 import { z } from 'zod';
 import mongoose from 'mongoose';
-
-// Bulk action validation schema
-const bulkActionSchema = z.object({
-  userIds: z.array(objectIdValidator).min(1, 'At least one user ID is required').max(100, 'Maximum 100 users allowed'),
-  action: z.enum(['activate', 'suspend', 'ban', 'approve_kyc', 'reject_kyc', 'upgrade_plan']),
-  metadata: z.object({
-    reason: z.string().optional(),
-    planId: objectIdValidator.optional(),
-    rejectionReason: z.string().optional()
-  }).optional()
-});
+import { bulkActionSchema } from '@/lib/validation';
 
 async function bulkActionsHandler(request: NextRequest): Promise<NextResponse> {
   const apiHandler = ApiHandler.create(request);

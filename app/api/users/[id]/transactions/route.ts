@@ -8,21 +8,12 @@ import { authMiddleware } from '@/middleware/auth';
 import { apiRateLimit } from '@/middleware/rate-limit';
 import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler, createPaginatedResponse, createSortStage, createPaginationStages } from '@/lib/api-helpers';
-import { transactionCreateSchema, paginationSchema, dateRangeSchema } from '@/lib/validation';
+import { transactionCreateSchema, paginationSchema, dateRangeSchema, transactionListQuerySchema } from '@/lib/validation';
 import { objectIdValidator } from '@/utils/validators';
 import { sendEmail } from '@/lib/email';
 import { z } from 'zod';
 import mongoose from 'mongoose';
 
-// Transaction list query validation
-const transactionListQuerySchema = paginationSchema.extend({
-  sortBy: z.string().optional().default('createdAt'),
-  sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
-  type: z.enum(['deposit', 'withdrawal', 'bonus', 'profit', 'penalty']).optional(),
-  status: z.enum(['Pending', 'Approved', 'Rejected', 'Processing', 'Failed']).optional(),
-  gateway: z.enum(['CoinGate', 'UddoktaPay', 'Manual', 'System']).optional(),
-  currency: z.enum(['USD', 'BDT']).optional()
-}).merge(dateRangeSchema);
 
 // Next.js 15 Route Handler with proper params typing
 interface RouteContext {
@@ -152,7 +143,7 @@ async function getUserTransactionsHandler(
       },
 
       // Sort stage
-      createSortStage(sortBy, sortOrder),
+      createSortStage(sortBy || 'createdAt', sortOrder || 'desc'),
 
       // Facet for pagination and summary
       {

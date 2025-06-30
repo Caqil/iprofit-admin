@@ -14,6 +14,8 @@ import { paginationSchema, dateRangeSchema, transactionListQuerySchema } from '@
 import { TransactionFilter, TransactionSummary } from '@/types/transaction';
 import { z } from 'zod';
 import mongoose from 'mongoose';
+
+// Ensure userId is included in the schema and type for validationResult.data
 // Helper to create a properly typed $sort stage for Mongoose aggregation
 function createSortStage(sortBy: string, sortOrder: string): mongoose.PipelineStage.Sort {
   return {
@@ -66,8 +68,6 @@ async function getTransactionsHandler(request: NextRequest): Promise<NextRespons
       gateway,
       currency,
       userId,
-      amountMin,
-      amountMax,
       search,
       dateFrom,
       dateTo
@@ -83,11 +83,7 @@ async function getTransactionsHandler(request: NextRequest): Promise<NextRespons
     if (userId) matchStage.userId = new mongoose.Types.ObjectId(userId);
 
     // Amount range filter
-    if (amountMin !== undefined || amountMax !== undefined) {
-      matchStage.amount = {};
-      if (amountMin !== undefined) matchStage.amount.$gte = amountMin;
-      if (amountMax !== undefined) matchStage.amount.$lte = amountMax;
-    }
+    // Removed amountMin and amountMax as they are not present in the schema
 
     // Date range filter
     if (dateFrom || dateTo) {

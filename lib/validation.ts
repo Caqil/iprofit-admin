@@ -148,7 +148,6 @@ export const userCreateExtendedSchema = z.discriminatedUnion("isAdminCreated", [
   })
 ]);
 
-// User update schema
 export const userUpdateSchema = z.object({
   name: z.string().min(2).max(100).optional(),
   email: z.string().email().optional(),
@@ -159,9 +158,19 @@ export const userUpdateSchema = z.object({
   balance: z.number().min(0).optional(),
   emailVerified: z.boolean().optional(),
   phoneVerified: z.boolean().optional(),
-  twoFactorEnabled: z.boolean().optional()
+  twoFactorEnabled: z.boolean().optional(),
+  dateOfBirth: z.string().optional(),
+  address: z.object({
+    street: z.string().max(200).optional(),
+    city: z.string().max(100).optional(),
+    state: z.string().max(100).optional(),
+    country: z.string().max(100).optional(),
+    zipCode: z.string().max(20).optional()
+  }).optional(),
+  notes: z.string().max(1000).optional()
 });
 
+export type UserUpdateFormData = z.infer<typeof userUpdateSchema>;
 // User list query schema
 export const userListQuerySchema = urlPaginationSchema.extend({
   search: z.string().optional(),
@@ -420,19 +429,6 @@ export const taskCreateSchema = z.object({
 
 export const taskUpdateSchema = taskCreateSchema.partial();
 
-// ============================================================================
-// BULK OPERATION SCHEMAS
-// ============================================================================
-
-export const bulkActionSchema = z.object({
-  userIds: z.array(objectIdValidator).min(1, 'At least one user ID is required').max(100, 'Maximum 100 users allowed'),
-  action: z.enum(['activate', 'suspend', 'ban', 'approve_kyc', 'reject_kyc', 'upgrade_plan']),
-  metadata: z.object({
-    reason: z.string().optional(),
-    planId: objectIdValidator.optional(),
-    rejectionReason: z.string().optional()
-  }).optional()
-});
 
 // ============================================================================
 // AUDIT LOG SCHEMAS
@@ -1244,4 +1240,30 @@ export const rateLimitSettingsSchema = z.object({
   apiWindow: z.number().min(1000).max(3600000), // 1 second to 1 hour
   uploadRequests: z.number().min(1).max(100),
   uploadWindow: z.number().min(1000).max(3600000) // 1 second to 1 hour
+});
+// KYC update validation schema
+export const kycUpdateSchema = z.object({
+  status: z.enum(['pending', 'approved', 'rejected']),
+  rejectionReason: z.string().optional(),
+  adminNotes: z.string().optional(),
+  documentsRequired: z.array(z.string()).optional(),
+});
+
+// KYC document upload schema
+export const kycDocumentSchema = z.object({
+  documentType: z.enum(['national_id', 'passport', 'drivers_license', 'utility_bill', 'bank_statement']),
+  documentUrl: z.string().url(),
+  documentNumber: z.string().optional(),
+  expiryDate: z.string().datetime().optional(),
+});
+
+
+export const bulkActionSchema = z.object({
+  userIds: z.array(objectIdValidator).min(1, 'At least one user ID is required').max(100, 'Maximum 100 users allowed'),
+  action: z.enum(['activate', 'suspend', 'ban', 'approve_kyc', 'reject_kyc', 'upgrade_plan']),
+  metadata: z.object({
+    reason: z.string().optional(),
+    planId: objectIdValidator.optional(),
+    rejectionReason: z.string().optional()
+  }).optional()
 });

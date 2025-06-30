@@ -270,7 +270,7 @@ export function UsersTable({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem
-                onClick={() => router.push(`/dashboard/users/${user._id}`)}
+                onClick={() => router.push(`/users/${user._id}`)}
               >
                 <Eye className="mr-2 h-4 w-4" />
                 View Details
@@ -278,7 +278,7 @@ export function UsersTable({
               {canEdit && (
                 <DropdownMenuItem
                   onClick={() =>
-                    router.push(`/dashboard/users/${user._id}/edit`)
+                    router.push(`/users/${user._id}/edit`)
                   }
                 >
                   <Edit className="mr-2 h-4 w-4" />
@@ -400,7 +400,7 @@ export function UsersTable({
                   className="cursor-pointer hover:bg-muted/50"
                   onClick={() => {
                     if (canView) {
-                      router.push(`/dashboard/users/${row.original._id}`);
+                      router.push(`/users/${row.original._id}`);
                     }
                   }}
                 >

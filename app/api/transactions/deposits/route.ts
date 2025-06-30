@@ -3,6 +3,7 @@ import { connectToDatabase } from '@/lib/db';
 import { Transaction } from '@/models/Transaction';
 import { User } from '@/models/User';
 import { Plan } from '@/models/Plan';
+import { Setting } from '@/models/Setting';
 import { AuditLog } from '@/models/AuditLog';
 import { authMiddleware } from '@/middleware/auth';
 import { apiRateLimit } from '@/middleware/rate-limit';
@@ -12,8 +13,23 @@ import { z } from 'zod';
 import mongoose from 'mongoose';
 import { depositRequestSchema } from '@/lib/validation';
 
+async function getSettings(keys: string[]): Promise<Record<string, any>> {
+  try {
+    const settings = await Setting.find({ key: { $in: keys } }).lean();
+    const result: Record<string, any> = {};
+    
+    settings.forEach(setting => {
+      result[setting.key] = setting.value;
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Failed to get settings:', error);
+    return {};
+  }
+}
 
-// GET /api/transactions/deposits - List deposit transactions
+// GET /api/transactions/deposits - List deposit transactions (unchanged)
 async function getDepositsHandler(request: NextRequest): Promise<NextResponse> {
   const apiHandler = ApiHandler.create(request);
 
@@ -57,6 +73,11 @@ async function getDepositsHandler(request: NextRequest): Promise<NextResponse> {
       if (filters.amountMax) matchStage.amount.$lte = parseFloat(filters.amountMax);
     }
 
+    // ✅ UPDATED: Add settings-based fee calculation in aggregation
+    const settings = await getSettings(['coingate_fee_percentage', 'uddoktapay_fee_percentage']);
+    const coingateFee = settings.coingate_fee_percentage || 0.025;
+    const uddoktaPayFee = settings.uddoktapay_fee_percentage || 0.035;
+
     // Build aggregation pipeline
     const pipeline: mongoose.PipelineStage[] = [
       { $match: matchStage },
@@ -98,11 +119,12 @@ async function getDepositsHandler(request: NextRequest): Promise<NextResponse> {
           isBelowMinimum: {
             $lt: ['$amount', '$userPlan.minimumDeposit']
           },
+          // ✅ UPDATED: Use dynamic fee rates
           gatewayFee: {
             $switch: {
               branches: [
-                { case: { $eq: ['$gateway', 'CoinGate'] }, then: { $multiply: ['$amount', 0.025] } },
-                { case: { $eq: ['$gateway', 'UddoktaPay'] }, then: { $multiply: ['$amount', 0.035] } },
+                { case: { $eq: ['$gateway', 'CoinGate'] }, then: { $multiply: ['$amount', coingateFee] } },
+                { case: { $eq: ['$gateway', 'UddoktaPay'] }, then: { $multiply: ['$amount', uddoktaPayFee] } },
                 { case: { $eq: ['$gateway', 'Manual'] }, then: 0 }
               ],
               default: 0
@@ -141,11 +163,8 @@ async function getDepositsHandler(request: NextRequest): Promise<NextResponse> {
   }
 }
 
-// POST /api/transactions/deposits - Create a new deposit request
 async function createDepositHandler(request: NextRequest): Promise<NextResponse> {
   const apiHandler = ApiHandler.create(request);
-
-  // Apply middleware - Allow both admin and user (users can create their own deposits)
   const authResult = await authMiddleware(request, {
     requireAuth: true,
     allowedUserTypes: ['admin', 'user']
@@ -157,6 +176,28 @@ async function createDepositHandler(request: NextRequest): Promise<NextResponse>
 
   try {
     await connectToDatabase();
+    const settings = await getSettings([
+      'min_deposit',
+      'max_deposit',
+      'max_daily_deposit',
+      'auto_deposit_approval',
+      'coingate_fee_percentage',
+      'uddoktapay_fee_percentage',
+      'manual_deposit_fee',
+      'require_kyc_for_deposit',
+      'usd_to_bdt_rate'
+    ]);
+
+    // Extract settings with fallbacks
+    const minDeposit = settings.min_deposit || 10;
+    const maxDeposit = settings.max_deposit || 1000000;
+    const maxDailyDeposit = settings.max_daily_deposit || 100000;
+    const autoApproval = settings.auto_deposit_approval || false;
+    const coingateFeeRate = settings.coingate_fee_percentage || 0.025;
+    const uddoktaPayFeeRate = settings.uddoktapay_fee_percentage || 0.035;
+    const manualDepositFee = settings.manual_deposit_fee || 0;
+    const requireKycForDeposit = settings.require_kyc_for_deposit !== false; // default true
+    const usdToBdtRate = settings.usd_to_bdt_rate || 110;
 
     const currentUserId = request.headers.get('x-user-id');
     const userType = request.headers.get('x-user-type');
@@ -175,9 +216,22 @@ async function createDepositHandler(request: NextRequest): Promise<NextResponse>
 
     const { userId, amount, currency, gateway, gatewayData } = validationResult.data;
 
-    // Permission check: users can only create deposits for themselves
     if (userType === 'user' && userId !== currentUserId) {
       return apiHandler.forbidden('Users can only create deposits for themselves');
+    }
+
+    // Convert amount to BDT if needed
+    let finalAmount = amount;
+    if (currency === 'USD') {
+      finalAmount = amount * usdToBdtRate;
+    }
+
+    if (finalAmount < minDeposit) {
+      return apiHandler.badRequest(`Minimum deposit amount is ${minDeposit} BDT (${currency} ${currency === 'USD' ? amount : finalAmount})`);
+    }
+
+    if (finalAmount > maxDeposit) {
+      return apiHandler.badRequest(`Maximum deposit amount is ${maxDeposit} BDT (${currency} ${currency === 'USD' ? amount : finalAmount})`);
     }
 
     // Verify user exists and get user with plan information
@@ -186,30 +240,16 @@ async function createDepositHandler(request: NextRequest): Promise<NextResponse>
       return apiHandler.notFound('User not found');
     }
 
-    // Check if user is active and KYC approved for non-manual deposits
-    if (gateway !== 'Manual') {
+    if (requireKycForDeposit && gateway !== 'Manual') {
       if (user.status !== 'Active') {
         return apiHandler.badRequest('User account is not active');
       }
       
       if (user.kycStatus !== 'Approved') {
-        return apiHandler.badRequest('User KYC must be approved for online deposits');
+        return apiHandler.badRequest('User KYC must be approved for deposits');
       }
     }
 
-    // Check plan limits
-    const plan = user.planId as any;
-    if (plan) {
-      if (amount < plan.minimumDeposit) {
-        return apiHandler.badRequest(`Minimum deposit amount is ${currency} ${plan.minimumDeposit}`);
-      }
-      
-      if (amount > plan.depositLimit) {
-        return apiHandler.badRequest(`Maximum deposit amount is ${currency} ${plan.depositLimit}`);
-      }
-    }
-
-    // Check daily deposit limit (sum of today's deposits)
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date();
@@ -233,36 +273,35 @@ async function createDepositHandler(request: NextRequest): Promise<NextResponse>
     ]);
 
     const todayTotal = todayDeposits[0]?.totalAmount || 0;
-    if (plan?.dailyDepositLimit && (todayTotal + amount) > plan.dailyDepositLimit) {
-      return apiHandler.badRequest(`Daily deposit limit exceeded. Current: ${todayTotal}, Limit: ${plan.dailyDepositLimit}`);
+    if ((todayTotal + finalAmount) > maxDailyDeposit) {
+      return apiHandler.badRequest(`Daily deposit limit exceeded. Current: ${todayTotal} BDT, Limit: ${maxDailyDeposit} BDT`);
     }
 
-    // Calculate fees based on gateway
     let fees = 0;
     switch (gateway) {
       case 'CoinGate':
-        fees = amount * 0.025; // 2.5%
+        fees = finalAmount * coingateFeeRate;
         break;
       case 'UddoktaPay':
-        fees = amount * 0.035; // 3.5%
+        fees = finalAmount * uddoktaPayFeeRate;
         break;
       case 'Manual':
-        fees = 0;
+        fees = manualDepositFee;
         break;
     }
 
-    const netAmount = amount - fees;
+    const netAmount = finalAmount - fees;
 
     // Generate transaction ID
     const transactionId = `DEP-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
 
-    // Determine initial status based on gateway
+    // ✅ UPDATED: Determine initial status based on settings
     let initialStatus: string;
     let gatewayResponse: any = null;
 
     switch (gateway) {
       case 'Manual':
-        initialStatus = 'Pending'; // Manual deposits need admin approval
+        initialStatus = autoApproval ? 'Approved' : 'Pending'; // ✅ Settings-based approval
         break;
       case 'CoinGate':
       case 'UddoktaPay':
@@ -276,15 +315,18 @@ async function createDepositHandler(request: NextRequest): Promise<NextResponse>
         };
         break;
       default:
-        initialStatus = 'Pending';
+        initialStatus = autoApproval ? 'Approved' : 'Pending'; // ✅ Settings-based approval
     }
 
     // Create transaction
     const transaction = await Transaction.create({
       userId: new mongoose.Types.ObjectId(userId),
       type: 'deposit',
-      amount,
-      currency,
+      amount: finalAmount, // Store in BDT
+      originalAmount: amount, // Store original amount
+      originalCurrency: currency, // Store original currency
+      currency: 'BDT', // Always store as BDT
+      exchangeRate: currency === 'USD' ? usdToBdtRate : 1,
       gateway,
       status: initialStatus,
       transactionId,
@@ -297,13 +339,34 @@ async function createDepositHandler(request: NextRequest): Promise<NextResponse>
         ...gatewayData,
         ipAddress: apiHandler.getClientIP(),
         userAgent: request.headers.get('user-agent'),
-        planLimits: {
-          minimum: plan?.minimumDeposit,
-          maximum: plan?.depositLimit,
-          dailyLimit: plan?.dailyDepositLimit
+        // ✅ UPDATED: Store settings used for audit
+        settingsUsed: {
+          minDeposit,
+          maxDeposit,
+          maxDailyDeposit,
+          autoApproval,
+          feeRates: {
+            coingate: coingateFeeRate,
+            uddoktaPay: uddoktaPayFeeRate,
+            manual: manualDepositFee
+          },
+          exchangeRate: usdToBdtRate,
+          requireKyc: requireKycForDeposit
         }
       }
     });
+
+    // ✅ UPDATED: Auto-approve and update balance if settings allow
+    if (initialStatus === 'Approved') {
+      await User.findByIdAndUpdate(userId, {
+        $inc: { 
+          balance: netAmount,
+          totalDeposited: finalAmount
+        }
+      });
+      
+      console.log(`✅ Auto-approved deposit: User ${userId} credited ${netAmount} BDT`);
+    }
 
     // Log audit trail
     await AuditLog.create({
@@ -313,11 +376,18 @@ async function createDepositHandler(request: NextRequest): Promise<NextResponse>
       resource: 'Transaction',
       resourceId: transaction._id,
       details: {
-        amount,
+        amount: finalAmount,
+        originalAmount: amount,
         currency,
         gateway,
         targetUserId: userId,
-        transactionId
+        transactionId,
+        autoApproved: initialStatus === 'Approved',
+        settingsUsed: {
+          minDeposit,
+          maxDeposit,
+          autoApproval
+        }
       },
       ipAddress: apiHandler.getClientIP(),
       userAgent: request.headers.get('user-agent'),
@@ -331,7 +401,17 @@ async function createDepositHandler(request: NextRequest): Promise<NextResponse>
     return apiHandler.created({
       transaction: populatedTransaction,
       paymentUrl: gatewayResponse?.paymentUrl,
-      message: `Deposit request created successfully via ${gateway}`
+      settings: {
+        minDeposit,
+        maxDeposit,
+        maxDailyDeposit,
+        exchangeRate: currency === 'USD' ? usdToBdtRate : 1,
+        autoApproval,
+        feeRate: fees / finalAmount
+      },
+      message: initialStatus === 'Approved' 
+        ? `Deposit automatically approved and ${netAmount} BDT credited to balance`
+        : `Deposit request created successfully via ${gateway}`
     });
 
   } catch (error) {

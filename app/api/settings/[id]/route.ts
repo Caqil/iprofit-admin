@@ -116,8 +116,6 @@ async function getSettingHandler(
     return apiHandler.handleError(error);
   }
 }
-
-// PUT /api/settings/[id] - Update setting value
 async function updateSettingHandler(
   request: NextRequest,
   context: RouteContext
@@ -157,95 +155,95 @@ async function updateSettingHandler(
     const { value, reason } = validationResult.data;
     const adminId = request.headers.get('X-Admin-Id');
 
-    // Start MongoDB session for transaction
-    const session = await mongoose.startSession();
+    // Find the setting
+    const setting = await Setting.findById(id);
     
-    try {
-      await session.withTransaction(async () => {
-        // Find the setting
-        const setting = await Setting.findById(id).session(session);
-        
-        if (!setting) {
-          throw new Error('Setting not found');
-        }
-
-        // Check if setting is editable
-        if (!setting.isEditable) {
-          throw new Error('This setting is not editable');
-        }
-
-        // Validate new value
-        if (!validateSettingValue(value, setting.validation, setting.dataType)) {
-          throw new Error('Setting value does not meet validation requirements');
-        }
-
-        // Store old value for history
-        const oldValue = processSettingValue(setting);
-
-        // Encrypt new value if required
-        let processedValue = value;
-        if (setting.isEncrypted && value) {
-          processedValue = encrypt(value);
-        }
-
-        // Update setting
-        setting.value = processedValue;
-        setting.updatedBy = new mongoose.Types.ObjectId(adminId!);
-        await setting.save({ session });
-
-        // Create history record
-        await SettingHistory.create([{
-          settingId: setting._id,
-          oldValue,
-          newValue: value,
-          updatedBy: new mongoose.Types.ObjectId(adminId!),
-          reason,
-          ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
-          userAgent: request.headers.get('user-agent') || 'unknown'
-        }], { session });
-
-        // Create audit log
-        await AuditLog.create([{
-          adminId: new mongoose.Types.ObjectId(adminId!),
-          action: 'settings.update',
-          entity: 'Setting',
-          entityId: setting._id.toString(),
-          oldData: { value: oldValue },
-          newData: { value },
-          changes: [{
-            field: 'value',
-            oldValue,
-            newValue: value
-          }],
-          ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
-          userAgent: request.headers.get('user-agent') || 'unknown',
-          severity: setting.category === 'security' ? 'High' : 'Medium'
-        }], { session });
-      });
-
-      // Fetch updated setting with population
-      const updatedSetting = await Setting.findById(id)
-        .populate('updatedBy', 'email role')
-        .lean();
-
-      if (!updatedSetting) {
-        return apiHandler.notFound('Setting not found after update');
-      }
-      return apiHandler.success({
-        ...updatedSetting,
-        value: processSettingValue(updatedSetting as unknown as ISetting)
-      });
-
-    } finally {
-      await session.endSession();
+    if (!setting) {
+      return apiHandler.notFound('Setting not found');
     }
+
+    // Check if setting is editable
+    if (!setting.isEditable) {
+      return apiHandler.forbidden('This setting is not editable');
+    }
+
+    // Validate new value
+    if (!validateSettingValue(value, setting.validation, setting.dataType)) {
+      return apiHandler.badRequest('Setting value does not meet validation requirements');
+    }
+
+    // Store old value for history
+    const oldValue = processSettingValue(setting);
+
+    // Encrypt new value if required
+    let processedValue = value;
+    if (setting.isEncrypted && value) {
+      processedValue = encrypt(value);
+    }
+
+    // Update setting
+    setting.value = processedValue;
+    setting.updatedBy = new mongoose.Types.ObjectId(adminId!);
+    await setting.save();
+
+    // Create history record (without session)
+    try {
+      await SettingHistory.create({
+        settingId: setting._id,
+        oldValue,
+        newValue: value,
+        updatedBy: new mongoose.Types.ObjectId(adminId!),
+        reason,
+        ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
+        userAgent: request.headers.get('user-agent') || 'unknown'
+      });
+    } catch (historyError) {
+      console.error('Failed to create setting history:', historyError);
+      // Don't fail the request if history creation fails
+    }
+
+    // Create audit log (without session)
+    try {
+      await AuditLog.create({
+        adminId: new mongoose.Types.ObjectId(adminId!),
+        action: 'settings.update',
+        entity: 'Setting',
+        entityId: setting._id.toString(),
+        oldData: { value: oldValue },
+        newData: { value },
+        changes: [{
+          field: 'value',
+          oldValue,
+          newValue: value
+        }],
+        ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
+        userAgent: request.headers.get('user-agent') || 'unknown',
+        severity: setting.category === 'security' ? 'High' : 'Medium'
+      });
+    } catch (auditError) {
+      console.error('Failed to create audit log:', auditError);
+      // Don't fail the request if audit creation fails
+    }
+
+    // Fetch updated setting with population
+    const updatedSetting = await Setting.findById(id)
+      .populate('updatedBy', 'email role')
+      .lean();
+
+    if (!updatedSetting) {
+      return apiHandler.notFound('Setting not found after update');
+    }
+
+    return apiHandler.success({
+      ...updatedSetting,
+      value: processSettingValue(updatedSetting as unknown as ISetting)
+    });
 
   } catch (error) {
     console.error('Update setting error:', error);
     return apiHandler.handleError(error);
   }
 }
-
 // DELETE /api/settings/[id] - Delete setting (only if custom setting)
 async function deleteSettingHandler(
   request: NextRequest,

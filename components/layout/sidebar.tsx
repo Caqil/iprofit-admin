@@ -83,28 +83,9 @@ const sidebarData: SidebarItem[] = [
   },
   {
     title: "User Management",
+    url: "/users",
     icon: Users,
     permission: "users.view",
-    items: [
-      {
-        title: "All Users",
-        url: "/users",
-        icon: Users,
-        permission: "users.view",
-      },
-      {
-        title: "User Analytics",
-        url: "/users/analytics",
-        icon: TrendingUp,
-        permission: "users.view",
-      },
-      {
-        title: "User Plans",
-        url: "/users/plans",
-        icon: Shield,
-        permission: "plans.view",
-      },
-    ],
   },
   {
     title: "Financial",
