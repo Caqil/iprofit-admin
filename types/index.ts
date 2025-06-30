@@ -10,6 +10,7 @@ export * from './news';
 export * from './support';
 export * from './dashboard';
 export * from './api';
+export * from './settings';
 // Common utility types
 export type Currency = 'USD' | 'BDT';
 export type Status = 'Active' | 'Inactive' | 'Pending' | 'Approved' | 'Rejected';

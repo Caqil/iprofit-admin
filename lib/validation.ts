@@ -1066,3 +1066,182 @@ export const auditLogCreateSchema = z.object({
     })).optional()
   }).optional()
 });
+
+// Settings list query validation schema
+export const settingsListQuerySchema = paginationSchema.extend({
+  sortBy: z.string().optional().default('category'),
+  sortOrder: z.enum(['asc', 'desc']).optional().default('asc'),
+  category: z.enum(['system', 'financial', 'security', 'email', 'upload', 'business', 'maintenance', 'api']).optional(),
+  isEditable: z.enum(['true', 'false']).transform(val => val === 'true').optional(),
+  search: z.string().optional(),
+  grouped: z.enum(['true', 'false']).transform(val => val === 'true').optional().default('false')
+});
+
+// Setting creation schema
+export const createSettingSchema = z.object({
+  category: z.enum(['system', 'financial', 'security', 'email', 'upload', 'business', 'maintenance', 'api']),
+  key: z.string().min(1, 'Key is required').max(100, 'Key too long'),
+  value: z.any(),
+  dataType: z.enum(['string', 'number', 'boolean', 'object', 'array']),
+  description: z.string().min(1, 'Description is required').max(500, 'Description too long'),
+  isEditable: z.boolean().default(true),
+  isEncrypted: z.boolean().default(false),
+  defaultValue: z.any().optional(),
+  validation: z.object({
+    required: z.boolean().optional(),
+    min: z.number().optional(),
+    max: z.number().optional(),
+    pattern: z.string().optional(),
+    enum: z.array(z.string()).optional()
+  }).optional()
+});
+
+// Setting update schema
+export const updateSettingSchema = z.object({
+  value: z.any(),
+  reason: z.string().optional()
+});
+
+// Bulk update schema
+export const bulkUpdateSchema = z.object({
+  settings: z.array(z.object({
+    id: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid setting ID'),
+    value: z.any()
+  })).min(1, 'At least one setting required').max(50, 'Too many settings'),
+  reason: z.string().optional()
+});
+
+
+// Setting validation schemas
+export const settingCategorySchema = z.enum([
+  'system', 
+  'financial', 
+  'security', 
+  'email', 
+  'upload', 
+  'business', 
+  'maintenance',
+  'api'
+]);
+
+export const settingDataTypeSchema = z.enum([
+  'string', 
+  'number', 
+  'boolean', 
+  'object', 
+  'array'
+]);
+
+export const settingValidationSchema = z.object({
+  required: z.boolean().optional(),
+  min: z.number().optional(),
+  max: z.number().optional(),
+  pattern: z.string().optional(),
+  enum: z.array(z.string()).optional()
+});
+
+
+export const settingFilterSchema = z.object({
+  category: settingCategorySchema.optional(),
+  isEditable: z.boolean().optional(),
+  search: z.string().optional(),
+  dataType: settingDataTypeSchema.optional()
+});
+
+export const bulkUpdateSettingsSchema = z.object({
+  settings: z.array(z.object({
+    id: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid setting ID'),
+    value: z.any()
+  }))
+  .min(1, 'At least one setting required')
+  .max(50, 'Too many settings'),
+  reason: z.string()
+    .optional()
+    .refine(
+      (val) => !val || val.length <= 200,
+      'Reason must be 200 characters or less'
+    )
+});
+
+// Specific setting value validation schemas
+export const systemSettingsSchema = z.object({
+  appName: z.string().min(1).max(100),
+  appVersion: z.string().regex(/^\d+\.\d+\.\d+$/, 'Version must be in format x.y.z'),
+  appDescription: z.string().min(1).max(500),
+  supportEmail: z.string().email(),
+  companyName: z.string().min(1).max(200),
+  companyAddress: z.string().max(500).optional(),
+  maintenanceMode: z.boolean(),
+  maintenanceMessage: z.string().max(1000).optional()
+});
+
+export const financialSettingsSchema = z.object({
+  primaryCurrency: z.enum(['USD', 'BDT']),
+  secondaryCurrency: z.enum(['USD', 'BDT']),
+  usdToBdtRate: z.number().min(0.01).max(1000),
+  bdtToUsdRate: z.number().min(0.0001).max(1),
+  minDeposit: z.number().min(0),
+  minWithdrawal: z.number().min(0),
+  maxDailyWithdrawal: z.number().min(0),
+  maxMonthlyWithdrawal: z.number().min(0),
+  signupBonus: z.number().min(0),
+  profitSharePercentage: z.number().min(0).max(100),
+  minRefereeDeposit: z.number().min(0)
+});
+
+export const securitySettingsSchema = z.object({
+  enable2FA: z.boolean(),
+  enableDeviceLimiting: z.boolean(),
+  enableEmailVerification: z.boolean(),
+  sessionTimeout: z.number().min(5).max(1440), // 5 minutes to 24 hours
+  maxLoginAttempts: z.number().min(1).max(20),
+  lockoutDuration: z.number().min(1).max(1440), // 1 minute to 24 hours
+  passwordMinLength: z.number().min(6).max(128),
+  passwordRequireUppercase: z.boolean(),
+  passwordRequireLowercase: z.boolean(),
+  passwordRequireNumbers: z.boolean(),
+  passwordRequireSpecialChars: z.boolean()
+});
+
+export const emailSettingsSchema = z.object({
+  smtpHost: z.string().min(1),
+  smtpPort: z.number().min(1).max(65535),
+  smtpSecure: z.boolean(),
+  smtpUser: z.string().email(),
+  smtpPassword: z.string().min(1),
+  emailFromName: z.string().min(1).max(100),
+  emailFromAddress: z.string().email(),
+  maxConnections: z.number().min(1).max(100),
+  maxMessages: z.number().min(1).max(10000),
+  maxRetries: z.number().min(0).max(10),
+  retryDelay: z.number().min(1000).max(300000), // 1 second to 5 minutes
+  dailyEmailLimit: z.number().min(1).max(100000),
+  hourlyEmailLimit: z.number().min(1).max(10000)
+});
+
+export const uploadSettingsSchema = z.object({
+  maxFileSize: z.number().min(1024).max(1073741824), // 1KB to 1GB
+  allowedFileTypes: z.array(z.string()).min(1),
+  uploadPath: z.string().min(1),
+  cdnUrl: z.string().url().optional(),
+  enableVirusScan: z.boolean()
+});
+
+export const apiSettingsSchema = z.object({
+  baseUrl: z.string().url(),
+  timeout: z.number().min(1000).max(300000), // 1 second to 5 minutes
+  retryAttempts: z.number().min(0).max(10),
+  retryDelay: z.number().min(100).max(60000), // 100ms to 1 minute
+  enableSwagger: z.boolean(),
+  enableCors: z.boolean(),
+  corsOrigins: z.array(z.string().url()).optional()
+});
+
+export const rateLimitSettingsSchema = z.object({
+  authRequests: z.number().min(1).max(1000),
+  authWindow: z.number().min(60000).max(3600000), // 1 minute to 1 hour
+  apiRequests: z.number().min(1).max(10000),
+  apiWindow: z.number().min(1000).max(3600000), // 1 second to 1 hour
+  uploadRequests: z.number().min(1).max(100),
+  uploadWindow: z.number().min(1000).max(3600000) // 1 second to 1 hour
+});
