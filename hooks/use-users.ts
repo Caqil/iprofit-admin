@@ -26,7 +26,6 @@ interface UsersHookReturn {
   refreshUsers: () => void;
 }
 
-// FIXED: API Response wrapper type to match actual response structure
 interface ApiResponseWrapper<T> {
   success: boolean;
   data: T;
@@ -40,7 +39,6 @@ export function useUsers(
 ): UsersHookReturn {
   const queryClient = useQueryClient();
 
-  // FIXED: Users list query with proper response type handling
   const usersQuery = useQuery({
     queryKey: ['users', filters, pagination],
     queryFn: async (): Promise<ListResponse<User>> => {
@@ -61,8 +59,6 @@ export function useUsers(
         if (pagination.sortOrder) params.append('sortOrder', pagination.sortOrder);
       }
 
-      console.log('Fetching users with params:', params.toString()); // Debug log
-
       const response = await fetch(`/api/users?${params}`);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -71,21 +67,17 @@ export function useUsers(
 
       const result: ApiResponseWrapper<ListResponse<User>> = await response.json();
       
-      console.log('Raw API response:', result); // Debug log
-      
-      // Extract the actual data from the ApiHandler wrapper
       if (!result.success) {
         throw new Error(result.message || 'Failed to fetch users');
       }
 
-      return result.data; // This contains { data: User[], pagination: {...} }
+      return result.data;
     },
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 2 * 60 * 1000,
     retry: 3,
     retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 30000)
   });
 
-  // Create user mutation
   const createUserMutation = useMutation({
     mutationFn: async (data: UserCreateRequest): Promise<User> => {
       const response = await fetch('/api/users', {
@@ -116,7 +108,6 @@ export function useUsers(
     }
   });
 
-  // Update user mutation
   const updateUserMutation = useMutation({
     mutationFn: async ({ userId, data }: { userId: string; data: UserUpdateRequest }): Promise<User> => {
       const response = await fetch(`/api/users/${userId}`, {
@@ -147,7 +138,6 @@ export function useUsers(
     }
   });
 
-  // Delete user mutation
   const deleteUserMutation = useMutation({
     mutationFn: async (userId: string) => {
       const response = await fetch(`/api/users/${userId}`, {
@@ -176,44 +166,106 @@ export function useUsers(
     }
   });
 
-  // KYC approval mutation
-  const kycApprovalMutation = useMutation({
-    mutationFn: async (data: KYCApprovalRequest) => {
-      const response = await fetch(`/api/users/${data.userId}/kyc`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      });
+const kycApprovalMutation = useMutation({
+  mutationFn: async (data: KYCApprovalRequest) => {
+    const requestBody = {
+      status: data.action === 'approve' ? 'approved' : 'rejected',
+      rejectionReason: data.action === 'reject' ? data.rejectionReason : undefined,
+      adminNotes: data.adminNotes,
+    };
 
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.message || 'Failed to process KYC');
-      }
+    console.log('🔧 KYC API Request:', {
+      url: `/api/users/${data.userId}/kyc`,
+      method: 'PUT',
+      body: requestBody
+    });
 
-      const result = await response.json();
-      
-      if (!result.success) {
-        throw new Error(result.message || 'Failed to process KYC');
-      }
+    const response = await fetch(`/api/users/${data.userId}/kyc`, {
+      method: 'PUT',
+      headers: { 
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify(requestBody)
+    });
 
-      return result.data;
-    },
-    onSuccess: (_, variables) => {
-      const action = variables.action === 'approve' ? 'approved' : 'rejected';
-      toast.success(`KYC ${action} successfully`);
-      queryClient.invalidateQueries({ queryKey: ['users'] });
-    },
-    onError: (error) => {
-      toast.error(`Failed to process KYC: ${error.message}`);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || errorData.error || 'Failed to process KYC');
     }
-  });
 
-  // Bulk action mutation
+    const result = await response.json();
+    
+    if (!result.success) {
+      throw new Error(result.message || 'Failed to process KYC');
+    }
+
+    return result.data;
+  },
+  onSuccess: (data, variables) => {
+    const action = variables.action === 'approve' ? 'approved' : 'rejected';
+    
+    // ✅ ENHANCED: Multiple cache invalidation strategies
+    console.log('🔄 Invalidating React Query caches...');
+    
+    // 1. Invalidate all users queries
+    queryClient.invalidateQueries({ 
+      queryKey: ['users'],
+      exact: false // This will invalidate all users queries regardless of filters/pagination
+    });
+    
+    // 2. Invalidate specific user profile if it exists
+    queryClient.invalidateQueries({ 
+      queryKey: ['user-profile', variables.userId] 
+    });
+    
+    // 3. Force refetch users data
+    queryClient.refetchQueries({ 
+      queryKey: ['users'],
+      type: 'active' 
+    });
+    
+    // 4. Update the cache directly (optimistic update)
+    queryClient.setQueriesData(
+      { queryKey: ['users'] },
+      (oldData: any) => {
+        if (!oldData?.data) return oldData;
+        
+        const updatedUsers = oldData.data.map((user: any) => {
+          if (user._id === variables.userId) {
+            return {
+              ...user,
+              kycStatus: variables.action === 'approve' ? 'Approved' : 'Rejected',
+              kycApprovedAt: variables.action === 'approve' ? new Date() : user.kycApprovedAt,
+              kycRejectedAt: variables.action === 'reject' ? new Date() : user.kycRejectedAt,
+              kycRejectionReason: variables.action === 'reject' ? variables.rejectionReason : undefined
+            };
+          }
+          return user;
+        });
+        
+        return {
+          ...oldData,
+          data: updatedUsers
+        };
+      }
+    );
+    
+    toast.success(`KYC ${action} successfully`);
+    console.log('✅ Cache invalidation completed');
+  },
+  onError: (error) => {
+    console.error('🚨 KYC Approval Error:', error);
+    toast.error(`Failed to process KYC: ${error.message}`);
+  }
+});
+
   const bulkActionMutation = useMutation({
     mutationFn: async (data: UserBulkAction) => {
       const response = await fetch('/api/users/bulk-actions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(data)
       });
 
@@ -241,9 +293,10 @@ export function useUsers(
     }
   });
 
-  // Get user profile function
   const getUserProfile = async (userId: string): Promise<UserProfile> => {
-    const response = await fetch(`/api/users/${userId}/profile`);
+    const response = await fetch(`/api/users/${userId}/profile`, {
+      credentials: 'include'
+    });
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       throw new Error(error.message || 'Failed to fetch user profile');
@@ -257,8 +310,6 @@ export function useUsers(
 
     return result.data;
   };
-
-  console.log('Users query data:', usersQuery.data); // Debug log
 
   return {
     users: usersQuery.data?.data || [],

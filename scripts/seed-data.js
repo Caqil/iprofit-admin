@@ -88,64 +88,71 @@ class EnhancedDatabaseSeeder {
   }
 
   async seedAll() {
-    console.log('🌱 Starting enhanced database seeding...');
-    console.log(`📊 Mode: ${this.options.production ? 'Production' : 'Development'}`);
-    console.log(`🎯 Demo mode: ${this.options.demo ? 'Enabled' : 'Disabled'}`);
+  console.log('🌱 Starting enhanced database seeding...');
+  console.log(`📊 Mode: ${this.options.production ? 'Production' : 'Development'}`);
+  console.log(`🎯 Demo mode: ${this.options.demo ? 'Enabled' : 'Disabled'}`);
 
+  try {
+    await this.connectToDatabase();
+
+    if (this.options.reset) {
+      await this.resetDatabase();
+    }
+
+    // Always ensure clean admin state for fresh installs
+    console.log('🔧 Ensuring clean admin authentication...');
+    
+    // Seed in order due to dependencies
+    await this.seedSettings();           // Move this EARLY - settings needed by other functions
+    await this.seedPlans();
+    await this.seedAdmins();             // This now clears and recreates admins
+    await this.seedUsers();
+    await this.seedTransactions();
+    await this.seedReferrals();          // Create referral records
+    await this.seedLoans();
+    await this.seedTasks();
+    await this.seedTaskSubmissions();
+    await this.seedSupportTickets();
+    await this.seedNews();
+    await this.processReferralBonuses(); // Process and sync all bonuses
+    await this.generateProfitSharing();  // Create profit sharing bonuses
+    await this.createNotifications();    // Send notifications
+    await this.generateSummary();
+
+    console.log('🎉 Enhanced database seeding completed successfully!');
+
+  } catch (error) {
+    console.error('❌ Seeding failed:', error);
+    throw error;
+  }
+}
+async resetDatabase() {
+  console.log('🗑️  Resetting database...');
+
+  const db = mongoose.connection.db;
+  const collections = [
+    // Core Collections
+    'users', 'admins', 'plans', 'transactions', 'loans', 'referrals', 'tasks', 'task_submissions',
+    
+    // OAuth & Security
+    'sessions', 'accounts', 'verification_tokens', 'device_fingerprints', 'auth_logs',
+    
+    // Content & Communication
+    'notifications', 'notification_templates', 'news', 'faqs', 'support_tickets',
+    
+    // System & Monitoring
+    'audit_logs', 'system_settings', 'rate_limits', 'settings', 'settings_history','kyc_documents', 'email_templates' // 'settings' already included
+  ];
+
+  for (const collection of collections) {
     try {
-      await this.connectToDatabase();
-
-      if (this.options.reset) {
-        await this.resetDatabase();
-      }
-
-      // Always ensure clean admin state for fresh installs
-      console.log('🔧 Ensuring clean admin authentication...');
-      
-      // Seed in order due to dependencies
-      await this.seedPlans();
-      await this.seedAdmins(); // This now clears and recreates admins
-      await this.seedUsers();
-      await this.seedTransactions();
-      await this.seedReferrals();  // Create referral records
-      await this.seedLoans();
-      await this.seedTasks();
-      await this.seedTaskSubmissions();
-      await this.seedSupportTickets();
-      await this.seedNews();
-      await this.processReferralBonuses(); // Process and sync all bonuses
-      await this.generateProfitSharing(); // Create profit sharing bonuses
-      await this.createNotifications();   // Send notifications
-
-      await this.generateSummary();
-
-      console.log('🎉 Enhanced database seeding completed successfully!');
-
+      await db.collection(collection).deleteMany({});
+      console.log(`✅ Cleared ${collection} collection`);
     } catch (error) {
-      console.error('❌ Seeding failed:', error);
-      throw error;
+      console.warn(`⚠️  Could not clear ${collection}:`, error.message);
     }
   }
-
-  async resetDatabase() {
-    console.log('🗑️  Resetting database...');
-
-    const db = mongoose.connection.db;
-    const collections = [
-      'admins', 'users', 'plans', 'transactions', 'loans', 'referrals',
-      'support_tickets', 'faqs', 'tasks', 'task_submissions',
-      'audit_logs', 'notifications', 'notification_templates', 'news'
-    ];
-
-    for (const collection of collections) {
-      try {
-        await db.collection(collection).deleteMany({});
-        console.log(`✅ Cleared ${collection} collection`);
-      } catch (error) {
-        console.warn(`⚠️  Could not clear ${collection}:`, error.message);
-      }
-    }
-  }
+}
 
   async seedPlans() {
     console.log('📋 Seeding subscription plans...');
@@ -424,6 +431,242 @@ class EnhancedDatabaseSeeder {
     }
   }
 
+  async seedSettings() {
+    console.log('  📝 Creating system settings...');
+  const db = mongoose.connection.db;
+    const settingsExist = await db.collection('settings').findOne();
+    if (settingsExist) {
+      console.log('  ℹ️  Settings already exist, skipping...');
+      return;
+    }
+
+    const sampleAdminId = new mongoose.Types.ObjectId();
+    const settings = [
+      // System Settings
+      {
+        category: 'system',
+        key: 'app_name',
+        value: 'IProfit Admin',
+        dataType: 'string',
+        description: 'Application name displayed in the interface',
+        isEditable: true,
+        isEncrypted: false,
+        defaultValue: 'IProfit Admin',
+        validation: { required: true, min: 1, max: 100 },
+        updatedBy: sampleAdminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        category: 'system',
+        key: 'company_name',
+        value: 'IProfit Technologies',
+        dataType: 'string',
+        description: 'Company name for branding',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { required: true },
+        updatedBy: sampleAdminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        category: 'system',
+        key: 'maintenance_mode',
+        value: false,
+        dataType: 'boolean',
+        description: 'Enable maintenance mode',
+        isEditable: true,
+        isEncrypted: false,
+        defaultValue: false,
+        updatedBy: sampleAdminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+
+      // Financial Settings
+      {
+        category: 'financial',
+        key: 'primary_currency',
+        value: 'BDT',
+        dataType: 'string',
+        description: 'Primary currency for the platform',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { required: true, enum: ['BDT', 'USD', 'EUR'] },
+        updatedBy: sampleAdminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        category: 'financial',
+        key: 'usd_to_bdt_rate',
+        value: 110.50,
+        dataType: 'number',
+        description: 'Current USD to BDT exchange rate',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { required: true, min: 1 },
+        updatedBy: sampleAdminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        category: 'financial',
+        key: 'min_deposit',
+        value: 100,
+        dataType: 'number',
+        description: 'Minimum deposit amount in BDT',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { required: true, min: 1 },
+        updatedBy: sampleAdminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        category: 'financial',
+        key: 'signup_bonus',
+        value: 100,
+        dataType: 'number',
+        description: 'Signup bonus amount in BDT',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { min: 0 },
+        updatedBy: sampleAdminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+
+      // Withdrawal Fees
+      {
+        category: 'financial',
+        key: 'withdrawal_bank_fee_percentage',
+        value: 0.02,
+        dataType: 'number',
+        description: 'Bank transfer withdrawal fee percentage',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { min: 0, max: 1 },
+        updatedBy: sampleAdminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        category: 'financial',
+        key: 'withdrawal_mobile_fee_percentage',
+        value: 0.015,
+        dataType: 'number',
+        description: 'Mobile banking withdrawal fee percentage',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { min: 0, max: 1 },
+        updatedBy: sampleAdminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+
+      // Security Settings
+      {
+        category: 'security',
+        key: 'device_limit_per_user',
+        value: 1,
+        dataType: 'number',
+        description: 'Maximum devices allowed per user',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { required: true, min: 1, max: 10 },
+        updatedBy: sampleAdminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        category: 'security',
+        key: 'enable_device_limiting',
+        value: true,
+        dataType: 'boolean',
+        description: 'Enable device limiting for signup',
+        isEditable: true,
+        isEncrypted: false,
+        defaultValue: true,
+        updatedBy: sampleAdminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        category: 'security',
+        key: 'session_timeout_minutes',
+        value: 30,
+        dataType: 'number',
+        description: 'Admin session timeout in minutes',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { required: true, min: 5, max: 1440 },
+        updatedBy: sampleAdminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+
+      // Email Settings
+      {
+        category: 'email',
+        key: 'smtp_host',
+        value: 'smtp.gmail.com',
+        dataType: 'string',
+        description: 'SMTP server hostname',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { required: true },
+        updatedBy: sampleAdminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        category: 'email',
+        key: 'smtp_port',
+        value: 587,
+        dataType: 'number',
+        description: 'SMTP server port',
+        isEditable: true,
+        isEncrypted: false,
+        validation: { required: true, min: 1, max: 65535 },
+        updatedBy: sampleAdminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+
+      // Business Settings
+      {
+        category: 'business',
+        key: 'auto_kyc_approval',
+        value: false,
+        dataType: 'boolean',
+        description: 'Auto approve KYC submissions',
+        isEditable: true,
+        isEncrypted: false,
+        defaultValue: false,
+        updatedBy: sampleAdminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        category: 'business',
+        key: 'enable_referral_system',
+        value: true,
+        dataType: 'boolean',
+        description: 'Enable referral bonus system',
+        isEditable: true,
+        isEncrypted: false,
+        defaultValue: true,
+        updatedBy: sampleAdminId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    ];
+
+    await db.collection('settings').insertMany(settings);
+    console.log(`  ✅ Created ${settings.length} system settings`);
+  }
   async seedUsers() {
     console.log('👥 Seeding user accounts with referral chains...');
 

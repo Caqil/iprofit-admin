@@ -384,13 +384,15 @@ export function TransactionsTable({
                               <Flag className="h-3 w-3 text-orange-500" />
                             )}
                           </div>
-                          {/* <div className="flex items-center space-x-2">
+                          <div className="flex items-center space-x-2">
                             <p className="text-xs text-muted-foreground truncate">
                               {userDisplay.email && (
-                                <span className="mr-2">{userDisplay.email}</span>
+                                <span className="mr-2">
+                                  {userDisplay.email}
+                                </span>
                               )}
                             </p>
-                          </div> */}
+                          </div>
                           <div className="flex items-center space-x-1 mt-1">
                             <User className="h-3 w-3 text-muted-foreground" />
                             <button

@@ -15,6 +15,8 @@ import {
 import { z } from 'zod';
 import mongoose from 'mongoose';
 import { kycDocumentSchema, kycUpdateSchema } from '@/lib/validation';
+import { getToken } from 'next-auth/jwt';
+import { env } from '@/config/env';
 
 
 
@@ -22,8 +24,6 @@ import { kycDocumentSchema, kycUpdateSchema } from '@/lib/validation';
 interface RouteContext {
   params: Promise<{ id: string }>;
 }
-
-// GET /api/users/[id]/kyc - Get KYC status and documents
 export async function GET(
   request: NextRequest,
   context: RouteContext
@@ -31,17 +31,38 @@ export async function GET(
   const apiHandler = ApiHandler.create(request);
 
   try {
-    // Apply middleware
-    const authResult = await authMiddleware(request, {
-      requireAuth: true,
-      allowedUserTypes: ['admin', 'user'],
-    });
-    if (authResult) return authResult;
-
+    // Apply basic rate limiting
     const rateLimitResult = await apiRateLimit(request);
     if (rateLimitResult) return rateLimitResult;
 
     await connectToDatabase();
+
+    // ✅ CRITICAL FIX: Get user info directly from JWT token instead of relying on middleware headers
+    const token = await getToken({
+      req: request,
+      secret: env.NEXTAUTH_SECRET,
+      cookieName: env.NODE_ENV === 'production' 
+        ? '__Secure-next-auth.session-token' 
+        : 'next-auth.session-token'
+    });
+
+    console.log('🔐 JWT Token Debug:', {
+      hasToken: !!token,
+      userType: token?.userType,
+      userId: token?.id,
+      role: token?.role,
+      email: token?.email
+    });
+
+    // Check if user is authenticated
+    if (!token) {
+      return apiHandler.unauthorized('Authentication required');
+    }
+
+    // Extract user info from token
+    const requestingUserId = token.id as string;
+    const userType = token.userType as string;
+    const userRole = token.role as string;
 
     // Await the params Promise (Next.js 15 requirement)
     const { id } = await context.params;
@@ -51,12 +72,22 @@ export async function GET(
       return apiHandler.badRequest('Invalid user ID format');
     }
 
-    // Check authorization - users can only view their own KYC, admins can view any
-    const requestingUserId = request.headers.get('x-user-id');
-    const userRole = request.headers.get('x-user-role');
+    // ✅ FIXED: Authorization logic using token data
+    const isAdmin = userType === 'admin';
+    const isOwnKYC = requestingUserId === id;
     
-    if (userRole !== 'admin' && requestingUserId !== id) {
-      return apiHandler.forbidden('You can only access your own KYC information');
+    console.log('🔐 Authorization Check:', {
+      requestingUserId,
+      userType,
+      userRole,
+      targetUserId: id,
+      isAdmin,
+      isOwnKYC
+    });
+
+    if (!isAdmin && !isOwnKYC) {
+      console.error('❌ Authorization failed');
+      return apiHandler.forbidden('You can only access your own KYC information or you need admin permissions');
     }
 
     // Find user with KYC data
@@ -80,8 +111,10 @@ export async function GET(
       submittedAt: user.kycSubmittedAt,
       approvedAt: user.kycApprovedAt,
       rejectedAt: user.kycRejectedAt,
-      isVerified: user.kycStatus === 'approved',
+      isVerified: user.kycStatus === 'Approved',
     };
+
+    console.log('✅ KYC data retrieved successfully for user:', user.name);
 
     return apiHandler.success(kycData, 'KYC information retrieved successfully');
 
@@ -142,9 +175,25 @@ export async function PUT(
       return apiHandler.notFound('User not found');
     }
 
+    // ✅ CRITICAL FIX: Convert lowercase API values to capitalized User model values
+    const convertStatusToUserModel = (apiStatus: string): string => {
+      switch (apiStatus) {
+        case 'approved':
+          return 'Approved';
+        case 'rejected':
+          return 'Rejected';
+        case 'pending':
+          return 'Pending';
+        default:
+          throw new Error(`Invalid status: ${apiStatus}`);
+      }
+    };
+
+    const userModelStatus = convertStatusToUserModel(status);
+
     // Prevent unnecessary status changes
-    if (user.kycStatus === status) {
-      return apiHandler.badRequest(`KYC status is already ${status}`);
+    if (user.kycStatus === userModelStatus) {
+      return apiHandler.badRequest(`KYC status is already ${userModelStatus}`);
     }
 
     // Validate rejection reason for rejected status
@@ -152,9 +201,9 @@ export async function PUT(
       return apiHandler.badRequest('Rejection reason is required when rejecting KYC');
     }
 
-    // Prepare update data
+    // ✅ FIXED: Prepare update data with properly converted status
     const updateData: any = {
-      kycStatus: status,
+      kycStatus: userModelStatus, // Use converted capitalized value
       kycRejectionReason: status === 'rejected' ? rejectionReason : undefined,
       kycAdminNotes: adminNotes,
       kycDocumentsRequired: documentsRequired,
@@ -176,6 +225,12 @@ export async function PUT(
         break;
     }
 
+    console.log('🔧 KYC Update Data:', {
+      originalStatus: status,
+      convertedStatus: userModelStatus,
+      updateData
+    });
+
     // Update user
     const updatedUser = await User.findByIdAndUpdate(
       id,
@@ -183,22 +238,45 @@ export async function PUT(
       { new: true, runValidators: true }
     ).select('name email kycStatus kycRejectionReason kycApprovedAt kycRejectedAt');
 
+    console.log('✅ User updated successfully:', {
+      userId: updatedUser?._id,
+      newKycStatus: updatedUser?.kycStatus
+    });
+
     // Log admin action
     await AuditLog.create({
-      adminId,
-      action: 'KYC_STATUS_UPDATE',
-      target: 'User',
-      targetId: id,
-      details: {
-        previousStatus: user.kycStatus,
-        newStatus: status,
-        rejectionReason,
-        adminNotes,
-        documentsRequired
-      },
-      ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
-      userAgent: request.headers.get('user-agent') || 'unknown'
-    });
+  adminId: adminId, // Ensure it's an ObjectId
+  action: 'KYC_STATUS_UPDATE',
+  entity: 'User', // ✅ FIXED: Use 'entity' instead of 'target'
+  entityId: id, // ✅ FIXED: Use 'entityId' instead of 'targetId'
+  oldData: {
+    kycStatus: user.kycStatus,
+    kycRejectionReason: user.kycRejectionReason
+  },
+  newData: {
+    kycStatus: userModelStatus,
+    kycRejectionReason: status === 'rejected' ? rejectionReason : undefined
+  },
+  changes: [
+    {
+      field: 'kycStatus',
+      oldValue: user.kycStatus,
+      newValue: userModelStatus
+    }
+  ],
+  severity: 'Medium',
+  status: 'Success',
+  metadata: {
+    previousStatus: user.kycStatus,
+    newStatus: userModelStatus,
+    rejectionReason,
+    adminNotes,
+    documentsRequired,
+    context: 'KYC_APPROVAL_PROCESS'
+  },
+  ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
+  userAgent: request.headers.get('user-agent') || 'unknown'
+});
 
     // Send email notification using your existing email system
     try {
@@ -244,7 +322,7 @@ export async function PUT(
 
     return apiHandler.success({
       user: updatedUser,
-      message: `KYC status updated to ${status} successfully`
+      message: `KYC status updated to ${userModelStatus} successfully`
     });
 
   } catch (error) {
@@ -252,6 +330,7 @@ export async function PUT(
     return apiHandler.handleError('Failed to update KYC status');
   }
 }
+
 
 // POST /api/users/[id]/kyc - Submit KYC documents (User only)
 export async function POST(

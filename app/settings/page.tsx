@@ -1,4 +1,3 @@
-// app/settings/page.tsx
 "use client";
 
 import React, { useState, useMemo } from "react";
@@ -17,26 +16,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import {
   Settings as SettingsIcon,
   Shield,
   DollarSign,
@@ -51,14 +30,10 @@ import {
   Eye,
   EyeOff,
   Edit,
-  Trash2,
-  Plus,
   Clock,
   CheckCircle,
   XCircle,
   AlertCircle,
-  History,
-  Info,
 } from "lucide-react";
 import { useSettings } from "@/hooks/use-settings";
 import { Setting, SettingCategory } from "@/types/settings";
@@ -71,49 +46,49 @@ const categoryConfig = {
     icon: SettingsIcon,
     label: "System",
     description: "Core application settings and configuration",
-    color: "text-blue-600 bg-blue-50 border-blue-200",
+    color: "bg-blue-100/50 text-blue-700 border-blue-200",
   },
   security: {
     icon: Shield,
     label: "Security",
     description: "Authentication, authorization and security settings",
-    color: "text-red-600 bg-red-50 border-red-200",
+    color: "bg-red-100/50 text-red-700 border-red-200",
   },
   financial: {
     icon: DollarSign,
     label: "Financial",
     description: "Currency, rates, limits and financial configuration",
-    color: "text-green-600 bg-green-50 border-green-200",
+    color: "bg-green-100/50 text-green-700 border-green-200",
   },
   email: {
     icon: Mail,
     label: "Email",
     description: "SMTP settings and email configuration",
-    color: "text-purple-600 bg-purple-50 border-purple-200",
+    color: "bg-purple-100/50 text-purple-700 border-purple-200",
   },
   upload: {
     icon: Upload,
     label: "Upload",
     description: "File upload limits, types and storage settings",
-    color: "text-orange-600 bg-orange-50 border-orange-200",
+    color: "bg-orange-100/50 text-orange-700 border-orange-200",
   },
   business: {
     icon: Users,
     label: "Business",
     description: "Business rules, KYC, tasks and operational settings",
-    color: "text-indigo-600 bg-indigo-50 border-indigo-200",
+    color: "bg-indigo-100/50 text-indigo-700 border-indigo-200",
   },
   api: {
     icon: Server,
     label: "API",
     description: "API configuration and external services",
-    color: "text-teal-600 bg-teal-50 border-teal-200",
+    color: "bg-teal-100/50 text-teal-700 border-teal-200",
   },
   maintenance: {
     icon: Wrench,
     label: "Maintenance",
     description: "System maintenance, backups and logging",
-    color: "text-gray-600 bg-gray-50 border-gray-200",
+    color: "bg-gray-100/50 text-gray-700 border-gray-200",
   },
 } as const;
 
@@ -134,11 +109,9 @@ export default function SettingsPage() {
     new Set()
   );
 
-  // Fetch grouped settings
   const { groupedSettings, isLoading, error, updateSetting, refreshSettings } =
     useSettings(undefined, undefined, true);
 
-  // Get current category settings
   const currentCategorySettings = useMemo(() => {
     if (!groupedSettings?.[activeCategory]) return [];
 
@@ -155,7 +128,6 @@ export default function SettingsPage() {
     return settings;
   }, [groupedSettings, activeCategory, searchQuery]);
 
-  // Calculate category stats
   const categoryStats = useMemo(() => {
     if (!groupedSettings) return {};
 
@@ -175,7 +147,6 @@ export default function SettingsPage() {
     return stats;
   }, [groupedSettings, modifiedSettings]);
 
-  // Handle setting value change
   const handleSettingChange = (
     settingId: string,
     value: any,
@@ -187,7 +158,6 @@ export default function SettingsPage() {
     }));
   };
 
-  // Handle save individual setting
   const handleSaveSetting = async (setting: Setting) => {
     const modified = modifiedSettings[setting._id];
     if (!modified) return;
@@ -214,7 +184,6 @@ export default function SettingsPage() {
     }
   };
 
-  // Handle save all modified settings
   const handleSaveAll = async () => {
     const modifiedEntries = Object.entries(modifiedSettings);
     if (modifiedEntries.length === 0) return;
@@ -235,14 +204,12 @@ export default function SettingsPage() {
     }
   };
 
-  // Handle discard changes
   const handleDiscardChanges = () => {
     setModifiedSettings({});
     setEditingSettings(new Set());
     toast.info("Changes discarded");
   };
 
-  // Toggle editing mode for a setting
   const toggleEditMode = (settingId: string) => {
     setEditingSettings((prev) => {
       const updated = new Set(prev);
@@ -255,7 +222,6 @@ export default function SettingsPage() {
     });
   };
 
-  // Render setting input based on data type
   const renderSettingInput = (setting: Setting) => {
     const isEditing = editingSettings.has(setting._id);
     const currentValue = modifiedSettings[setting._id]?.value ?? setting.value;
@@ -266,7 +232,6 @@ export default function SettingsPage() {
       setting.key.toLowerCase().includes("secret");
 
     if (!isEditing) {
-      // Display mode
       const displayValue =
         isSensitive && !showSensitive
           ? "••••••••"
@@ -275,16 +240,16 @@ export default function SettingsPage() {
           : String(currentValue);
 
       return (
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-sm bg-gray-50 px-2 py-1 rounded">
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-sm bg-gray-100/50 px-3 py-1.5 rounded-md border border-gray-200">
             {displayValue}
           </span>
           {setting.isEditable && (
             <Button
-              size="sm"
+              size="icon"
               variant="ghost"
               onClick={() => toggleEditMode(setting._id)}
-              className="h-8 w-8 p-0"
+              className="h-8 w-8 hover:bg-gray-100"
             >
               <Edit className="h-4 w-4" />
             </Button>
@@ -293,13 +258,12 @@ export default function SettingsPage() {
       );
     }
 
-    // Edit mode
     const commonProps = {
       value: currentValue,
       onChange: (newValue: any) => handleSettingChange(setting._id, newValue),
       className: cn(
         "min-w-0 flex-1",
-        isModified && "border-orange-300 bg-orange-50"
+        isModified && "border-amber-300 bg-amber-50/50 focus:ring-amber-500"
       ),
     };
 
@@ -312,8 +276,9 @@ export default function SettingsPage() {
               onCheckedChange={(checked) =>
                 handleSettingChange(setting._id, checked)
               }
+              className="data-[state=checked]:bg-blue-600"
             />
-            <span className="text-sm">
+            <span className="text-sm font-medium text-gray-700">
               {currentValue ? "Enabled" : "Disabled"}
             </span>
           </div>
@@ -329,6 +294,7 @@ export default function SettingsPage() {
             onChange={(e) =>
               handleSettingChange(setting._id, parseFloat(e.target.value) || 0)
             }
+            className={cn(commonProps.className, "max-w-[200px]")}
           />
         );
 
@@ -344,10 +310,10 @@ export default function SettingsPage() {
                 const parsed = JSON.parse(e.target.value);
                 handleSettingChange(setting._id, parsed);
               } catch {
-                // Allow invalid JSON while typing
                 handleSettingChange(setting._id, e.target.value);
               }
             }}
+            className={cn(commonProps.className, "font-mono text-sm")}
           />
         );
 
@@ -363,15 +329,14 @@ export default function SettingsPage() {
                 const parsed = JSON.parse(e.target.value);
                 handleSettingChange(setting._id, parsed);
               } catch {
-                // Allow invalid JSON while typing
                 handleSettingChange(setting._id, e.target.value);
               }
             }}
+            className={cn(commonProps.className, "font-mono text-sm")}
           />
         );
 
       default:
-        // String type
         if (setting.validation?.enum) {
           return (
             <Select
@@ -380,8 +345,8 @@ export default function SettingsPage() {
             >
               <SelectTrigger
                 className={cn(
-                  "w-full",
-                  isModified && "border-orange-300 bg-orange-50"
+                  "w-full max-w-[300px]",
+                  isModified && "border-amber-300 bg-amber-50/50"
                 )}
               >
                 <SelectValue />
@@ -403,18 +368,19 @@ export default function SettingsPage() {
             : "password"
           : "text";
         return (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <Input
               type={inputType}
               {...commonProps}
               onChange={(e) => handleSettingChange(setting._id, e.target.value)}
+              className={cn(commonProps.className, "max-w-[400px]")}
             />
             {isSensitive && (
               <Button
-                size="sm"
+                size="icon"
                 variant="ghost"
                 onClick={() => setShowSensitive(!showSensitive)}
-                className="h-8 w-8 p-0"
+                className="h-8 w-8 hover:bg-gray-100"
               >
                 {showSensitive ? (
                   <EyeOff className="h-4 w-4" />
@@ -428,14 +394,12 @@ export default function SettingsPage() {
     }
   };
 
-  // Get validation status for a setting
   const getValidationStatus = (setting: Setting) => {
     const currentValue = modifiedSettings[setting._id]?.value ?? setting.value;
     const validation = setting.validation;
 
     if (!validation) return { isValid: true, message: "" };
 
-    // Required validation
     if (
       validation.required &&
       (currentValue === null ||
@@ -445,7 +409,6 @@ export default function SettingsPage() {
       return { isValid: false, message: "This field is required" };
     }
 
-    // Type-specific validations
     if (setting.dataType === "number" && typeof currentValue === "number") {
       if (validation.min !== undefined && currentValue < validation.min) {
         return {
@@ -493,7 +456,7 @@ export default function SettingsPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-96">
+      <div className="flex items-center justify-center min-h-screen ">
         <LoadingSpinner size="lg" />
       </div>
     );
@@ -501,17 +464,22 @@ export default function SettingsPage() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-center">
-          <XCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-gray-900">
-            Failed to load settings
-          </h3>
-          <p className="text-gray-500 mt-1">{error}</p>
-          <Button onClick={refreshSettings} className="mt-4">
-            Try Again
-          </Button>
-        </div>
+      <div className="flex items-center justify-center min-h-screen ">
+        <Card className="max-w-md w-full">
+          <CardContent className="pt-6 text-center">
+            <XCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900">
+              Failed to load settings
+            </h3>
+            <p className="text-gray-500 mt-2">{error}</p>
+            <Button
+              onClick={refreshSettings}
+              className="mt-6 bg-blue-600 hover:bg-blue-700"
+            >
+              Try Again
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -519,25 +487,25 @@ export default function SettingsPage() {
   const modifiedCount = Object.keys(modifiedSettings).length;
 
   return (
-    <div className="flex h-full">
+    <div className="flex min-h-screen">
       {/* Sidebar */}
-      <div className="w-64 border-r bg-white flex flex-col">
-        {/* Search */}
-        <div className="p-4 border-b">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <Input
-              placeholder="Search settings..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
-            />
+      <div className="w-72 border-r border-gray-200 bg-white shadow-sm">
+        <div className="flex flex-col h-full">
+          {/* Search */}
+          <div className="p-4 border-b border-gray-200">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Search settings..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 h-10 border-gray-200 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
           </div>
-        </div>
 
-        {/* Categories */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="p-2">
+          {/* Categories */}
+          <div className="flex-1 overflow-y-auto p-3">
             {Object.entries(categoryConfig).map(([key, config]) => {
               const IconComponent = config.icon;
               const stats = categoryStats[key];
@@ -548,29 +516,41 @@ export default function SettingsPage() {
                   key={key}
                   onClick={() => setActiveCategory(key as SettingCategory)}
                   className={cn(
-                    "w-full text-left p-3 rounded-lg transition-colors mb-1",
-                    "hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500",
-                    isActive && "bg-blue-50 border border-blue-200"
+                    "w-full text-left p-3 rounded-lg transition-all mb-2",
+                    "hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500",
+                    isActive &&
+                      "bg-blue-50 border border-blue-200 text-blue-700"
                   )}
                 >
                   <div className="flex items-center gap-3">
-                    <div className={cn("p-2 rounded-md", config.color)}>
-                      <IconComponent className="h-4 w-4" />
+                    <div
+                      className={cn(
+                        "p-2 rounded-md",
+                        isActive ? "bg-blue-200/50" : config.color
+                      )}
+                    >
+                      <IconComponent className="h-5 w-5" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h4 className="font-medium text-gray-900 truncate">
+                      <h4 className="font-semibold text-gray-900 truncate">
                         {config.label}
                       </h4>
-                      <p className="text-xs text-gray-500 truncate">
+                      <p className="text-xs text-gray-500 truncate mt-1">
                         {config.description}
                       </p>
                       {stats && (
-                        <div className="flex gap-2 mt-1">
-                          <Badge variant="secondary" className="text-xs">
-                            {stats.total}
+                        <div className="flex gap-2 mt-2">
+                          <Badge
+                            variant="secondary"
+                            className="text-xs bg-gray-100 text-gray-600"
+                          >
+                            {stats.total} settings
                           </Badge>
                           {stats.modified > 0 && (
-                            <Badge variant="destructive" className="text-xs">
+                            <Badge
+                              variant="destructive"
+                              className="text-xs bg-amber-100 text-amber-700"
+                            >
                               {stats.modified} modified
                             </Badge>
                           )}
@@ -582,59 +562,64 @@ export default function SettingsPage() {
               );
             })}
           </div>
-        </div>
 
-        {/* Save Panel */}
-        {modifiedCount > 0 && (
-          <div className="border-t p-4 bg-orange-50">
-            <div className="text-sm text-orange-700 mb-3">
-              {modifiedCount} setting{modifiedCount !== 1 ? "s" : ""} modified
+          {/* Save Panel */}
+          {modifiedCount > 0 && (
+            <div className="border-t border-gray-200 p-4 bg-amber-50/50">
+              <div className="text-sm font-medium text-amber-700 mb-3">
+                {modifiedCount} setting{modifiedCount !== 1 ? "s" : ""} modified
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={handleSaveAll}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700"
+                >
+                  <Save className="h-4 w-4 mr-2" />
+                  Save All
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleDiscardChanges}
+                  className="border-gray-300 hover:bg-gray-100"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
-            <div className="flex gap-2">
-              <Button size="sm" onClick={handleSaveAll} className="flex-1">
-                <Save className="h-4 w-4 mr-1" />
-                Save All
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleDiscardChanges}
-              >
-                <RotateCcw className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Main Content */}
       <div className="flex-1 overflow-y-auto">
-        <div className="p-6">
+        <div className="p-8">
           {/* Header */}
-          <div className="mb-6">
-            <div className="flex items-center gap-3 mb-2">
+          <div className="mb-8">
+            <div className="flex items-center gap-4 mb-3">
               {React.createElement(categoryConfig[activeCategory].icon, {
-                className: "h-6 w-6 text-gray-600",
+                className: "h-7 w-7 text-blue-600",
               })}
-              <h1 className="text-2xl font-bold text-gray-900">
+              <h1 className="text-3xl font-bold">
                 {categoryConfig[activeCategory].label} Settings
               </h1>
             </div>
-            <p className="text-gray-600">
+            <p className="text-gray-600 text-sm max-w-2xl">
               {categoryConfig[activeCategory].description}
             </p>
           </div>
 
           {/* Settings List */}
-          <div className="space-y-4">
+          <div className="space-y-6">
             {currentCategorySettings.length === 0 ? (
-              <Card>
-                <CardContent className="py-12 text-center">
-                  <SettingsIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">
+              <Card className="border-gray-200 shadow-sm">
+                <CardContent className="py-16 text-center">
+                  <SettingsIcon className="h-12 w-12 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">
                     No settings found
                   </h3>
-                  <p className="text-gray-500">
+                  <p className="text-gray-500 text-sm">
                     {searchQuery
                       ? "No settings match your search criteria"
                       : "No settings available in this category"}
@@ -651,38 +636,47 @@ export default function SettingsPage() {
                   <Card
                     key={setting._id}
                     className={cn(
-                      "transition-all",
-                      isModified && "border-orange-300 shadow-md",
+                      "transition-all border-gray-200 shadow-sm hover:shadow-md",
+                      isModified && "border-amber-300 shadow-amber-100",
                       !validation.isValid && "border-red-300"
                     )}
                   >
-                    <CardHeader className="pb-3">
+                    <CardHeader className="pb-4">
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
-                          <CardTitle className="text-lg flex items-center gap-2">
+                          <CardTitle className="text-lg font-semibold flex items-center gap-3">
                             {setting.key}
                             {!setting.isEditable && (
-                              <Badge variant="secondary" className="text-xs">
+                              <Badge
+                                variant="secondary"
+                                className="text-xs bg-gray-100 text-gray-600"
+                              >
                                 Read Only
                               </Badge>
                             )}
                             {setting.isEncrypted && (
-                              <Badge variant="outline" className="text-xs">
+                              <Badge
+                                variant="outline"
+                                className="text-xs border-gray-300"
+                              >
                                 <Shield className="h-3 w-3 mr-1" />
                                 Encrypted
                               </Badge>
                             )}
                             {isModified && (
-                              <Badge variant="destructive" className="text-xs">
+                              <Badge
+                                variant="destructive"
+                                className="text-xs bg-amber-100 text-amber-700"
+                              >
                                 Modified
                               </Badge>
                             )}
                           </CardTitle>
-                          <p className="text-sm text-gray-600 mt-1">
+                          <p className="text-sm text-gray-600 mt-2">
                             {setting.description}
                           </p>
                           {setting.validation && (
-                            <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                            <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
                               <span>Type: {setting.dataType}</span>
                               {setting.validation.required && (
                                 <span className="text-red-600">Required</span>
@@ -702,8 +696,10 @@ export default function SettingsPage() {
                               size="sm"
                               onClick={() => handleSaveSetting(setting)}
                               disabled={!validation.isValid}
+                              className="bg-blue-600 hover:bg-blue-700"
                             >
-                              <Save className="h-4 w-4" />
+                              <Save className="h-4 w-4 mr-2" />
+                              Save
                             </Button>
                           )}
                           {isEditing && (
@@ -711,6 +707,7 @@ export default function SettingsPage() {
                               size="sm"
                               variant="outline"
                               onClick={() => toggleEditMode(setting._id)}
+                              className="border-gray-300 hover:bg-gray-100"
                             >
                               Cancel
                             </Button>
@@ -718,13 +715,13 @@ export default function SettingsPage() {
                         </div>
                       </div>
                       {!validation.isValid && (
-                        <div className="flex items-center gap-2 mt-2 text-sm text-red-600">
+                        <div className="flex items-center gap-2 mt-3 text-sm text-red-600">
                           <AlertCircle className="h-4 w-4" />
                           {validation.message}
                         </div>
                       )}
                     </CardHeader>
-                    <CardContent>
+                    <CardContent className="pt-0">
                       {renderSettingInput(setting)}
 
                       {setting.defaultValue !== undefined && (
@@ -734,7 +731,7 @@ export default function SettingsPage() {
                       )}
 
                       {setting.updatedAt && (
-                        <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
+                        <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
                           <Clock className="h-3 w-3" />
                           Last updated:{" "}
                           {new Date(setting.updatedAt).toLocaleString()}

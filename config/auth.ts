@@ -89,7 +89,17 @@ export const authConfig: NextAuthOptions = {
               email: email.toLowerCase(),
               isActive: true 
             });
+console.log('Admin verification - Email:', email);
+console.log('Admin found:', !!admin);
+console.log('Admin active:', admin?.isActive);
+console.log('Password hash exists:', !!admin?.passwordHash);
+console.log('Password provided:', !!password);
 
+if (!admin) {
+  console.log('🔴 Admin not found for email:', email);
+  await logAuthAttempt(email, userType, false, 'Admin not found', clientIP, userAgent);
+  throw new Error("Invalid credentials");
+}
             if (!admin) {
               await logAuthAttempt(email, userType, false, 'Admin not found', clientIP, userAgent);
               throw new Error("Invalid credentials");
