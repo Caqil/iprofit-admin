@@ -733,3 +733,21 @@ export type EducationLevel = typeof EDUCATION_LEVELS[number];
 export type PaymentMethod = typeof PAYMENT_METHODS[number];
 export type DocumentType = typeof DOCUMENT_TYPES[number];
 export type RiskCategory = typeof RISK_CATEGORIES[keyof typeof RISK_CATEGORIES];
+
+export const LOAN_ELIGIBILITY_REQUIREMENTS = {
+  // Gamified Requirements (from your UI)
+  MIN_WALLET_BALANCE: 500, // USD
+  MIN_TOTAL_DEPOSITS: 1000, // USD  
+  MIN_REFERRALS_WITH_DEPOSITS: 3,
+  REQUIRED_KYC_STATUS: 'Approved',
+  MIN_ACCOUNT_AGE_DAYS: 7,
+  
+  // Traditional Requirements (keep existing)
+  MIN_MONTHLY_INCOME: 1000, // USD
+  MIN_CREDIT_SCORE: 550, // Standardize to 550 everywhere
+  MAX_DEBT_TO_INCOME_RATIO: 0.4,
+  
+  // Loan Limits
+  MIN_LOAN_AMOUNT: 500,
+  MAX_LOAN_AMOUNT: 5500
+};

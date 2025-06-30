@@ -86,6 +86,7 @@ const UserSchema = new Schema<IUser>({
       default: Date.now
     }
   }],
+  
   kycRejectionReason: {
     type: String,
     default: null
@@ -150,7 +151,8 @@ const UserSchema = new Schema<IUser>({
   twoFactorEnabled: {
     type: Boolean,
     default: false
-  }
+  },
+  
 }, {
   timestamps: true,
   collection: 'users'

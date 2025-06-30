@@ -13,7 +13,7 @@ import speakeasy from 'speakeasy';
 import jwt from 'jsonwebtoken';
 import { env } from '@/config/env';
 import { loginSchema } from '@/lib/validation';
-import { BusinessRules } from '@/lib/settings-helper';
+import { BusinessRules, getSetting } from '@/lib/settings-helper';
 
 interface LoginResponse {
   success: boolean;
@@ -73,8 +73,17 @@ async function loginHandler(request: NextRequest): Promise<NextResponse> {
       deviceId,
       fingerprint 
     } = validationResult.data;
-
-    // Handle admin login
+    const isDeviceLimitingEnabled = await getSetting('enable_device_limiting', true);
+    if (isDeviceLimitingEnabled && deviceId && fingerprint) {
+      console.log('Device limiting is enabled, checking device limit...');
+      const deviceCheck = await checkDeviceLimit(deviceId, fingerprint);
+      if (!deviceCheck.isAllowed) {
+        await logAuthAttempt(email, userType, false, deviceCheck.reason || 'Device limit exceeded', clientIP, userAgent);
+        return apiHandler.forbidden('Multiple accounts detected. Contact support.');
+      }
+    } else {
+      console.log('Device limiting is disabled, skipping device check');
+    }
     if (userType === 'admin') {
       const admin = await Admin.findOne({ 
         email: email.toLowerCase(),
@@ -166,7 +175,62 @@ async function loginHandler(request: NextRequest): Promise<NextResponse> {
         await logAuthAttempt(email, userType, false, deviceCheck.reason || 'Device limit exceeded', clientIP, userAgent);
         return apiHandler.forbidden('Multiple accounts detected. Contact support.');
       }
-
+try {
+    const userCount = await User.countDocuments();
+    console.log('🔍 DEBUG: Total users in database:', userCount);
+    
+    // Try to find ANY user first
+    const anyUser = await User.findOne({});
+    console.log('🔍 DEBUG: Sample user found:', !!anyUser);
+    if (anyUser) {
+      console.log('🔍 DEBUG: Sample user email:', anyUser.email);
+    }
+    
+    // Now try the specific email query with exact match
+    const exactEmailUser = await User.findOne({ 
+      email: 'hassan.sultana0@example.com'
+    });
+    console.log('🔍 DEBUG: Exact email match:', !!exactEmailUser);
+    
+    // Try with lowercase
+    const lowerEmailUser = await User.findOne({ 
+      email: email.toLowerCase()
+    });
+    console.log('🔍 DEBUG: Lowercase email match:', !!lowerEmailUser);
+    
+    // Try with regex (case insensitive)
+    const regexEmailUser = await User.findOne({ 
+      email: { $regex: new RegExp(`^${email}$`, 'i') }
+    });
+    console.log('🔍 DEBUG: Regex email match:', !!regexEmailUser);
+    
+    // Check the actual user data if found
+    const foundUser = exactEmailUser || lowerEmailUser || regexEmailUser;
+    if (foundUser) {
+      console.log('🔍 DEBUG: Found user data:', {
+        id: foundUser._id,
+        email: foundUser.email,
+        status: foundUser.status,
+        hasPasswordHash: !!foundUser.passwordHash,
+        passwordHashType: typeof foundUser.passwordHash,
+        passwordHashLength: foundUser.passwordHash?.length
+      });
+      
+      // Test password verification
+      if (foundUser.passwordHash && password) {
+        console.log('🔍 DEBUG: Testing password verification...');
+        try {
+          const isValid = await verifyPassword(password, foundUser.passwordHash);
+          console.log('🔍 DEBUG: Password verification result:', isValid);
+        } catch (verifyError) {
+          console.error('🔍 DEBUG: Password verification error:', verifyError);
+        }
+      }
+    }
+    
+  } catch (dbError) {
+    console.error('🔍 DEBUG: Database query error:', dbError);
+  }
       const user = await User.findOne({ 
         email: email.toLowerCase(),
         status: 'Active'

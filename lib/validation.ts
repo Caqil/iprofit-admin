@@ -95,8 +95,17 @@ export const userRegistrationValidator = z.object({
   confirmPassword: z.string().min(8),
   deviceId: z.string().min(1),
   fingerprint: z.string().min(1),
+  planId: z.string().optional(), // ✅ ADD THIS
   referralCode: z.string().optional(),
-  terms: z.boolean().refine(val => val === true, 'You must accept the terms and conditions')
+  dateOfBirth: z.string().optional(),
+  address: z.object({
+    street: z.string().min(5).max(200),
+    city: z.string().min(2).max(100),
+    state: z.string().min(2).max(100),
+    country: z.string().min(2).max(100),
+    zipCode: z.string().min(3).max(20)
+  }).optional(),
+  terms: z.boolean().refine(val => val === true, 'You must accept the terms and conditions').optional()
 }).refine(data => data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ["confirmPassword"]

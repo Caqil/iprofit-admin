@@ -1,5 +1,6 @@
 import { Loan, LoanStatus, RepaymentSchedule, EMICalculation } from '@/types';
 import { calculateEMI } from './helpers';
+import { LOAN_ELIGIBILITY_REQUIREMENTS } from './constants';
 
 // Enhanced EMI calculation with detailed breakdown
 export function calculateDetailedEMI(
@@ -266,53 +267,117 @@ export function generatePaymentReminders(repaymentSchedule: RepaymentSchedule[])
   return { overdue, dueSoon, upcoming };
 }
 
-// Validate loan eligibility
-export function validateLoanEligibility(
-  monthlyIncome: number,
-  creditScore: number,
-  existingLoans: number,
-  requestedAmount: number
-): {
+export function validateLoanEligibility(user: {
+  // Current user data
+  walletBalance: number;
+  totalDeposits: number;
+  referralCount: number;
+  activeReferralsWithDeposits: number; // NEW: count referrals who made deposits
+  kycStatus: string;
+  accountCreatedAt: Date;
+  
+  // Financial data
+  monthlyIncome: number;
+  creditScore: number;
+  existingLoans: number;
+}, requestedAmount: number): {
   isEligible: boolean;
   reasons: string[];
-  suggestions: string[];
+  progress: {
+    completed: number;
+    total: number;
+    details: Array<{requirement: string; status: boolean; current?: any; needed?: any}>;
+  };
 } {
+  const requirements = LOAN_ELIGIBILITY_REQUIREMENTS;
   const reasons: string[] = [];
-  const suggestions: string[] = [];
-
-  // Minimum income requirement
-  if (monthlyIncome < 1000) {
-    reasons.push('Monthly income below minimum requirement of $1,000');
-    suggestions.push('Increase your monthly income before applying');
-  }
-
-  // Credit score requirement
-  if (creditScore < 500) {
-    reasons.push('Credit score below minimum requirement of 500');
-    suggestions.push('Work on improving your credit score');
-  }
-
-  // Debt-to-income ratio
-  const maxAffordableEMI = monthlyIncome * 0.4; // 40% DTI
-  const estimatedEMI = calculateEMI(requestedAmount, 15, 36); // Assume 15% rate, 3 years
+  const progressDetails: any[] = [];
   
-  if (existingLoans + estimatedEMI > maxAffordableEMI) {
+  // 1. Wallet Balance Check
+  const hasMinBalance = user.walletBalance >= requirements.MIN_WALLET_BALANCE;
+  progressDetails.push({
+    requirement: `Maintain $${requirements.MIN_WALLET_BALANCE}+ in wallet`,
+    status: hasMinBalance,
+    current: user.walletBalance,
+    needed: requirements.MIN_WALLET_BALANCE
+  });
+  if (!hasMinBalance) {
+    reasons.push(`Wallet balance must be at least $${requirements.MIN_WALLET_BALANCE} (current: $${user.walletBalance})`);
+  }
+  
+  // 2. Referral Check
+  const hasMinReferrals = user.activeReferralsWithDeposits >= requirements.MIN_REFERRALS_WITH_DEPOSITS;
+  progressDetails.push({
+    requirement: `Refer ${requirements.MIN_REFERRALS_WITH_DEPOSITS} friends who make deposits`,
+    status: hasMinReferrals,
+    current: user.activeReferralsWithDeposits,
+    needed: requirements.MIN_REFERRALS_WITH_DEPOSITS
+  });
+  if (!hasMinReferrals) {
+    reasons.push(`Need ${requirements.MIN_REFERRALS_WITH_DEPOSITS} referrals with deposits (current: ${user.activeReferralsWithDeposits})`);
+  }
+  
+  // 3. Total Deposits Check
+  const hasMinDeposits = user.totalDeposits >= requirements.MIN_TOTAL_DEPOSITS;
+  progressDetails.push({
+    requirement: `Deposit total of $${requirements.MIN_TOTAL_DEPOSITS}+`,
+    status: hasMinDeposits,
+    current: user.totalDeposits,
+    needed: requirements.MIN_TOTAL_DEPOSITS
+  });
+  if (!hasMinDeposits) {
+    reasons.push(`Total deposits must be at least $${requirements.MIN_TOTAL_DEPOSITS} (current: $${user.totalDeposits})`);
+  }
+  
+  // 4. KYC Check
+  const hasKYC = user.kycStatus === requirements.REQUIRED_KYC_STATUS;
+  progressDetails.push({
+    requirement: 'Complete KYC verification',
+    status: hasKYC,
+    current: user.kycStatus
+  });
+  if (!hasKYC) {
+    reasons.push(`KYC verification required (status: ${user.kycStatus})`);
+  }
+  
+  // 5. Account Age Check
+  const accountAgeDays = Math.floor((Date.now() - user.accountCreatedAt.getTime()) / (1000 * 60 * 60 * 24));
+  const hasMinAge = accountAgeDays >= requirements.MIN_ACCOUNT_AGE_DAYS;
+  progressDetails.push({
+    requirement: `Be active for ${requirements.MIN_ACCOUNT_AGE_DAYS}+ days`,
+    status: hasMinAge,
+    current: accountAgeDays,
+    needed: requirements.MIN_ACCOUNT_AGE_DAYS
+  });
+  if (!hasMinAge) {
+    const remaining = requirements.MIN_ACCOUNT_AGE_DAYS - accountAgeDays;
+    reasons.push(`Account must be ${remaining} more days old`);
+  }
+  
+  // Traditional validations (existing logic)
+  if (user.monthlyIncome < requirements.MIN_MONTHLY_INCOME) {
+    reasons.push(`Monthly income below $${requirements.MIN_MONTHLY_INCOME}`);
+  }
+  
+  if (user.creditScore < requirements.MIN_CREDIT_SCORE) {
+    reasons.push(`Credit score below ${requirements.MIN_CREDIT_SCORE}`);
+  }
+  
+  const estimatedEMI = calculateEMI(requestedAmount, 15, 36);
+  const maxAffordableEMI = user.monthlyIncome * requirements.MAX_DEBT_TO_INCOME_RATIO;
+  if (user.existingLoans + estimatedEMI > maxAffordableEMI) {
     reasons.push('Total EMI burden exceeds affordable limit');
-    suggestions.push('Consider reducing the loan amount or increasing income');
   }
-
-  // Loan amount limits
-  if (requestedAmount < 500) {
-    reasons.push('Loan amount below minimum of $500');
-    suggestions.push('Apply for at least $500');
-  }
-
-  if (requestedAmount > 5500) {
-    reasons.push('Loan amount exceeds maximum of $5,500');
-    suggestions.push('Apply for a maximum of $5,500');
-  }
-
-  const isEligible = reasons.length === 0;
-
-  return { isEligible, reasons, suggestions };
+  
+  const completedCount = progressDetails.filter(detail => detail.status).length;
+  
+  return {
+    isEligible: reasons.length === 0,
+    reasons,
+    progress: {
+      completed: completedCount,
+      total: progressDetails.length,
+      details: progressDetails
+    }
+  };
 }

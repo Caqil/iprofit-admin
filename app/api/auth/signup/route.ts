@@ -1,3 +1,5 @@
+// app/api/auth/signup/route.ts - Complete Fixed Version
+
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { User } from '@/models/User';
@@ -10,7 +12,7 @@ import { sendEmail } from '@/lib/email';
 import { withErrorHandler } from '@/middleware/error-handler';
 import { authRateLimit } from '@/middleware/rate-limit';
 import { ApiHandler } from '@/lib/api-helpers';
-import { userRegistrationValidator } from '@/utils/validators';
+import { userRegistrationValidator } from '@/lib/validation';
 import { BusinessRules, getSetting, getSettings } from '@/lib/settings-helper';
 
 interface SignupRequest {
@@ -21,6 +23,7 @@ interface SignupRequest {
   confirmPassword: string;
   deviceId: string;
   fingerprint: string;
+  planId?: string;  // ✅ Added planId support
   referralCode?: string;
   dateOfBirth?: string;
   address?: {
@@ -81,6 +84,7 @@ async function signupHandler(request: NextRequest): Promise<NextResponse> {
       confirmPassword,
       deviceId, 
       fingerprint, 
+      planId,  // ✅ Extract planId from validated data
       referralCode,
       dateOfBirth,
       address 
@@ -108,13 +112,51 @@ async function signupHandler(request: NextRequest): Promise<NextResponse> {
       BusinessRules.getSystemConfig()
     ]);
 
-    // Check device limit using settings
-    if (signupSettings.enable_device_limiting !== false) {
+    // ✅ UPDATED PLAN LOGIC - Handle provided planId or get default
+    let defaultPlan;
+    if (planId) {
+      // Use provided planId
+      console.log('🔍 Using provided planId:', planId);
+      defaultPlan = await Plan.findById(planId);
+      if (!defaultPlan) {
+        return apiHandler.badRequest(`Plan with ID '${planId}' not found.`);
+      }
+      if (!defaultPlan.isActive) {
+        return apiHandler.badRequest(`Plan '${defaultPlan.name}' is not active.`);
+      }
+    } else {
+      // Get default plan from settings
+      console.log('🔍 No planId provided, using default plan from settings');
+      const defaultPlanName = signupSettings.default_plan_name || 'Free';
+      defaultPlan = await Plan.findOne({ 
+        name: defaultPlanName,
+        isActive: true 
+      });
+      
+      if (!defaultPlan) {
+        // Try to find any active plan as fallback
+        defaultPlan = await Plan.findOne({ isActive: true });
+        if (!defaultPlan) {
+          return apiHandler.internalError('No active plans available. Please contact support.');
+        }
+        console.log(`🔍 Default plan '${defaultPlanName}' not found, using fallback plan: ${defaultPlan.name}`);
+      }
+    }
+
+    console.log('✅ Selected plan:', { id: defaultPlan._id, name: defaultPlan.name });
+
+    // Check if device limiting is enabled first
+    const isDeviceLimitingEnabled = signupSettings.enable_device_limiting !== false;
+
+    if (isDeviceLimitingEnabled) {
+      console.log('Device limiting enabled, checking device limits...');
       const deviceCheck = await checkDeviceLimit(deviceId, fingerprint);
       if (!deviceCheck.isAllowed) {
         await logSignupAttempt(email, false, deviceCheck.reason || 'Device limit exceeded', clientIP, userAgent);
         return apiHandler.forbidden('Multiple accounts detected. Contact support.');
       }
+    } else {
+      console.log('Device limiting disabled in settings, skipping device check');
     }
 
     // Check if user already exists
@@ -134,13 +176,6 @@ async function signupHandler(request: NextRequest): Promise<NextResponse> {
 
       await logSignupAttempt(email, false, reason, clientIP, userAgent);
       return apiHandler.conflict(reason);
-    }
-
-    // Get default plan from settings
-    const defaultPlanName = signupSettings.default_plan_name || 'Free';
-    const defaultPlan = await Plan.findOne({ name: defaultPlanName });
-    if (!defaultPlan) {
-      return apiHandler.internalError(`Default plan '${defaultPlanName}' not found. Please contact support.`);
     }
 
     // Validate referral code if provided and referral system is enabled
