@@ -15,7 +15,7 @@ import mongoose from 'mongoose';
 import { 
   adminUserCreateSchema, 
   userCreateExtendedSchema,
-  userListQuerySchema
+  userListQuerySchema,
 } from '@/lib/validation';
 
 // Utility function to generate unique referral code

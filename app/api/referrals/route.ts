@@ -8,7 +8,7 @@ import { authMiddleware } from '@/middleware/auth';
 import { apiRateLimit } from '@/middleware/rate-limit';
 import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler, createPaginatedResponse, createPaginationStages } from '@/lib/api-helpers';
-import { paginationSchema, dateRangeSchema, referralListQuerySchema, createReferralSchema } from '@/lib/validation';
+import { urlPaginationSchema, dateRangeSchema, createReferralSchema, referralListQuerySchema } from '@/lib/validation';
 import { ReferralOverview, TopReferrer } from '@/types/referral';
 import { z } from 'zod';
 import mongoose from 'mongoose';
@@ -126,8 +126,8 @@ async function getReferralsHandler(request: NextRequest): Promise<NextResponse> 
 
     // Unwind the lookups
     pipeline.push(
-      { $unwind: { path: '$referrer', preserveNullAndEmptyArrays: false } },
-      { $unwind: { path: '$referee', preserveNullAndEmptyArrays: false } },
+      { $unwind: { path: '$referrer', preserveNullAndEmptyArrays: true } },
+      { $unwind: { path: '$referee', preserveNullAndEmptyArrays: true } },
       { $unwind: { path: '$transaction', preserveNullAndEmptyArrays: true } }
     );
 

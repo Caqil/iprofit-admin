@@ -176,7 +176,7 @@ export function TasksTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {tasks.length === 0 ? (
+            {!tasks || tasks.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={9} className="text-center py-8">
                   <div className="flex flex-col items-center gap-2">
@@ -186,6 +186,7 @@ export function TasksTable({
                 </TableCell>
               </TableRow>
             ) : (
+              Array.isArray(tasks) &&
               tasks.map((task) => (
                 <TableRow key={task._id}>
                   <TableCell>
@@ -198,10 +199,10 @@ export function TasksTable({
                   </TableCell>
                   <TableCell>
                     <div className="space-y-1">
-                      <div className="font-medium">{task.name}</div>
-                      <div className="text-sm text-muted-foreground max-w-[300px] truncate">
+                      <p className="font-medium">{task.name}</p>
+                      <p className="text-sm text-muted-foreground line-clamp-2">
                         {task.description}
-                      </div>
+                      </p>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -214,8 +215,10 @@ export function TasksTable({
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
-                      <DollarSign className="h-3 w-3" />
-                      {formatCurrency(task.reward, task.currency)}
+                      <DollarSign className="h-4 w-4 text-green-600" />
+                      <span className="font-medium">
+                        {formatCurrency(task.reward)}
+                      </span>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -224,17 +227,29 @@ export function TasksTable({
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-1">
-                      <Users className="h-3 w-3" />
-                      {task.currentCompletions}
-                      {task.maxCompletions && ` / ${task.maxCompletions}`}
+                    <div className="flex items-center gap-2">
+                      <Users className="h-4 w-4 text-muted-foreground" />
+                      <span>{task.currentCompletions || 0}</span>
+                      {task.maxCompletions && (
+                        <span className="text-muted-foreground">
+                          / {task.maxCompletions}
+                        </span>
+                      )}
                     </div>
                   </TableCell>
-                  <TableCell>{formatRelativeTime(task.createdAt)}</TableCell>
+                  <TableCell>
+                    <div className="text-sm">
+                      <div>{formatDate(task.createdAt)}</div>
+                      <div className="text-muted-foreground">
+                        {formatRelativeTime(task.createdAt)}
+                      </div>
+                    </div>
+                  </TableCell>
                   <TableCell>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
+                        <Button variant="ghost" className="h-8 w-8 p-0">
+                          <span className="sr-only">Open menu</span>
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
