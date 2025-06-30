@@ -129,9 +129,15 @@ export default function WithdrawalsPage() {
   };
 
   // Permission checks
-  const canApprove: boolean | undefined = user ? hasPermission(user.role, "transactions.approve") : undefined;
-  const canReject: boolean | undefined = user ? hasPermission(user.role, "transactions.reject") : undefined;
-  const canExport: boolean | undefined = user ? hasPermission(user.role, "transactions.export") : undefined;
+  const canApprove: boolean | undefined = user
+    ? hasPermission(user.role, "transactions.approve")
+    : undefined;
+  const canReject: boolean | undefined = user
+    ? hasPermission(user.role, "transactions.reject")
+    : undefined;
+  const canExport: boolean | undefined = user
+    ? hasPermission(user.role, "transactions.export")
+    : undefined;
 
   // Calculate withdrawal-specific metrics
   const withdrawalMetrics = useMemo(() => {

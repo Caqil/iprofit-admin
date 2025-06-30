@@ -9,7 +9,6 @@ import { z } from 'zod';
 import mongoose from 'mongoose';
 import { analyticsQuerySchema } from '@/lib/validation';
 
-
 // GET /api/loans/analytics - Get loan analytics and metrics
 async function getLoansAnalyticsHandler(request: NextRequest): Promise<NextResponse> {
   const apiHandler = ApiHandler.create(request);
@@ -222,11 +221,11 @@ async function getLoansAnalyticsHandler(request: NextRequest): Promise<NextRespo
           _id: {
             $switch: {
               branches: [
-                { case: { $gte: ['$creditScore', 750] }, then: 'low' },
-                { case: { $gte: ['$creditScore', 650] }, then: 'medium' },
-                { case: { $gte: ['$creditScore', 550] }, then: 'high' }
+                { case: { $gte: ['$creditScore', 750] }, then: 'Low Risk' },
+                { case: { $gte: ['$creditScore', 650] }, then: 'Medium Risk' },
+                { case: { $gte: ['$creditScore', 550] }, then: 'High Risk' }
               ],
-              default: 'veryHigh'
+              default: 'Very High Risk'
             }
           },
           count: { $sum: 1 }
@@ -234,15 +233,12 @@ async function getLoansAnalyticsHandler(request: NextRequest): Promise<NextRespo
       }
     ]);
 
-    // Convert risk distribution to object
-    const riskCounts = { low: 0, medium: 0, high: 0, veryHigh: 0 };
-    riskDistribution.forEach(item => {
-      if (item._id in riskCounts) {
-        riskCounts[item._id as keyof typeof riskCounts] = item.count;
-      }
-    });
+    const riskCounts = riskDistribution.reduce((acc, item) => {
+      acc[item._id] = item.count;
+      return acc;
+    }, {} as Record<string, number>);
 
-    // Amount ranges distribution
+    // Amount range distribution
     const amountRanges = await Loan.aggregate([
       { $match: matchConditions },
       {
@@ -250,22 +246,44 @@ async function getLoansAnalyticsHandler(request: NextRequest): Promise<NextRespo
           _id: {
             $switch: {
               branches: [
-                { case: { $lt: ['$amount', 1000] }, then: '0-1000' },
-                { case: { $lt: ['$amount', 5000] }, then: '1000-5000' },
-                { case: { $lt: ['$amount', 10000] }, then: '5000-10000' },
-                { case: { $lt: ['$amount', 25000] }, then: '10000-25000' }
+                { case: { $lt: ['$amount', 1000] }, then: '$0-$999' },
+                { case: { $lt: ['$amount', 5000] }, then: '$1K-$4.9K' },
+                { case: { $lt: ['$amount', 10000] }, then: '$5K-$9.9K' },
+                { case: { $lt: ['$amount', 25000] }, then: '$10K-$24.9K' },
+                { case: { $lt: ['$amount', 50000] }, then: '$25K-$49.9K' }
               ],
-              default: '25000+'
+              default: '$50K+'
             }
           },
           count: { $sum: 1 },
           totalAmount: { $sum: '$amount' }
         }
       },
-      { $sort: { '_id': 1 } }
+      { $sort: { totalAmount: -1 } }
     ]);
 
-    // Build response
+    // Performance metrics by status
+    const performanceMetrics = await Loan.aggregate([
+      { $match: matchConditions },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 },
+          totalAmount: { $sum: '$amount' },
+          avgProcessingTime: {
+            $avg: {
+              $cond: [
+                { $ne: ['$approvedAt', null] },
+                { $subtract: ['$approvedAt', '$createdAt'] },
+                null
+              ]
+            }
+          }
+        }
+      }
+    ]);
+
+    // Build final analytics object
     const analytics = {
       // Basic metrics
       totalLoans: stats.totalLoans,
@@ -319,8 +337,11 @@ async function getLoansAnalyticsHandler(request: NextRequest): Promise<NextRespo
       insights: {
         mostCommonLoanRange: amountRanges.reduce((max, current) => 
           current.count > (max?.count || 0) ? current : max, null)?._id || 'N/A',
-        dominantRiskCategory: Object.entries(riskCounts).reduce((max, [key, value]) => 
-          value > (max[1] || 0) ? [key, value] : max, ['unknown', 0])[0],
+        dominantRiskCategory: Object.entries(riskCounts).reduce(
+          (max: [string, number], [key, value]) =>
+            (typeof value === 'number' && value > max[1]) ? [key, value] : max,
+          ['unknown', 0]
+        )[0],
         growthTrend: monthlyTrends.length >= 2 ? 
           monthlyTrends[monthlyTrends.length - 1].applications > monthlyTrends[monthlyTrends.length - 2].applications ? 'growing' : 'declining' : 'stable'
       },

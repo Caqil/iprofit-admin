@@ -63,35 +63,34 @@ export default function DepositsPage() {
   const [dateRange, setDateRange] = useState<{ from?: Date; to?: Date }>({});
 
   // Apply filters based on active tab and search
-  const appliedFilters = useMemo(
-    () => {
-      // Define PaymentGateway type values
-      type PaymentGateway = "CoinGate" | "UddoktaPay" | "Manual" | "System";
-      let gateway: PaymentGateway | undefined = filters.gateway as PaymentGateway | undefined;
+  const appliedFilters = useMemo(() => {
+    // Define PaymentGateway type values
+    type PaymentGateway = "CoinGate" | "UddoktaPay" | "Manual" | "System";
+    let gateway: PaymentGateway | undefined = filters.gateway as
+      | PaymentGateway
+      | undefined;
 
-      if (activeTab === "manual") {
-        gateway = "Manual";
-      } else if (activeTab === "automatic") {
-        // If your backend supports filtering by multiple gateways, you may need to adjust the API and types.
-        // For now, only allow one gateway at a time, or remove the gateway filter for "automatic".
-        // Example: Remove gateway filter for "automatic" tab, or pick one.
-        gateway = undefined;
-      }
+    if (activeTab === "manual") {
+      gateway = "Manual";
+    } else if (activeTab === "automatic") {
+      // If your backend supports filtering by multiple gateways, you may need to adjust the API and types.
+      // For now, only allow one gateway at a time, or remove the gateway filter for "automatic".
+      // Example: Remove gateway filter for "automatic" tab, or pick one.
+      gateway = undefined;
+    }
 
-      return {
-        ...filters,
-        type: "deposit" as const,
-        search: searchTerm || undefined,
-        dateFrom: dateRange.from?.toISOString(),
-        dateTo: dateRange.to?.toISOString(),
-        ...(activeTab === "pending" && { status: "Pending" as const }),
-        ...(activeTab === "approved" && { status: "Approved" as const }),
-        ...(activeTab === "rejected" && { status: "Rejected" as const }),
-        ...(gateway && { gateway }),
-      };
-    },
-    [filters, searchTerm, dateRange, activeTab]
-  );
+    return {
+      ...filters,
+      type: "deposit" as const,
+      search: searchTerm || undefined,
+      dateFrom: dateRange.from?.toISOString(),
+      dateTo: dateRange.to?.toISOString(),
+      ...(activeTab === "pending" && { status: "Pending" as const }),
+      ...(activeTab === "approved" && { status: "Approved" as const }),
+      ...(activeTab === "rejected" && { status: "Rejected" as const }),
+      ...(gateway && { gateway }),
+    };
+  }, [filters, searchTerm, dateRange, activeTab]);
 
   // Use transactions hook
   const {

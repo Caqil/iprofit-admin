@@ -95,6 +95,7 @@ export interface TransactionApproval {
   reason?: string;
   adminNotes?: string;
   notifyUser?: boolean;
+  transactionType?: 'deposit' | 'withdrawal'; // Add this field
 }
 
 export interface BulkTransactionAction {
@@ -102,4 +103,13 @@ export interface BulkTransactionAction {
   action: 'approve' | 'reject' | 'flag' | 'unflag' | 'export';
   reason?: string;
   adminNotes?: string;
+}
+
+// For bulk operations
+export interface BulkTransactionApproval {
+  transactionIds: string[];
+  action: 'approve' | 'reject';
+  reason?: string;
+  adminNotes?: string;
+  transactionType: 'deposit' | 'withdrawal'; // Required for bulk operations
 }

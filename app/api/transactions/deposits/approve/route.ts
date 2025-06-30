@@ -74,155 +74,108 @@ async function handleSingleApproval(
 ): Promise<NextResponse> {
   const { transactionId, action, reason, adminNotes, adjustedAmount, bonusAmount } = data;
 
-  // Start MongoDB session for transaction
-  const session = await mongoose.startSession();
-  
   try {
-    await session.withTransaction(async () => {
-      // Find the deposit transaction
-      const transaction = await Transaction.findOne({
-        _id: new mongoose.Types.ObjectId(transactionId),
-        type: 'deposit',
-        status: { $in: ['Pending', 'Processing'] }
-      }).populate('userId').session(session);
+    // Find the deposit transaction
+    const transaction = await Transaction.findOne({
+      _id: new mongoose.Types.ObjectId(transactionId),
+      type: 'deposit',
+      status: { $in: ['Pending', 'Processing'] }
+    }).populate('userId');
 
-      if (!transaction) {
-        throw new Error('Deposit transaction not found or already processed');
+    if (!transaction) {
+      return apiHandler.notFound('Deposit transaction not found or already processed');
+    }
+
+    const user = transaction.userId as any;
+
+    // Update transaction status and details
+    const updateData: any = {
+      status: action === 'approve' ? 'Approved' : 'Rejected',
+      approvedBy: new mongoose.Types.ObjectId(adminId),
+      processedAt: new Date(),
+      rejectionReason: action === 'reject' ? reason : undefined,
+      adminNotes: adminNotes || transaction.adminNotes
+    };
+
+    // Handle amount adjustment if provided for approval
+    let finalAmount = transaction.amount;
+    if (action === 'approve' && adjustedAmount !== undefined && adjustedAmount !== transaction.amount) {
+      if (adjustedAmount < 0) {
+        return apiHandler.badRequest('Adjusted amount cannot be negative');
       }
+      finalAmount = adjustedAmount;
+      updateData.amount = adjustedAmount;
+      updateData.netAmount = adjustedAmount - transaction.fees;
+    }
 
-      const user = transaction.userId as any;
+    // Update the transaction
+    const updatedTransaction = await Transaction.findByIdAndUpdate(
+      transaction._id,
+      updateData,
+      { new: true }
+    ).populate('userId', 'name email');
 
-      // Update transaction status and details
-      const updateData: any = {
-        status: action === 'approve' ? 'Approved' : 'Rejected',
-        approvedBy: new mongoose.Types.ObjectId(adminId),
-        processedAt: new Date(),
-        rejectionReason: action === 'reject' ? reason : undefined
-      };
-
-      // Handle amount adjustment if provided
-      if (action === 'approve' && adjustedAmount !== undefined && adjustedAmount !== transaction.amount) {
-        updateData.amount = adjustedAmount;
-        updateData.netAmount = adjustedAmount - transaction.fees;
-        updateData.metadata = {
-          ...transaction.metadata,
-          originalAmount: transaction.amount,
-          adjustedBy: adminId,
-          adjustmentReason: reason || 'Amount adjusted during approval'
-        };
-      }
-
-      await Transaction.findByIdAndUpdate(transaction._id, updateData, { session });
-
-      // Handle approval actions
-      if (action === 'approve') {
-        const finalAmount = adjustedAmount || transaction.netAmount;
-        let totalCreditAmount = finalAmount;
-
-        // Add bonus if provided
-        if (bonusAmount && bonusAmount > 0) {
-          totalCreditAmount += bonusAmount;
-          
-          // Create bonus transaction
-          await Transaction.create([{
-            userId: transaction.userId,
-            type: 'bonus',
-            amount: bonusAmount,
-            currency: transaction.currency,
-            gateway: 'System',
-            status: 'Approved',
-            transactionId: `BONUS-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
-            description: `Deposit bonus for transaction ${transaction.transactionId}`,
-            fees: 0,
-            netAmount: bonusAmount,
-            approvedBy: new mongoose.Types.ObjectId(adminId),
-            processedAt: new Date(),
-            metadata: {
-              relatedTransaction: transaction._id,
-              bonusType: 'deposit_bonus'
-            }
-          }], { session });
-        }
-
-        // Update user balance
-        await User.findByIdAndUpdate(
-          transaction.userId,
-          { $inc: { balance: totalCreditAmount } },
-          { session }
-        );
-
-        // Check for referral bonus if this is user's first deposit
-        const userDeposits = await Transaction.countDocuments({
-          userId: transaction.userId,
-          type: 'deposit',
-          status: 'Approved',
-          _id: { $ne: transaction._id }
-        }).session(session);
-
-        if (userDeposits === 0 && user.referredBy) {
-          // Create referral bonus for the referrer
-          const referralBonus = Math.min(finalAmount * 0.1, 100); // 10% up to 100 units
-          
-          await Transaction.create([{
-            userId: user.referredBy,
-            type: 'bonus',
-            amount: referralBonus,
-            currency: transaction.currency,
-            gateway: 'System',
-            status: 'Approved',
-            transactionId: `REF-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
-            description: `Referral bonus for ${user.name}'s first deposit`,
-            fees: 0,
-            netAmount: referralBonus,
-            approvedBy: new mongoose.Types.ObjectId(adminId),
-            processedAt: new Date(),
-            metadata: {
-              referralTransaction: transaction._id,
-              referredUserId: transaction.userId,
-              bonusType: 'referral_bonus'
-            }
-          }], { session });
-
-          // Update referrer balance
-          await User.findByIdAndUpdate(
-            user.referredBy,
-            { $inc: { balance: referralBonus } },
-            { session }
-          );
-        }
-      }
-
-      // Log audit trail
-      await AuditLog.create([{
-        userId: adminId,
-        userType: 'admin',
-        action: `deposit.${action}`,
-        resource: 'Transaction',
-        resourceId: transaction._id,
-        details: {
-          transactionId: transaction.transactionId,
-          amount: adjustedAmount || transaction.amount,
-          originalAmount: transaction.amount,
+    // Handle user balance updates for approved deposits
+    if (action === 'approve') {
+      let balanceIncrease = finalAmount;
+      
+      // Add bonus amount if provided
+      if (bonusAmount && bonusAmount > 0) {
+        balanceIncrease += bonusAmount;
+        
+        // Create bonus transaction record
+        await Transaction.create({
+          userId: user._id,
+          type: 'bonus',
+          amount: bonusAmount,
           currency: transaction.currency,
-          gateway: transaction.gateway,
-          targetUserId: transaction.userId,
-          reason,
-          adminNotes,
-          bonusAmount
-        },
-        ipAddress: apiHandler.getClientIP(),
-        userAgent: apiHandler.getQueryParams().get('user-agent') || undefined,
-        status: 'Success'
-      }], { session });
+          gateway: 'System',
+          status: 'Approved',
+          description: `Deposit bonus for transaction ${transaction.transactionId}`,
+          transactionId: `BONUS-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          fees: 0,
+          netAmount: bonusAmount,
+          approvedBy: new mongoose.Types.ObjectId(adminId),
+          processedAt: new Date(),
+          metadata: {
+            relatedTransactionId: transaction._id.toString(),
+            bonusType: 'deposit_bonus'
+          }
+        });
+      }
+
+      // Update user balance
+      await User.findByIdAndUpdate(
+        user._id,
+        { $inc: { balance: balanceIncrease } }
+      );
+    }
+
+    // Create audit log
+    await AuditLog.create({
+      adminId: new mongoose.Types.ObjectId(adminId),
+      action: `transactions.${action}`,
+      entity: 'Transaction',
+      entityId: transaction._id.toString(),
+      oldData: { status: transaction.status },
+      newData: { status: updateData.status },
+      changes: [{
+        field: 'status',
+        oldValue: transaction.status,
+        newValue: updateData.status
+      }],
+      ipAddress: apiHandler.getClientIP(),
+      userAgent: 'deposit-approval',
+      status: 'Success',
+      severity: transaction.amount >= 10000 ? 'High' : 'Medium',
+      metadata: {
+        adjustedAmount: adjustedAmount !== transaction.amount ? adjustedAmount : undefined,
+        bonusAmount: bonusAmount || undefined,
+        reason
+      }
     });
 
-    // Send notification email (outside transaction)
-    const updatedTransaction = await Transaction.findById(transactionId)
-      .populate('userId', 'name email')
-      .populate('approvedBy', 'name email');
-
-    const user = updatedTransaction!.userId as any;
-    
+    // Send notification email
     try {
       if (action === 'approve') {
         await sendEmail({
@@ -231,10 +184,11 @@ async function handleSingleApproval(
           templateId: 'deposit-approved',
           variables: {
             userName: user.name,
-            amount: updatedTransaction!.amount,
+            amount: finalAmount,
             currency: updatedTransaction!.currency,
             transactionId: updatedTransaction!.transactionId,
-            bonusAmount: bonusAmount || 0
+            bonusAmount: bonusAmount || 0,
+            totalCredited: finalAmount + (bonusAmount || 0)
           }
         });
       } else {
@@ -261,12 +215,15 @@ async function handleSingleApproval(
       message: `Deposit ${action}d successfully`
     });
 
-  } finally {
-    await session.endSession();
+  } catch (error) {
+    console.error('Single deposit approval error:', error);
+    return apiHandler.handleError(error);
   }
 }
 
+
 // Handle batch approval
+
 async function handleBatchApproval(
   apiHandler: ApiHandler, 
   data: z.infer<typeof batchApprovalSchema>, 
@@ -274,91 +231,136 @@ async function handleBatchApproval(
 ): Promise<NextResponse> {
   const { transactionIds, action, reason, adminNotes } = data;
 
-  const session = await mongoose.startSession();
   const results = {
     successful: [] as string[],
     failed: [] as { id: string; error: string }[]
   };
 
   try {
-    await session.withTransaction(async () => {
-      for (const transactionId of transactionIds) {
-        try {
-          // Find and validate transaction
-          const transaction = await Transaction.findOne({
-            _id: new mongoose.Types.ObjectId(transactionId),
-            type: 'deposit',
-            status: { $in: ['Pending', 'Processing'] }
-          }).populate('userId').session(session);
+    // Process each transaction individually (without session)
+    for (const transactionId of transactionIds) {
+      try {
+        // Find and validate transaction
+        const transaction = await Transaction.findOne({
+          _id: new mongoose.Types.ObjectId(transactionId),
+          type: 'deposit',
+          status: { $in: ['Pending', 'Processing'] }
+        }).populate('userId');
 
-          if (!transaction) {
-            results.failed.push({ 
-              id: transactionId, 
-              error: 'Transaction not found or already processed' 
-            });
-            continue;
-          }
-
-          // Update transaction
-          await Transaction.findByIdAndUpdate(
-            transaction._id,
-            {
-              status: action === 'approve' ? 'Approved' : 'Rejected',
-              approvedBy: new mongoose.Types.ObjectId(adminId),
-              processedAt: new Date(),
-              rejectionReason: action === 'reject' ? reason : undefined
-            },
-            { session }
-          );
-
-          // Update user balance if approved
-          if (action === 'approve') {
-            await User.findByIdAndUpdate(
-              transaction.userId,
-              { $inc: { balance: transaction.netAmount } },
-              { session }
-            );
-          }
-
-          // Log audit
-          await AuditLog.create([{
-            userId: adminId,
-            userType: 'admin',
-            action: `deposit.${action}.batch`,
-            resource: 'Transaction',
-            resourceId: transaction._id,
-            details: {
-              transactionId: transaction.transactionId,
-              amount: transaction.amount,
-              currency: transaction.currency,
-              targetUserId: transaction.userId,
-              reason,
-              adminNotes,
-              batchOperation: true
-            },
-            ipAddress: apiHandler.getClientIP(),
-            status: 'Success'
-          }], { session });
-
-          results.successful.push(transactionId);
-
-        } catch (error) {
-          console.error(`Batch approval failed for transaction ${transactionId}:`, error);
+        if (!transaction) {
           results.failed.push({ 
             id: transactionId, 
-            error: error instanceof Error ? error.message : 'Unknown error' 
+            error: 'Transaction not found or already processed' 
           });
+          continue;
         }
+
+        const user = transaction.userId as any;
+
+        // Update transaction
+        const updatedTransaction = await Transaction.findByIdAndUpdate(
+          transaction._id,
+          {
+            status: action === 'approve' ? 'Approved' : 'Rejected',
+            approvedBy: new mongoose.Types.ObjectId(adminId),
+            processedAt: new Date(),
+            rejectionReason: action === 'reject' ? reason : undefined,
+            adminNotes: adminNotes || transaction.adminNotes
+          },
+          { new: true }
+        );
+
+        if (!updatedTransaction) {
+          results.failed.push({ 
+            id: transactionId, 
+            error: 'Failed to update transaction' 
+          });
+          continue;
+        }
+
+        // Handle balance update for approved deposits
+        if (action === 'approve') {
+          await User.findByIdAndUpdate(
+            user._id,
+            { $inc: { balance: transaction.amount } }
+          );
+        }
+
+        results.successful.push(transactionId);
+
+        // Send individual notification emails (optional - you might want to batch these)
+        try {
+          if (action === 'approve') {
+            await sendEmail({
+              to: user.email,
+              subject: 'Deposit Approved',
+              templateId: 'deposit-approved',
+              variables: {
+                userName: user.name,
+                amount: transaction.amount,
+                currency: transaction.currency,
+                transactionId: transaction.transactionId,
+                bonusAmount: 0,
+                totalCredited: transaction.amount
+              }
+            });
+          } else {
+            await sendEmail({
+              to: user.email,
+              subject: 'Deposit Rejected',
+              templateId: 'deposit-rejected',
+              variables: {
+                userName: user.name,
+                amount: transaction.amount,
+                currency: transaction.currency,
+                transactionId: transaction.transactionId,
+                reason: reason || 'No specific reason provided'
+              }
+            });
+          }
+        } catch (emailError) {
+          console.error(`Failed to send email for transaction ${transactionId}:`, emailError);
+          // Don't fail the batch operation for email errors
+        }
+
+      } catch (transactionError) {
+        console.error(`Error processing transaction ${transactionId}:`, transactionError);
+        results.failed.push({ 
+          id: transactionId, 
+          error: transactionError instanceof Error ? transactionError.message : 'Unknown error' 
+        });
       }
+    }
+
+    // Create batch audit log
+    await AuditLog.create({
+      adminId: new mongoose.Types.ObjectId(adminId),
+      action: `transactions.batch_${action}`,
+      entity: 'Transaction',
+      metadata: {
+        transactionIds,
+        batchSize: transactionIds.length,
+        successfulCount: results.successful.length,
+        failedCount: results.failed.length,
+        reason,
+        adminNotes,
+        successfulIds: results.successful,
+        failedIds: results.failed.map(f => f.id)
+      },
+      ipAddress: apiHandler.getClientIP(),
+      userAgent: 'batch-operation',
+      status: 'Success',
+      severity: transactionIds.length >= 10 ? 'High' : 'Medium'
     });
 
     return apiHandler.success({
       results,
-      message: `Batch ${action} completed. ${results.successful.length} successful, ${results.failed.length} failed.`
+      message: `Batch deposit ${action} completed. ${results.successful.length} successful, ${results.failed.length} failed.`
     });
 
-  } finally {
-    await session.endSession();
+  } catch (error) {
+    console.error('Batch deposit approval error:', error);
+    return apiHandler.handleError(error);
   }
 }
 

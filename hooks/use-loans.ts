@@ -37,7 +37,8 @@ interface LoansHookReturn {
 
 export function useLoans(
   filters?: LoanFilter,
-  pagination?: PaginationParams
+  pagination?: PaginationParams,
+  analyticsPeriod: 'today' | 'week' | 'month' | 'quarter' | 'year' | 'all_time' = 'month'
 ): LoansHookReturn {
   const queryClient = useQueryClient();
 
@@ -81,13 +82,19 @@ export function useLoans(
     retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 30000)
   });
 
-  // Loan analytics query
+  // Loan analytics query - NOW WITH REQUIRED PERIOD PARAMETER
   const analyticsQuery = useQuery({
-    queryKey: ['loans', 'analytics'],
+    queryKey: ['loans', 'analytics', analyticsPeriod],
     queryFn: async (): Promise<LoanAnalytics> => {
-      const response = await fetch('/api/loans/analytics');
+      // Add the required period parameter
+      const params = new URLSearchParams({
+        period: analyticsPeriod
+      });
+
+      const response = await fetch(`/api/loans/analytics?${params}`);
       if (!response.ok) {
-        throw new Error('Failed to fetch loan analytics');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to fetch loan analytics');
       }
 
       const result: ApiResponseWrapper<LoanAnalytics> = await response.json();
@@ -113,18 +120,18 @@ export function useLoans(
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Failed to create loan application');
+        throw new Error(errorData.message || 'Failed to create loan');
       }
 
-      const result: ApiResponseWrapper<{ loan: Loan }> = await response.json();
+      const result: ApiResponseWrapper<Loan> = await response.json();
       
       if (!result.success) {
         throw new Error(result.message || 'Failed to create loan');
       }
 
-      return result.data.loan;
+      return result.data;
     },
-    onSuccess: (loan) => {
+    onSuccess: () => {
       toast.success('Loan application created successfully');
       queryClient.invalidateQueries({ queryKey: ['loans'] });
       queryClient.invalidateQueries({ queryKey: ['loans', 'analytics'] });
@@ -148,18 +155,17 @@ export function useLoans(
         throw new Error(errorData.message || 'Failed to update loan');
       }
 
-      const result: ApiResponseWrapper<{ loan: Loan }> = await response.json();
+      const result: ApiResponseWrapper<Loan> = await response.json();
       
       if (!result.success) {
         throw new Error(result.message || 'Failed to update loan');
       }
 
-      return result.data.loan;
+      return result.data;
     },
-    onSuccess: (loan) => {
+    onSuccess: () => {
       toast.success('Loan updated successfully');
       queryClient.invalidateQueries({ queryKey: ['loans'] });
-      queryClient.invalidateQueries({ queryKey: ['loans', loan._id] });
       queryClient.invalidateQueries({ queryKey: ['loans', 'analytics'] });
     },
     onError: (error) => {
@@ -197,17 +203,16 @@ export function useLoans(
 
   // Approve loan mutation
   const approveLoanMutation = useMutation({
-    mutationFn: async (data: LoanApprovalRequest) => {
+    mutationFn: async (data: LoanApprovalRequest): Promise<void> => {
       const response = await fetch(`/api/loans/${data.loanId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           status: 'Approved',
           interestRate: data.interestRate,
-          metadata: {
-            conditions: data.conditions,
-            adminNotes: data.adminNotes
-          }
+          approvedAt: new Date().toISOString(),
+          approvalNotes: data.adminNotes,
+          conditions: data.conditions
         })
       });
 
@@ -221,8 +226,6 @@ export function useLoans(
       if (!result.success) {
         throw new Error(result.message || 'Failed to approve loan');
       }
-
-      return result.data;
     },
     onSuccess: () => {
       toast.success('Loan approved successfully');
@@ -420,13 +423,16 @@ export function useLoanRepayments(loanId: string) {
   };
 }
 
-// Hook for user's own loans (for user portal)
-export function useUserLoans(filters?: Partial<LoanFilter>) {
+// Hook for user's own loans (for user portal) - also fixed with period parameter
+export function useUserLoans(
+  filters?: LoanFilter,
+  analyticsPeriod: 'today' | 'week' | 'month' | 'quarter' | 'year' | 'all_time' = 'month'
+) {
   const queryClient = useQueryClient();
 
   const userLoansQuery = useQuery({
     queryKey: ['user-loans', filters],
-    queryFn: async (): Promise<Loan[]> => {
+    queryFn: async () => {
       const params = new URLSearchParams();
       
       if (filters) {
@@ -439,58 +445,54 @@ export function useUserLoans(filters?: Partial<LoanFilter>) {
 
       const response = await fetch(`/api/user/loans?${params}`);
       if (!response.ok) {
-        throw new Error('Failed to fetch your loans');
-      }
-
-      const result: ApiResponseWrapper<{ loans: Loan[] }> = await response.json();
-      
-      if (!result.success) {
-        throw new Error(result.message || 'Failed to fetch loans');
-      }
-
-      return result.data.loans;
-    },
-    staleTime: 2 * 60 * 1000, // 2 minutes
-    retry: 2
-  });
-
-  // Submit loan application mutation
-  const submitApplicationMutation = useMutation({
-    mutationFn: async (data: any) => {
-      const response = await fetch('/api/loans/applications', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Failed to submit loan application');
+        throw new Error('Failed to fetch user loans');
       }
 
       const result: ApiResponseWrapper<any> = await response.json();
       
       if (!result.success) {
-        throw new Error(result.message || 'Failed to submit application');
+        throw new Error(result.message || 'Failed to fetch user loans');
       }
 
       return result.data;
     },
-    onSuccess: () => {
-      toast.success('Loan application submitted successfully');
-      queryClient.invalidateQueries({ queryKey: ['user-loans'] });
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    retry: 2
+  });
+
+  // User analytics query with period parameter
+  const userAnalyticsQuery = useQuery({
+    queryKey: ['user-loans', 'analytics', analyticsPeriod],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        period: analyticsPeriod
+      });
+
+      const response = await fetch(`/api/user/loans/analytics?${params}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch user loan analytics');
+      }
+
+      const result: ApiResponseWrapper<any> = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to fetch user analytics');
+      }
+
+      return result.data;
     },
-    onError: (error) => {
-      toast.error(`Failed to submit application: ${error.message}`);
-    }
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    retry: 2
   });
 
   return {
-    loans: userLoansQuery.data || [],
-    isLoading: userLoansQuery.isLoading,
-    error: userLoansQuery.error?.message || null,
-    submitApplication: submitApplicationMutation.mutateAsync,
-    isSubmitting: submitApplicationMutation.isPending,
-    refreshLoans: () => queryClient.invalidateQueries({ queryKey: ['user-loans'] })
+    loans: userLoansQuery.data?.loans || [],
+    analytics: userAnalyticsQuery.data,
+    isLoading: userLoansQuery.isLoading || userAnalyticsQuery.isLoading,
+    error: userLoansQuery.error?.message || userAnalyticsQuery.error?.message || null,
+    refetch: () => {
+      userLoansQuery.refetch();
+      userAnalyticsQuery.refetch();
+    }
   };
 }

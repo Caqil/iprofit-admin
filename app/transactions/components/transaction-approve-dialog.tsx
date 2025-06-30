@@ -1,6 +1,13 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Transaction } from "@/types";
@@ -16,7 +23,7 @@ interface TransactionApprovalDialogProps {
     action: "approve" | "reject";
     reason?: string;
     adminNotes?: string;
-  }) => void;
+  }) => Promise<void>;
 }
 
 export function TransactionApprovalDialog({
@@ -28,15 +35,36 @@ export function TransactionApprovalDialog({
 }: TransactionApprovalDialogProps) {
   const [reason, setReason] = useState("");
   const [adminNotes, setAdminNotes] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleConfirm = () => {
-    onConfirm({
-      action,
-      reason: reason || undefined,
-      adminNotes: adminNotes || undefined,
-    });
-    setReason("");
-    setAdminNotes("");
+  const handleConfirm = async () => {
+    setIsLoading(true);
+
+    try {
+      await onConfirm({
+        action,
+        reason: reason || undefined,
+        adminNotes: adminNotes || undefined,
+      });
+
+      // Only close dialog and reset state after successful completion
+      setReason("");
+      setAdminNotes("");
+      onOpenChange(false);
+    } catch (error) {
+      console.error("Transaction approval failed:", error);
+      // Don't close dialog on error - let user try again or cancel manually
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleCancel = () => {
+    if (!isLoading) {
+      setReason("");
+      setAdminNotes("");
+      onOpenChange(false);
+    }
   };
 
   if (!transaction) return null;
@@ -89,6 +117,7 @@ export function TransactionApprovalDialog({
                 onChange={(e) => setReason(e.target.value)}
                 placeholder="Please provide a reason for rejection..."
                 required
+                disabled={isLoading}
               />
             </div>
           )}
@@ -100,20 +129,25 @@ export function TransactionApprovalDialog({
               value={adminNotes}
               onChange={(e) => setAdminNotes(e.target.value)}
               placeholder="Additional notes..."
+              disabled={isLoading}
             />
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={handleCancel} disabled={isLoading}>
             Cancel
           </Button>
           <Button
             onClick={handleConfirm}
             variant={action === "approve" ? "default" : "destructive"}
-            disabled={action === "reject" && !reason}
+            disabled={(action === "reject" && !reason) || isLoading}
           >
-            {action === "approve" ? "Approve" : "Reject"} Transaction
+            {isLoading
+              ? action === "approve"
+                ? "Approving..."
+                : "Rejecting..."
+              : (action === "approve" ? "Approve" : "Reject") + " Transaction"}
           </Button>
         </DialogFooter>
       </DialogContent>

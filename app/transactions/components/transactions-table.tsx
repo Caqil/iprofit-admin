@@ -601,12 +601,27 @@ export function TransactionsTable({
             onOpenChange={setShowApprovalDialog}
             onConfirm={async (data) => {
               if (!selectedTransaction) return;
-              await onApprove({
-                transactionId: selectedTransaction._id,
-                action: data.action,
-                reason: data.reason,
-                adminNotes: data.adminNotes,
-              });
+
+              try {
+                await onApprove({
+                  transactionId: selectedTransaction._id,
+                  action: data.action,
+                  reason: data.reason,
+                  adminNotes: data.adminNotes,
+                  // Add transaction type for our updated hook
+                  transactionType: selectedTransaction.type as
+                    | "deposit"
+                    | "withdrawal",
+                  notifyUser: true,
+                });
+
+                // Clear selection after successful approval
+                setSelectedTransaction(null);
+                setShowApprovalDialog(false);
+              } catch (error) {
+                // Error handling is done in the dialog component
+                throw error;
+              }
             }}
           />
         </>

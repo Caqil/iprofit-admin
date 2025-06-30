@@ -72,8 +72,6 @@ async function approveWithdrawalHandler(request: NextRequest): Promise<NextRespo
     return apiHandler.handleError(error);
   }
 }
-
-// Handle single withdrawal approval
 async function handleSingleWithdrawalApproval(
   apiHandler: ApiHandler, 
   data: z.infer<typeof withdrawalApprovalSchema>, 
@@ -82,147 +80,99 @@ async function handleSingleWithdrawalApproval(
 ): Promise<NextResponse> {
   const { transactionId, action, reason, adminNotes, adjustedAmount, paymentReference, estimatedDelivery } = data;
 
-  // Start MongoDB session for transaction
-  const session = await mongoose.startSession();
-  
   try {
-    await session.withTransaction(async () => {
-      // Find the withdrawal transaction
-      const transaction = await Transaction.findOne({
-        _id: new mongoose.Types.ObjectId(transactionId),
-        type: 'withdrawal',
-        status: 'Pending'
-      }).populate('userId').session(session);
+    // Find the withdrawal transaction
+    const transaction = await Transaction.findOne({
+      _id: new mongoose.Types.ObjectId(transactionId),
+      type: 'withdrawal',
+      status: 'Pending'
+    }).populate('userId');
 
-      if (!transaction) {
-        throw new Error('Withdrawal transaction not found or already processed');
+    if (!transaction) {
+      return apiHandler.notFound('Withdrawal transaction not found or already processed');
+    }
+
+    const user = transaction.userId as any;
+
+    // Calculate refund amount if rejected
+    let refundAmount = 0;
+    if (action === 'reject') {
+      refundAmount = transaction.amount; // Full refund including fees
+    }
+
+    // Handle amount adjustment if provided for approval
+    let finalAmount = transaction.amount;
+    let finalNetAmount = transaction.netAmount;
+    let adjustmentRefund = 0;
+
+    if (action === 'approve' && adjustedAmount !== undefined && adjustedAmount !== transaction.amount) {
+      if (adjustedAmount > transaction.amount) {
+        return apiHandler.badRequest('Adjusted amount cannot be greater than original amount');
       }
+      
+      adjustmentRefund = transaction.amount - adjustedAmount;
+      finalAmount = adjustedAmount;
+      finalNetAmount = adjustedAmount - transaction.fees;
+    }
 
-      const user = transaction.userId as any;
+    // Update transaction status and details
+    const updateData: any = {
+      status: action === 'approve' ? 'Approved' : 'Rejected',
+      approvedBy: new mongoose.Types.ObjectId(adminId),
+      processedAt: new Date(),
+      rejectionReason: action === 'reject' ? reason : undefined,
+      adminNotes: adminNotes || transaction.adminNotes,
+      gatewayResponse: action === 'approve' ? {
+        paymentReference: paymentReference || `PAY-${Date.now()}`,
+        processedBy: adminId,
+        estimatedDelivery: estimatedDelivery || new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+        adjustedAmount: adjustedAmount !== undefined ? adjustedAmount : transaction.amount
+      } : undefined
+    };
 
-      // Calculate refund amount if rejected
-      let refundAmount = 0;
-      if (action === 'reject') {
-        refundAmount = transaction.amount; // Full refund including fees
-      }
+    // If amount was adjusted, update the amount fields
+    if (adjustedAmount !== undefined && action === 'approve') {
+      updateData.amount = finalAmount;
+      updateData.netAmount = finalNetAmount;
+    }
 
-      // Handle amount adjustment if provided for approval
-      let finalAmount = transaction.amount;
-      let finalNetAmount = transaction.netAmount;
-      let adjustmentRefund = 0;
+    // Update the transaction
+    const updatedTransaction = await Transaction.findByIdAndUpdate(
+      transaction._id,
+      updateData,
+      { new: true }
+    ).populate('userId', 'name email');
 
-      if (action === 'approve' && adjustedAmount !== undefined && adjustedAmount !== transaction.amount) {
-        if (adjustedAmount > transaction.amount) {
-          throw new Error('Adjusted amount cannot be greater than original amount');
-        }
-        
-        adjustmentRefund = transaction.amount - adjustedAmount;
-        finalAmount = adjustedAmount;
-        finalNetAmount = adjustedAmount - transaction.fees;
-      }
+    // Handle user balance updates
+    if (action === 'reject' || adjustmentRefund > 0) {
+      const refundTotal = action === 'reject' ? refundAmount : adjustmentRefund;
+      
+      await User.findByIdAndUpdate(
+        user._id,
+        { $inc: { balance: refundTotal } }
+      );
+    }
 
-      // Update transaction status and details
-      const updateData: any = {
-        status: action === 'approve' ? 'Approved' : 'Rejected',
-        approvedBy: new mongoose.Types.ObjectId(adminId),
-        processedAt: new Date(),
-        rejectionReason: action === 'reject' ? reason : undefined
-      };
-
-      // Add payment details for approved withdrawals
-      if (action === 'approve') {
-        updateData.gatewayResponse = {
-          paymentReference,
-          estimatedDelivery,
-          processedBy: adminId,
-          processingMethod: transaction.metadata?.withdrawalMethod
-        };
-
-        if (adjustedAmount !== undefined) {
-          updateData.amount = finalAmount;
-          updateData.netAmount = finalNetAmount;
-          updateData.metadata = {
-            ...transaction.metadata,
-            originalAmount: transaction.amount,
-            adjustedBy: adminId,
-            adjustmentReason: reason || 'Amount adjusted during approval',
-            adjustmentRefund
-          };
-        }
-      }
-
-      await Transaction.findByIdAndUpdate(transaction._id, updateData, { session });
-
-      // Handle balance adjustments
-      if (action === 'reject') {
-        // Refund the full amount to user balance
-        await User.findByIdAndUpdate(
-          transaction.userId,
-          { $inc: { balance: refundAmount } },
-          { session }
-        );
-      } else if (action === 'approve' && adjustmentRefund > 0) {
-        // Refund the adjustment amount
-        await User.findByIdAndUpdate(
-          transaction.userId,
-          { $inc: { balance: adjustmentRefund } },
-          { session }
-        );
-      }
-
-      // Log audit trail
-      await AuditLog.create([{
-        userId: adminId,
-        userType: 'admin',
-        action: `withdrawal.${action}`,
-        resource: 'Transaction',
-        resourceId: transaction._id,
-        details: {
-          transactionId: transaction.transactionId,
-          amount: finalAmount,
-          originalAmount: transaction.amount,
-          currency: transaction.currency,
-          withdrawalMethod: transaction.metadata?.withdrawalMethod,
-          targetUserId: transaction.userId,
-          reason,
-          adminNotes,
-          paymentReference,
-          estimatedDelivery,
-          refundAmount: action === 'reject' ? refundAmount : adjustmentRefund
-        },
-        ipAddress: apiHandler.getClientIP(),
-        userAgent: request.headers.get('user-agent') || undefined,
-        status: 'Success'
-      }], { session });
-
-      // Create a system transaction for tracking if this is a large withdrawal
-      if (action === 'approve' && finalAmount >= 10000) {
-        await AuditLog.create([{
-          userId: adminId,
-          userType: 'admin',
-          action: 'withdrawal.large_amount_approved',
-          resource: 'Transaction',
-          resourceId: transaction._id,
-          details: {
-            amount: finalAmount,
-            currency: transaction.currency,
-            requiresCompliance: true,
-            approvedBy: adminId
-          },
-          ipAddress: apiHandler.getClientIP(),
-          status: 'Success',
-          severity: 'High'
-        }], { session });
-      }
+    // Create audit log
+    await AuditLog.create({
+      adminId: new mongoose.Types.ObjectId(adminId),
+      action: `transactions.${action}`,
+      entity: 'Transaction',
+      entityId: transaction._id.toString(),
+      oldData: { status: transaction.status },
+      newData: { status: updateData.status },
+      changes: [{
+        field: 'status',
+        oldValue: transaction.status,
+        newValue: updateData.status
+      }],
+      ipAddress: apiHandler.getClientIP(),
+      userAgent: request.headers.get('user-agent') || 'unknown',
+      status: 'Success',
+      severity: transaction.amount >= 10000 ? 'High' : 'Medium'
     });
 
-    // Send notification email (outside transaction)
-    const updatedTransaction = await Transaction.findById(transactionId)
-      .populate('userId', 'name email')
-      .populate('approvedBy', 'name email');
-
-    const user = updatedTransaction!.userId as any;
-    
+    // Send notification email
     try {
       if (action === 'approve') {
         await sendEmail({
@@ -231,12 +181,11 @@ async function handleSingleWithdrawalApproval(
           templateId: 'withdrawal-approved',
           variables: {
             userName: user.name,
-            amount: updatedTransaction!.amount,
+            amount: finalAmount,
             currency: updatedTransaction!.currency,
             transactionId: updatedTransaction!.transactionId,
-            withdrawalMethod: updatedTransaction!.metadata?.withdrawalMethod,
-            paymentReference: paymentReference || 'Will be provided when processed',
-            estimatedDelivery: estimatedDelivery ? new Date(estimatedDelivery).toLocaleDateString() : 'Within 1-3 business days'
+            estimatedDelivery: estimatedDelivery ? 
+              new Date(estimatedDelivery).toLocaleDateString() : 'Within 1-3 business days'
           }
         });
       } else {
@@ -264,8 +213,9 @@ async function handleSingleWithdrawalApproval(
       message: `Withdrawal ${action}d successfully`
     });
 
-  } finally {
-    await session.endSession();
+  } catch (error) {
+    console.error('Single withdrawal approval error:', error);
+    return apiHandler.handleError(error);
   }
 }
 
@@ -277,7 +227,6 @@ async function handleBatchWithdrawalApproval(
 ): Promise<NextResponse> {
   const { transactionIds, action, reason, adminNotes, batchPaymentReference } = data;
 
-  const session = await mongoose.startSession();
   const results = {
     successful: [] as string[],
     failed: [] as { id: string; error: string }[],
@@ -286,108 +235,130 @@ async function handleBatchWithdrawalApproval(
   };
 
   try {
-    await session.withTransaction(async () => {
-      for (const transactionId of transactionIds) {
-        try {
-          // Find and validate transaction
-          const transaction = await Transaction.findOne({
-            _id: new mongoose.Types.ObjectId(transactionId),
-            type: 'withdrawal',
-            status: 'Pending'
-          }).populate('userId').session(session);
+    // Process each transaction individually (without session)
+    for (const transactionId of transactionIds) {
+      try {
+        // Find and validate transaction
+        const transaction = await Transaction.findOne({
+          _id: new mongoose.Types.ObjectId(transactionId),
+          type: 'withdrawal',
+          status: 'Pending'
+        }).populate('userId');
 
-          if (!transaction) {
-            results.failed.push({ 
-              id: transactionId, 
-              error: 'Transaction not found or already processed' 
-            });
-            continue;
-          }
-
-          // Update transaction
-          await Transaction.findByIdAndUpdate(
-            transaction._id,
-            {
-              status: action === 'approve' ? 'Approved' : 'Rejected',
-              approvedBy: new mongoose.Types.ObjectId(adminId),
-              processedAt: new Date(),
-              rejectionReason: action === 'reject' ? reason : undefined,
-              gatewayResponse: action === 'approve' ? {
-                batchPaymentReference,
-                processedBy: adminId,
-                batchOperation: true,
-                processingMethod: transaction.metadata?.withdrawalMethod
-              } : undefined
-            },
-            { session }
-          );
-
-          // Handle balance adjustments for rejections
-          if (action === 'reject') {
-            await User.findByIdAndUpdate(
-              transaction.userId,
-              { $inc: { balance: transaction.amount } },
-              { session }
-            );
-            results.totalRefunded += transaction.amount;
-          } else {
-            results.totalAmount += transaction.amount;
-          }
-
-          // Log audit
-          await AuditLog.create([{
-            userId: adminId,
-            userType: 'admin',
-            action: `withdrawal.${action}.batch`,
-            resource: 'Transaction',
-            resourceId: transaction._id,
-            details: {
-              transactionId: transaction.transactionId,
-              amount: transaction.amount,
-              currency: transaction.currency,
-              withdrawalMethod: transaction.metadata?.withdrawalMethod,
-              targetUserId: transaction.userId,
-              reason,
-              adminNotes,
-              batchOperation: true,
-              batchPaymentReference
-            },
-            ipAddress: apiHandler.getClientIP(),
-            status: 'Success'
-          }], { session });
-
-          results.successful.push(transactionId);
-
-        } catch (error) {
-          console.error(`Batch withdrawal approval failed for transaction ${transactionId}:`, error);
+        if (!transaction) {
           results.failed.push({ 
             id: transactionId, 
-            error: error instanceof Error ? error.message : 'Unknown error' 
+            error: 'Transaction not found or already processed' 
           });
+          continue;
         }
-      }
 
-      // Create batch operation audit log
-      if (results.successful.length > 0) {
-        await AuditLog.create([{
-          userId: adminId,
-          userType: 'admin',
-          action: `withdrawal.batch_${action}`,
-          resource: 'Transaction',
-          details: {
-            transactionCount: results.successful.length,
-            totalAmount: action === 'approve' ? results.totalAmount : results.totalRefunded,
-            batchPaymentReference,
-            reason,
-            adminNotes,
-            successfulIds: results.successful,
-            failedIds: results.failed.map(f => f.id)
+        const user = transaction.userId as any;
+
+        // Update transaction
+        const updatedTransaction = await Transaction.findByIdAndUpdate(
+          transaction._id,
+          {
+            status: action === 'approve' ? 'Approved' : 'Rejected',
+            approvedBy: new mongoose.Types.ObjectId(adminId),
+            processedAt: new Date(),
+            rejectionReason: action === 'reject' ? reason : undefined,
+            adminNotes: adminNotes || transaction.adminNotes,
+            gatewayResponse: action === 'approve' ? {
+              batchPaymentReference: batchPaymentReference || `BATCH-${Date.now()}`,
+              processedBy: adminId,
+              estimatedDelivery: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()
+            } : undefined
           },
-          ipAddress: apiHandler.getClientIP(),
-          status: 'Success',
-          severity: results.totalAmount >= 50000 ? 'High' : 'Medium' // Flag large batch operations
-        }], { session });
+          { new: true }
+        );
+
+        if (!updatedTransaction) {
+          results.failed.push({ 
+            id: transactionId, 
+            error: 'Failed to update transaction' 
+          });
+          continue;
+        }
+
+        // Handle balance refund for rejected transactions
+        if (action === 'reject') {
+          await User.findByIdAndUpdate(
+            user._id,
+            { $inc: { balance: transaction.amount } }
+          );
+          results.totalRefunded += transaction.amount;
+        } else {
+          results.totalAmount += transaction.amount;
+        }
+
+        results.successful.push(transactionId);
+
+        // Send individual notification emails (optional - you might want to batch these)
+        try {
+          if (action === 'approve') {
+            await sendEmail({
+              to: user.email,
+              subject: 'Withdrawal Approved',
+              templateId: 'withdrawal-approved',
+              variables: {
+                userName: user.name,
+                amount: transaction.amount,
+                currency: transaction.currency,
+                transactionId: transaction.transactionId,
+                estimatedDelivery: 'Within 1-3 business days'
+              }
+            });
+          } else {
+            await sendEmail({
+              to: user.email,
+              subject: 'Withdrawal Rejected',
+              templateId: 'withdrawal-rejected',
+              variables: {
+                userName: user.name,
+                amount: transaction.amount,
+                currency: transaction.currency,
+                transactionId: transaction.transactionId,
+                reason: reason || 'No specific reason provided',
+                refundAmount: transaction.amount
+              }
+            });
+          }
+        } catch (emailError) {
+          console.error(`Failed to send email for transaction ${transactionId}:`, emailError);
+          // Don't fail the batch operation for email errors
+        }
+
+      } catch (transactionError) {
+        console.error(`Error processing transaction ${transactionId}:`, transactionError);
+        results.failed.push({ 
+          id: transactionId, 
+          error: transactionError instanceof Error ? transactionError.message : 'Unknown error' 
+        });
       }
+    }
+
+    // Create batch audit log
+    await AuditLog.create({
+      adminId: new mongoose.Types.ObjectId(adminId),
+      action: `transactions.batch_${action}`,
+      entity: 'Transaction',
+      metadata: {
+        transactionIds,
+        batchSize: transactionIds.length,
+        successfulCount: results.successful.length,
+        failedCount: results.failed.length,
+        totalAmount: action === 'approve' ? results.totalAmount : results.totalRefunded,
+        batchPaymentReference,
+        reason,
+        adminNotes,
+        successfulIds: results.successful,
+        failedIds: results.failed.map(f => f.id)
+      },
+      ipAddress: apiHandler.getClientIP(),
+      userAgent: 'batch-operation',
+      status: 'Success',
+      severity: (action === 'approve' ? results.totalAmount : results.totalRefunded) >= 50000 ? 'High' : 'Medium'
     });
 
     return apiHandler.success({
@@ -400,8 +371,9 @@ async function handleBatchWithdrawalApproval(
       }
     });
 
-  } finally {
-    await session.endSession();
+  } catch (error) {
+    console.error('Batch withdrawal approval error:', error);
+    return apiHandler.handleError(error);
   }
 }
 

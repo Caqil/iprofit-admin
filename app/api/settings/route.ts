@@ -360,10 +360,14 @@ async function bulkUpdateSettingsHandler(request: NextRequest): Promise<NextResp
               userAgent: request.headers.get('user-agent') || 'unknown'
             }], { session });
 
-            updatedSettings.push({
-              ...updatedSetting.toObject(),
-              value: processSettingValue(updatedSetting)
-            });
+            if (updatedSetting) {
+              updatedSettings.push({
+                ...updatedSetting.toObject(),
+                value: processSettingValue(updatedSetting)
+              });
+            } else {
+              errors.push({ key, error: 'Failed to update setting' });
+            }
 
           } catch (error) {
             console.error(`Error updating setting ${settingUpdate.key}:`, error);
