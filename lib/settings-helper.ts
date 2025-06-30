@@ -25,7 +25,7 @@ class SettingsManager {
 
       // Fetch from database
       const setting = await Setting.findOne({ key }).lean();
-      const value = setting?.value ?? fallback;
+      const value = (setting && !Array.isArray(setting)) ? setting.value : fallback;
 
       // Update cache
       this.cache.set(key, value);
@@ -193,177 +193,290 @@ export const getSettingsCacheStats = SettingsManager.getCacheStats.bind(Settings
 export { SettingsManager };
 
 // ============================================================================
-// BUSINESS RULES HELPER - Pre-built functions for common use cases
+// BUSINESS RULES HELPER - Based on actual settings data
 // ============================================================================
 
 export class BusinessRules {
   /**
-   * Get all financial limits
+   * Get system configuration
    */
-  static async getFinancialLimits(): Promise<{
-    minDeposit: number;
-    maxDeposit: number;
-    minWithdrawal: number;
-    maxWithdrawal: number;
-    maxDailyWithdrawal: number;
-    maxMonthlyWithdrawal: number;
+  static async getSystemConfig(): Promise<{
+    appName: string;
+    companyName: string;
+    maintenanceMode: boolean;
+  }> {
+    const settings = await getSettings([
+      'app_name',
+      'company_name',
+      'maintenance_mode'
+    ]);
+
+    return {
+      appName: settings.app_name || 'IProfit Admin',
+      companyName: settings.company_name || 'IProfit Technologies',
+      maintenanceMode: settings.maintenance_mode || false
+    };
+  }
+
+  /**
+   * Get financial configuration
+   */
+  static async getFinancialConfig(): Promise<{
+    primaryCurrency: string;
     usdToBdtRate: number;
-  }> {
-    const settings = await getSettings([
-      'min_deposit',
-      'max_deposit', 
-      'min_withdrawal',
-      'max_withdrawal',
-      'max_daily_withdrawal',
-      'max_monthly_withdrawal',
-      'usd_to_bdt_rate'
-    ]);
-
-    return {
-      minDeposit: settings.min_deposit || 10,
-      maxDeposit: settings.max_deposit || 1000000,
-      minWithdrawal: settings.min_withdrawal || 50,
-      maxWithdrawal: settings.max_withdrawal || 100000,
-      maxDailyWithdrawal: settings.max_daily_withdrawal || 50000,
-      maxMonthlyWithdrawal: settings.max_monthly_withdrawal || 500000,
-      usdToBdtRate: settings.usd_to_bdt_rate || 110
-    };
-  }
-
-  /**
-   * Validate deposit amount
-   */
-  static async validateDeposit(amount: number): Promise<{ valid: boolean; error?: string }> {
-    const { minDeposit, maxDeposit } = await this.getFinancialLimits();
-
-    if (amount < minDeposit) {
-      return { valid: false, error: `Minimum deposit amount is ${minDeposit} BDT` };
-    }
-
-    if (amount > maxDeposit) {
-      return { valid: false, error: `Maximum deposit amount is ${maxDeposit} BDT` };
-    }
-
-    return { valid: true };
-  }
-
-  /**
-   * Validate withdrawal amount
-   */
-  static async validateWithdrawal(amount: number): Promise<{ valid: boolean; error?: string }> {
-    const { minWithdrawal, maxWithdrawal } = await this.getFinancialLimits();
-
-    if (amount < minWithdrawal) {
-      return { valid: false, error: `Minimum withdrawal amount is ${minWithdrawal} BDT` };
-    }
-
-    if (amount > maxWithdrawal) {
-      return { valid: false, error: `Maximum withdrawal amount is ${maxWithdrawal} BDT` };
-    }
-
-    return { valid: true };
-  }
-
-  /**
-   * Calculate withdrawal fees
-   */
-  static async calculateWithdrawalFee(amount: number): Promise<number> {
-    const settings = await getSettings([
-      'withdrawal_fee_percentage',
-      'min_withdrawal_fee',
-      'max_withdrawal_fee'
-    ]);
-
-    const feePercentage = settings.withdrawal_fee_percentage || 0.02;
-    const minFee = settings.min_withdrawal_fee || 10;
-    const maxFee = settings.max_withdrawal_fee || 500;
-
-    let fee = amount * (feePercentage / 100);
-    fee = Math.max(minFee, Math.min(maxFee, fee));
-
-    return fee;
-  }
-
-  /**
-   * Calculate deposit fees
-   */
-  static async calculateDepositFee(amount: number, gateway: string): Promise<number> {
-    const settings = await getSettings([
-      'coingate_fee_percentage',
-      'uddoktapay_fee_percentage',
-      'manual_deposit_fee'
-    ]);
-
-    switch (gateway.toLowerCase()) {
-      case 'coingate':
-        return amount * (settings.coingate_fee_percentage || 0.025);
-      case 'uddoktapay':
-        return amount * (settings.uddoktapay_fee_percentage || 0.035);
-      case 'manual':
-        return settings.manual_deposit_fee || 0;
-      default:
-        return 0;
-    }
-  }
-
-  /**
-   * Convert currency using settings rate
-   */
-  static async convertCurrency(amount: number, from: string, to: string): Promise<number> {
-    if (from === to) return amount;
-
-    const { usdToBdtRate } = await this.getFinancialLimits();
-
-    if (from === 'USD' && to === 'BDT') {
-      return amount * usdToBdtRate;
-    }
-
-    if (from === 'BDT' && to === 'USD') {
-      return amount / usdToBdtRate;
-    }
-
-    throw new Error(`Unsupported currency conversion: ${from} to ${to}`);
-  }
-
-  /**
-   * Get bonus amounts
-   */
-  static async getBonusAmounts(): Promise<{
+    minDeposit: number;
     signupBonus: number;
-    referralBonus: number;
-    profitSharePercentage: number;
   }> {
     const settings = await getSettings([
-      'signup_bonus',
-      'referral_bonus',
-      'profit_share_percentage'
+      'primary_currency',
+      'usd_to_bdt_rate',
+      'min_deposit',
+      'signup_bonus'
     ]);
 
     return {
-      signupBonus: settings.signup_bonus || 0,
-      referralBonus: settings.referral_bonus || 0,
-      profitSharePercentage: settings.profit_share_percentage || 10
+      primaryCurrency: settings.primary_currency || 'BDT',
+      usdToBdtRate: settings.usd_to_bdt_rate || 110.50,
+      minDeposit: settings.min_deposit || 100,
+      signupBonus: settings.signup_bonus || 100
     };
   }
 
   /**
-   * Check if auto-approval is enabled
+   * Get security configuration
    */
-  static async getAutoApprovalSettings(): Promise<{
-    autoDepositApproval: boolean;
-    autoWithdrawalApproval: boolean;
-    autoKycApproval: boolean;
+  static async getSecurityConfig(): Promise<{
+    deviceLimitPerUser: number;
+    sessionTimeoutMinutes: number;
+    maxFailedLoginAttempts: number;
   }> {
     const settings = await getSettings([
-      'auto_deposit_approval',
-      'auto_withdrawal_approval',
-      'auto_kyc_approval'
+      'device_limit_per_user',
+      'session_timeout_minutes',
+      'max_failed_login_attempts'
     ]);
 
     return {
-      autoDepositApproval: settings.auto_deposit_approval || false,
-      autoWithdrawalApproval: settings.auto_withdrawal_approval || false,
-      autoKycApproval: settings.auto_kyc_approval || false
+      deviceLimitPerUser: settings.device_limit_per_user || 1,
+      sessionTimeoutMinutes: settings.session_timeout_minutes || 30,
+      maxFailedLoginAttempts: settings.max_failed_login_attempts || 5
     };
+  }
+
+  /**
+   * Get email configuration
+   */
+  static async getEmailConfig(): Promise<{
+    smtpHost: string;
+    smtpPort: number;
+    smtpUser: string;
+  }> {
+    const settings = await getSettings([
+      'smtp_host',
+      'smtp_port',
+      'smtp_user'
+    ]);
+
+    return {
+      smtpHost: settings.smtp_host || 'smtp.gmail.com',
+      smtpPort: settings.smtp_port || 587,
+      smtpUser: settings.smtp_user || ''
+    };
+  }
+
+  /**
+   * Get upload configuration
+   */
+  static async getUploadConfig(): Promise<{
+    maxFileSizeMb: number;
+    allowedFileTypes: string[];
+  }> {
+    const settings = await getSettings([
+      'max_file_size_mb',
+      'allowed_file_types'
+    ]);
+
+    return {
+      maxFileSizeMb: settings.max_file_size_mb || 10,
+      allowedFileTypes: settings.allowed_file_types || ['jpg', 'jpeg', 'png', 'pdf', 'doc', 'docx']
+    };
+  }
+
+  /**
+   * Get business configuration
+   */
+  static async getBusinessConfig(): Promise<{
+    autoKycApproval: boolean;
+    maxTasksPerUser: number;
+  }> {
+    const settings = await getSettings([
+      'auto_kyc_approval',
+      'max_tasks_per_user'
+    ]);
+
+    return {
+      autoKycApproval: settings.auto_kyc_approval || false,
+      maxTasksPerUser: settings.max_tasks_per_user || 10
+    };
+  }
+
+  /**
+   * Get API configuration
+   */
+  static async getApiConfig(): Promise<{
+    apiTimeoutSeconds: number;
+  }> {
+    const settings = await getSettings([
+      'api_timeout_seconds'
+    ]);
+
+    return {
+      apiTimeoutSeconds: settings.api_timeout_seconds || 30
+    };
+  }
+
+  /**
+   * Get maintenance configuration
+   */
+  static async getMaintenanceConfig(): Promise<{
+    autoBackupEnabled: boolean;
+  }> {
+    const settings = await getSettings([
+      'auto_backup_enabled'
+    ]);
+
+    return {
+      autoBackupEnabled: settings.auto_backup_enabled || true
+    };
+  }
+
+  /**
+   * Check if system is in maintenance mode
+   */
+  static async isMaintenanceMode(): Promise<boolean> {
+    return await getSetting('maintenance_mode', false);
+  }
+
+  /**
+   * Validate deposit amount against minimum
+   */
+  static async validateDeposit(amount: number): Promise<{ valid: boolean; error?: string; minAmount?: number }> {
+    const minDeposit = await getSetting('min_deposit', 100);
+    
+    if (amount < minDeposit) {
+      return {
+        valid: false,
+        error: `Minimum deposit amount is ${minDeposit} BDT`,
+        minAmount: minDeposit
+      };
+    }
+
+    return { valid: true };
+  }
+
+  /**
+   * Check if user can upload file
+   */
+  static async validateFileUpload(
+    fileName: string, 
+    fileSizeMb: number
+  ): Promise<{ valid: boolean; error?: string }> {
+    const uploadConfig = await this.getUploadConfig();
+    
+    // Check file size
+    if (fileSizeMb > uploadConfig.maxFileSizeMb) {
+      return {
+        valid: false,
+        error: `File size exceeds maximum limit of ${uploadConfig.maxFileSizeMb}MB`
+      };
+    }
+
+    // Check file type
+    const fileExtension = fileName.split('.').pop()?.toLowerCase();
+    if (!fileExtension || !uploadConfig.allowedFileTypes.includes(fileExtension)) {
+      return {
+        valid: false,
+        error: `File type not allowed. Allowed types: ${uploadConfig.allowedFileTypes.join(', ')}`
+      };
+    }
+
+    return { valid: true };
+  }
+
+  /**
+   * Get signup bonus amount
+   */
+  static async getSignupBonus(): Promise<number> {
+    return await getSetting('signup_bonus', 100);
+  }
+
+  /**
+   * Get device limit per user
+   */
+  static async getDeviceLimit(): Promise<number> {
+    return await getSetting('device_limit_per_user', 1);
+  }
+
+  /**
+   * Get session timeout in minutes
+   */
+  static async getSessionTimeout(): Promise<number> {
+    return await getSetting('session_timeout_minutes', 30);
+  }
+
+  /**
+   * Get max failed login attempts
+   */
+  static async getMaxFailedLogins(): Promise<number> {
+    return await getSetting('max_failed_login_attempts', 5);
+  }
+
+  /**
+   * Get all settings for a specific category
+   */
+  static async getCategorySettings(category: string): Promise<Record<string, any>> {
+    return await getSettingsByCategory(category);
+  }
+
+  /**
+   * Check if auto KYC approval is enabled
+   */
+  static async isAutoKycEnabled(): Promise<boolean> {
+    return await getSetting('auto_kyc_approval', false);
+  }
+
+  /**
+   * Get max tasks per user
+   */
+  static async getMaxTasksPerUser(): Promise<number> {
+    return await getSetting('max_tasks_per_user', 10);
+  }
+
+  /**
+   * Get primary currency
+   */
+  static async getPrimaryCurrency(): Promise<string> {
+    return await getSetting('primary_currency', 'BDT');
+  }
+
+  /**
+   * Get USD to BDT exchange rate
+   */
+  static async getExchangeRate(): Promise<number> {
+    return await getSetting('usd_to_bdt_rate', 110.50);
+  }
+
+  /**
+   * Get application name
+   */
+  static async getAppName(): Promise<string> {
+    return await getSetting('app_name', 'IProfit Admin');
+  }
+
+  /**
+   * Get company name
+   */
+  static async getCompanyName(): Promise<string> {
+    return await getSetting('company_name', 'IProfit Technologies');
   }
 }
