@@ -11,7 +11,7 @@ import { ApiHandler } from '@/lib/api-helpers';
 import { z } from 'zod';
 import mongoose from 'mongoose';
 import { withdrawalRequestSchema } from '@/lib/validation';
-
+import { BusinessRules } from '@/lib/settings-helper';
 
 // GET /api/transactions/withdrawals - List withdrawal transactions
 async function getWithdrawalsHandler(request: NextRequest): Promise<NextResponse> {
@@ -97,7 +97,7 @@ async function getWithdrawalsHandler(request: NextRequest): Promise<NextResponse
       },
       { $unwind: { path: '$userPlan', preserveNullAndEmptyArrays: true } },
       
-      // Add computed fields
+      // Add computed fields (using stored fees from transaction)
       {
         $addFields: {
           isOverLimit: {
@@ -106,29 +106,7 @@ async function getWithdrawalsHandler(request: NextRequest): Promise<NextResponse
           isBelowMinimum: {
             $lt: ['$amount', '$userPlan.minimumWithdrawal']
           },
-          processingFee: {
-            $switch: {
-              branches: [
-                { 
-                  case: { $eq: ['$metadata.withdrawalMethod', 'bank_transfer'] }, 
-                  then: { $max: [{ $multiply: ['$amount', 0.02] }, 5] } // 2% or minimum $5
-                },
-                { 
-                  case: { $eq: ['$metadata.withdrawalMethod', 'mobile_banking'] }, 
-                  then: { $multiply: ['$amount', 0.015] } // 1.5%
-                },
-                { 
-                  case: { $eq: ['$metadata.withdrawalMethod', 'crypto_wallet'] }, 
-                  then: { $multiply: ['$amount', 0.01] } // 1%
-                },
-                { 
-                  case: { $eq: ['$metadata.withdrawalMethod', 'check'] }, 
-                  then: 10 // Flat $10 fee
-                }
-              ],
-              default: 0
-            }
-          },
+          processingFee: '$fees', // Use stored fees instead of calculating
           isUrgent: '$metadata.urgentWithdrawal',
           estimatedProcessingTime: {
             $switch: {
@@ -192,6 +170,9 @@ async function createWithdrawalHandler(request: NextRequest): Promise<NextRespon
   try {
     await connectToDatabase();
 
+    // Get configuration from existing settings
+    const businessConfig = await BusinessRules.getBusinessConfig();
+
     const currentUserId = request.headers.get('x-user-id');
     const userType = request.headers.get('x-user-type');
     const body = await request.json();
@@ -220,12 +201,13 @@ async function createWithdrawalHandler(request: NextRequest): Promise<NextRespon
       return apiHandler.notFound('User not found');
     }
 
-    // Check if user is active and KYC approved
+    // Check if user is active and KYC approved (use settings-based logic)
     if (user.status !== 'Active') {
       return apiHandler.badRequest('User account is not active');
     }
     
-    if (user.kycStatus !== 'Approved') {
+    // Use auto KYC approval setting - if auto approval is enabled, don't require manual approval
+    if (!businessConfig.autoKycApproval && user.kycStatus !== 'Approved') {
       return apiHandler.badRequest('User KYC must be approved for withdrawals');
     }
 
@@ -234,7 +216,7 @@ async function createWithdrawalHandler(request: NextRequest): Promise<NextRespon
       return apiHandler.badRequest(`Insufficient balance. Available: ${user.balance}, Requested: ${amount}`);
     }
 
-    // Calculate processing fees
+    // Calculate processing fees (simplified - no settings for withdrawal fees yet)
     let processingFee = 0;
     switch (withdrawalMethod) {
       case 'bank_transfer':
@@ -363,6 +345,10 @@ async function createWithdrawalHandler(request: NextRequest): Promise<NextRespon
               maximum: plan?.withdrawalLimit,
               dailyLimit: plan?.dailyWithdrawalLimit,
               monthlyLimit: plan?.monthlyWithdrawalLimit
+            },
+            // Store settings used for audit
+            settingsUsed: {
+              autoKycApproval: businessConfig.autoKycApproval
             }
           }
         }], { session });
@@ -388,7 +374,10 @@ async function createWithdrawalHandler(request: NextRequest): Promise<NextRespon
             targetUserId: userId,
             transactionId,
             urgentWithdrawal,
-            processingFee
+            processingFee,
+            settingsUsed: {
+              autoKycApproval: businessConfig.autoKycApproval
+            }
           },
           ipAddress: apiHandler.getClientIP(),
           userAgent: request.headers.get('user-agent'),
@@ -403,6 +392,9 @@ async function createWithdrawalHandler(request: NextRequest): Promise<NextRespon
 
       return apiHandler.created({
         transaction: populatedTransaction,
+        settings: {
+          autoKycApproval: businessConfig.autoKycApproval
+        },
         message: `Withdrawal request created successfully${urgentWithdrawal ? ' with urgent processing' : ''}`
       });
 

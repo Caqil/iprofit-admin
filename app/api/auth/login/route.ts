@@ -13,6 +13,7 @@ import speakeasy from 'speakeasy';
 import jwt from 'jsonwebtoken';
 import { env } from '@/config/env';
 import { loginSchema } from '@/lib/validation';
+import { BusinessRules } from '@/lib/settings-helper';
 
 interface LoginResponse {
   success: boolean;
@@ -73,6 +74,9 @@ async function loginHandler(request: NextRequest): Promise<NextResponse> {
       fingerprint 
     } = validationResult.data;
 
+    // Get existing security configuration
+    const securityConfig = await BusinessRules.getSecurityConfig();
+
     // Handle admin login
     if (userType === 'admin') {
       const admin = await Admin.findOne({ 
@@ -92,7 +96,7 @@ async function loginHandler(request: NextRequest): Promise<NextResponse> {
         return apiHandler.unauthorized('Invalid credentials');
       }
 
-      // Check 2FA if enabled
+      // Check 2FA if enabled for this admin
       if (admin.twoFactorEnabled) {
         if (!twoFactorToken) {
           return NextResponse.json({
@@ -159,7 +163,7 @@ async function loginHandler(request: NextRequest): Promise<NextResponse> {
         });
       }
 
-      // Check device limit
+      // Check device limit using existing settings
       const deviceCheck = await checkDeviceLimit(deviceId, fingerprint);
       if (!deviceCheck.isAllowed) {
         await logAuthAttempt(email, userType, false, deviceCheck.reason || 'Device limit exceeded', clientIP, userAgent);

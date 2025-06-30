@@ -1,4 +1,3 @@
-// lib/settings-helper.ts - Centralized Settings Management
 import { Setting } from '@/models/Setting';
 import { connectToDatabase } from '@/lib/db';
 
@@ -318,6 +317,129 @@ export class BusinessRules {
       autoKycApproval: settings.auto_kyc_approval || false,
       maxTasksPerUser: settings.max_tasks_per_user || 10
     };
+  }
+
+  /**
+   * Get withdrawal configuration
+   */
+  static async getWithdrawalConfig(): Promise<{
+    bankTransferFeePercentage: number;
+    bankTransferMinFee: number;
+    mobileBankingFeePercentage: number;
+    cryptoWalletFeePercentage: number;
+    checkFlatFee: number;
+    urgentProcessingFeePercentage: number;
+    processingTimes: {
+      bankTransfer: string;
+      mobileBanking: string;
+      cryptoWallet: string;
+      check: string;
+      urgent: string;
+    };
+  }> {
+    const settings = await getSettings([
+      'withdrawal_bank_fee_percentage',
+      'withdrawal_bank_min_fee',
+      'withdrawal_mobile_fee_percentage',
+      'withdrawal_crypto_fee_percentage',
+      'withdrawal_check_flat_fee',
+      'withdrawal_urgent_fee_percentage',
+      'withdrawal_processing_time_bank',
+      'withdrawal_processing_time_mobile',
+      'withdrawal_processing_time_crypto',
+      'withdrawal_processing_time_check',
+      'withdrawal_processing_time_urgent'
+    ]);
+
+    return {
+      bankTransferFeePercentage: settings.withdrawal_bank_fee_percentage || 0.02, // 2%
+      bankTransferMinFee: settings.withdrawal_bank_min_fee || 5, // $5 minimum
+      mobileBankingFeePercentage: settings.withdrawal_mobile_fee_percentage || 0.015, // 1.5%
+      cryptoWalletFeePercentage: settings.withdrawal_crypto_fee_percentage || 0.01, // 1%
+      checkFlatFee: settings.withdrawal_check_flat_fee || 10, // $10 flat fee
+      urgentProcessingFeePercentage: settings.withdrawal_urgent_fee_percentage || 0.005, // 0.5%
+      processingTimes: {
+        bankTransfer: settings.withdrawal_processing_time_bank || '1-3 business days',
+        mobileBanking: settings.withdrawal_processing_time_mobile || '2-4 hours',
+        cryptoWallet: settings.withdrawal_processing_time_crypto || '4-6 hours',
+        check: settings.withdrawal_processing_time_check || '5-7 business days',
+        urgent: settings.withdrawal_processing_time_urgent || '1-2 hours'
+      }
+    };
+  }
+
+  /**
+   * Calculate withdrawal fees based on method and amount
+   */
+  static async calculateWithdrawalFee(
+    method: string, 
+    amount: number, 
+    isUrgent: boolean = false
+  ): Promise<{ fee: number; netAmount: number; breakdown: any }> {
+    const config = await this.getWithdrawalConfig();
+    let baseFee = 0;
+
+    switch (method) {
+      case 'bank_transfer':
+        baseFee = Math.max(amount * config.bankTransferFeePercentage, config.bankTransferMinFee);
+        break;
+      case 'mobile_banking':
+        baseFee = amount * config.mobileBankingFeePercentage;
+        break;
+      case 'crypto_wallet':
+        baseFee = amount * config.cryptoWalletFeePercentage;
+        break;
+      case 'check':
+        baseFee = config.checkFlatFee;
+        break;
+      default:
+        baseFee = 0;
+    }
+
+    const urgentFee = isUrgent ? amount * config.urgentProcessingFeePercentage : 0;
+    const totalFee = baseFee + urgentFee;
+    const netAmount = amount - totalFee;
+
+    return {
+      fee: totalFee,
+      netAmount,
+      breakdown: {
+        baseFee,
+        urgentFee,
+        method,
+        isUrgent,
+        feeRates: {
+          base: method === 'bank_transfer' ? config.bankTransferFeePercentage : 
+                method === 'mobile_banking' ? config.mobileBankingFeePercentage :
+                method === 'crypto_wallet' ? config.cryptoWalletFeePercentage : 0,
+          urgent: config.urgentProcessingFeePercentage
+        }
+      }
+    };
+  }
+
+  /**
+   * Get processing time estimate for withdrawal method
+   */
+  static async getWithdrawalProcessingTime(method: string, isUrgent: boolean = false): Promise<string> {
+    const config = await this.getWithdrawalConfig();
+    
+    if (isUrgent) {
+      return config.processingTimes.urgent;
+    }
+
+    switch (method) {
+      case 'bank_transfer':
+        return config.processingTimes.bankTransfer;
+      case 'mobile_banking':
+        return config.processingTimes.mobileBanking;
+      case 'crypto_wallet':
+        return config.processingTimes.cryptoWallet;
+      case 'check':
+        return config.processingTimes.check;
+      default:
+        return '1-3 business days';
+    }
   }
 
   /**

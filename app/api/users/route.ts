@@ -1,5 +1,3 @@
-// app/api/users/route.ts - Fixed to use existing validation schemas
-
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { User } from '@/models/User';
@@ -14,7 +12,6 @@ import { sendEmail } from '@/lib/email';
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
 
-// ✅ USE EXISTING SCHEMAS FROM lib/validation.ts
 import { 
   adminUserCreateSchema, 
   userCreateExtendedSchema,

@@ -643,6 +643,7 @@ async migration_1_7_0() {
         createdAt: new Date(),
         updatedAt: new Date()
       },
+      
       {
         category: 'system',
         key: 'company_name',
@@ -723,7 +724,42 @@ async migration_1_7_0() {
         createdAt: new Date(),
         updatedAt: new Date()
       },
-      
+      {
+  key: 'withdrawal_bank_fee_percentage',
+  value: 0.02,
+  category: 'financial',
+  description: 'Bank transfer withdrawal fee percentage'
+},
+{
+  key: 'withdrawal_bank_min_fee',
+  value: 5,
+  category: 'financial',
+  description: 'Minimum bank transfer withdrawal fee'
+},
+{
+  key: 'withdrawal_mobile_fee_percentage',
+  value: 0.015,
+  category: 'financial',
+  description: 'Mobile banking withdrawal fee percentage'
+},
+{
+  key: 'withdrawal_crypto_fee_percentage',
+  value: 0.01,
+  category: 'financial',
+  description: 'Crypto wallet withdrawal fee percentage'
+},
+{
+  key: 'withdrawal_check_flat_fee',
+  value: 10,
+  category: 'financial',
+  description: 'Check withdrawal flat fee'
+},
+{
+  key: 'withdrawal_urgent_fee_percentage',
+  value: 0.005,
+  category: 'financial',
+  description: 'Urgent processing additional fee percentage'
+},
       // Security Settings
       {
         category: 'security',
@@ -738,6 +774,54 @@ async migration_1_7_0() {
         createdAt: new Date(),
         updatedAt: new Date()
       },
+      {
+  key: 'enable_device_limiting',
+  value: true,
+  category: 'security',
+  description: 'Enable device limiting for signup'
+},
+      {
+  key: 'block_emulators',
+  value: true,
+  category: 'security',
+  description: 'Block access from emulated devices'
+},
+{
+  key: 'block_virtual_devices', 
+  value: true,
+  category: 'security',
+  description: 'Block access from virtual machines'
+},
+{
+  key: 'max_device_risk_score',
+  value: 0.8,
+  category: 'security', 
+  description: 'Maximum allowed device risk score'
+},
+{
+  key: 'moderate_risk_threshold',
+  value: 0.6,
+  category: 'security',
+  description: 'Threshold for moderate risk warnings'
+},
+{
+  key: 'enable_device_blocking',
+  value: true,
+  category: 'security',
+  description: 'Enable device security blocking'
+},
+{
+  key: 'email_verification_required',
+  value: true,
+  category: 'security',
+  description: 'Require email verification on signup'
+},
+{
+  key: 'phone_verification_required',
+  value: false,
+  category: 'security', 
+  description: 'Require phone verification on signup'
+},
       {
         category: 'security',
         key: 'session_timeout_minutes',
@@ -848,6 +932,60 @@ async migration_1_7_0() {
         createdAt: new Date(),
         updatedAt: new Date()
       },
+      {
+  key: 'withdrawal_processing_time_bank',
+  value: '1-3 business days',
+  category: 'business',
+  description: 'Bank transfer processing time'
+},
+{
+  key: 'withdrawal_processing_time_mobile',
+  value: '2-4 hours',
+  category: 'business',
+  description: 'Mobile banking processing time'
+},
+{
+  key: 'withdrawal_processing_time_crypto',
+  value: '4-6 hours',
+  category: 'business',
+  description: 'Crypto wallet processing time'
+},
+{
+  key: 'withdrawal_processing_time_check',
+  value: '5-7 business days',
+  category: 'business',
+  description: 'Check processing time'
+},
+{
+  key: 'withdrawal_processing_time_urgent',
+  value: '1-2 hours',
+  category: 'business',
+  description: 'Urgent processing time'
+},
+      {
+  key: 'enable_referral_system', 
+  value: true,
+  category: 'business',
+  description: 'Enable referral bonus system'
+},
+{
+  key: 'default_plan_name',
+  value: 'Free',
+  category: 'business', 
+  description: 'Default plan for new users'
+},
+{
+  key: 'auto_kyc_approval',
+  value: false,
+  category: 'business',
+  description: 'Automatically approve KYC for new users'
+},
+{
+  key: 'max_referral_code_attempts',
+  value: 5,
+  category: 'business',
+  description: 'Max attempts to generate unique referral code'
+},
       {
         category: 'business',
         key: 'max_tasks_per_user',
