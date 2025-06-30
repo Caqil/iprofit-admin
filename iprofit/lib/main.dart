@@ -16,6 +16,9 @@ import 'package:iprofit/data/models/plan/plan_model.dart';
 import 'package:iprofit/data/models/referral/referral_model.dart';
 import 'package:iprofit/data/models/support/ticket_model.dart';
 import 'package:iprofit/data/models/transaction/transaction_model.dart';
+import 'package:iprofit/data/models/user/profile_model.dart';
+import 'package:iprofit/data/models/user/user_model.dart'
+    show UserLimitsAdapter, UserModelAdapter;
 import 'package:logger/logger.dart';
 import 'app.dart';
 import 'core/constants/storage_keys.dart';
