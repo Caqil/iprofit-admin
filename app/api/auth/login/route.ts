@@ -74,9 +74,6 @@ async function loginHandler(request: NextRequest): Promise<NextResponse> {
       fingerprint 
     } = validationResult.data;
 
-    // Get existing security configuration
-    const securityConfig = await BusinessRules.getSecurityConfig();
-
     // Handle admin login
     if (userType === 'admin') {
       const admin = await Admin.findOne({ 

@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useForm, useFieldArray } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Save,
@@ -52,15 +52,34 @@ import { Separator } from "@/components/ui/separator";
 import { newsCreateSchema } from "@/lib/validation";
 import {
   News,
-  NewsCreateRequest,
   NewsUpdateRequest,
   NewsStatus,
+  NewsCreateRequest,
 } from "@/types";
 import { useNews } from "@/hooks/use-news";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import { toast } from "sonner";
+import { z } from "zod";
 
-type NewsFormData = NewsCreateRequest;
+// Use the original schema type but with proper form handling
+type NewsFormData = {
+  title: string;
+  content: string;
+  excerpt?: string;
+  category: string;
+  tags: string[];
+  featuredImage?: string;
+  status: "Draft" | "Published" | "Archived";
+  isSticky: boolean;
+  publishedAt?: string | Date;
+  metadata?: {
+    seoTitle?: string;
+    seoDescription?: string;
+    socialImage?: string;
+  };
+  schedulePublish?: boolean;
+  scheduledAt?: string | Date;
+};
 
 interface NewsFormProps {
   initialData?: News;
@@ -94,7 +113,7 @@ export function NewsForm({
   const [tagInput, setTagInput] = useState("");
 
   const form = useForm<NewsFormData>({
-    resolver: zodResolver(newsCreateSchema),
+    mode: "onChange",
     defaultValues: {
       title: "",
       content: "",
@@ -102,9 +121,11 @@ export function NewsForm({
       category: "",
       tags: [],
       featuredImage: "",
-      status: "Draft",
+      status: "Draft" as const,
       isSticky: false,
       publishedAt: undefined,
+      schedulePublish: false,
+      scheduledAt: undefined,
       metadata: {
         seoTitle: "",
         seoDescription: "",
@@ -120,7 +141,7 @@ export function NewsForm({
   // Initialize form with existing data
   useEffect(() => {
     if (initialData && mode === "edit") {
-      form.reset({
+      const resetData: Partial<NewsFormData> = {
         title: initialData.title,
         content: initialData.content,
         excerpt: initialData.excerpt || "",
@@ -128,14 +149,20 @@ export function NewsForm({
         tags: initialData.tags || [],
         featuredImage: initialData.featuredImage || "",
         status: initialData.status,
-        isSticky: initialData.isSticky,
-        publishedAt: initialData.publishedAt,
+        isSticky: initialData.isSticky || false,
+        publishedAt: initialData.publishedAt
+          ? new Date(initialData.publishedAt)
+          : undefined,
+        schedulePublish: false,
+        scheduledAt: undefined,
         metadata: {
           seoTitle: initialData.metadata?.seoTitle || "",
           seoDescription: initialData.metadata?.seoDescription || "",
           socialImage: initialData.metadata?.socialImage || "",
         },
-      });
+      };
+
+      form.reset(resetData);
 
       if (initialData.featuredImage) {
         setImagePreview(initialData.featuredImage);
@@ -149,7 +176,7 @@ export function NewsForm({
     if (title && !watchedValues.metadata?.seoTitle) {
       form.setValue("metadata.seoTitle", title.substring(0, 60));
     }
-  }, [watchedValues.title, form]);
+  }, [watchedValues.title, watchedValues.metadata?.seoTitle, form]);
 
   // Generate excerpt from content if not provided
   useEffect(() => {
@@ -161,22 +188,102 @@ export function NewsForm({
         form.setValue("excerpt", excerpt + "...");
       }
     }
-  }, [watchedValues.content, form]);
+  }, [watchedValues.content, watchedValues.excerpt, form]);
 
   const handleSubmit = async (data: NewsFormData) => {
     try {
-      // Clean up the data
-      const submissionData = {
-        ...data,
-        tags: data.tags.filter((tag) => tag.trim() !== ""),
-        metadata:
-          data.metadata &&
-          (data.metadata.seoTitle ||
-            data.metadata.seoDescription ||
-            data.metadata.socialImage)
-            ? data.metadata
-            : undefined,
+      // Client-side validation
+      const errors: string[] = [];
+
+      if (!data.title?.trim()) {
+        errors.push("Title is required");
+      } else if (data.title.length > 200) {
+        errors.push("Title must be less than 200 characters");
+      }
+
+      if (!data.content?.trim()) {
+        errors.push("Content is required");
+      }
+
+      if (!data.category?.trim()) {
+        errors.push("Category is required");
+      }
+
+      if (data.excerpt && data.excerpt.length > 500) {
+        errors.push("Excerpt must be less than 500 characters");
+      }
+
+      // Validate image URL if provided
+      if (data.featuredImage && data.featuredImage.trim()) {
+        if (!data.featuredImage.startsWith("data:image/")) {
+          try {
+            new URL(data.featuredImage);
+          } catch {
+            errors.push("Featured image must be a valid URL");
+          }
+        }
+      }
+
+      // Validate social image URL if provided
+      if (data.metadata?.socialImage && data.metadata.socialImage.trim()) {
+        try {
+          new URL(data.metadata.socialImage);
+        } catch {
+          errors.push("Social image must be a valid URL");
+        }
+      }
+
+      // Validate metadata field lengths
+      if (data.metadata?.seoTitle && data.metadata.seoTitle.length > 70) {
+        errors.push("SEO title must be less than 70 characters");
+      }
+
+      if (
+        data.metadata?.seoDescription &&
+        data.metadata.seoDescription.length > 160
+      ) {
+        errors.push("SEO description must be less than 160 characters");
+      }
+
+      if (errors.length > 0) {
+        toast.error(errors[0]);
+        return;
+      }
+
+      // Clean up the data before submission
+      const submissionData: NewsCreateRequest = {
+        title: data.title,
+        content: data.content,
+        excerpt: data.excerpt?.trim() || undefined,
+        category: data.category,
+        tags: data.tags?.filter((tag) => tag.trim() !== "") || [],
+        featuredImage: data.featuredImage?.trim() || undefined,
+        status: data.status,
+        isSticky: data.isSticky || false,
+        publishedAt: data.publishedAt
+          ? data.publishedAt instanceof Date
+            ? data.publishedAt
+            : new Date(data.publishedAt)
+          : undefined,
       };
+
+      // Handle metadata - only include if there's actual content
+      if (data.metadata) {
+        const metadata: any = {};
+        if (data.metadata.seoTitle?.trim()) {
+          metadata.seoTitle = data.metadata.seoTitle.trim();
+        }
+        if (data.metadata.seoDescription?.trim()) {
+          metadata.seoDescription = data.metadata.seoDescription.trim();
+        }
+        if (data.metadata.socialImage?.trim()) {
+          metadata.socialImage = data.metadata.socialImage.trim();
+        }
+
+        if (Object.keys(metadata).length > 0) {
+          submissionData.metadata = metadata;
+        }
+      }
 
       await onSubmit(submissionData);
     } catch (error) {
@@ -210,15 +317,15 @@ export function NewsForm({
   };
 
   const addTag = () => {
-    if (tagInput.trim() && !watchedValues.tags.includes(tagInput.trim())) {
-      const currentTags = form.getValues("tags");
+    if (tagInput.trim() && !watchedValues.tags?.includes(tagInput.trim())) {
+      const currentTags = form.getValues("tags") || [];
       form.setValue("tags", [...currentTags, tagInput.trim()]);
       setTagInput("");
     }
   };
 
   const removeTag = (tagToRemove: string) => {
-    const currentTags = form.getValues("tags");
+    const currentTags = form.getValues("tags") || [];
     form.setValue(
       "tags",
       currentTags.filter((tag) => tag !== tagToRemove)
@@ -251,7 +358,11 @@ export function NewsForm({
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+      <form
+        onSubmit={form.handleSubmit(handleSubmit)}
+        noValidate
+        className="space-y-6"
+      >
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
@@ -271,7 +382,14 @@ export function NewsForm({
                 <FormField
                   control={form.control}
                   name="title"
-                  render={({ field }) => (
+                  rules={{
+                    required: "Title is required",
+                    maxLength: {
+                      value: 200,
+                      message: "Title must be less than 200 characters",
+                    },
+                  }}
+                  render={({ field, fieldState }) => (
                     <FormItem>
                       <FormLabel>Title *</FormLabel>
                       <FormControl>
@@ -281,7 +399,9 @@ export function NewsForm({
                           className="text-lg font-medium"
                         />
                       </FormControl>
-                      <FormMessage />
+                      {fieldState.error && (
+                        <FormMessage>{fieldState.error.message}</FormMessage>
+                      )}
                       {field.value && (
                         <FormDescription>
                           {field.value.length}/200 characters
@@ -295,7 +415,10 @@ export function NewsForm({
                 <FormField
                   control={form.control}
                   name="content"
-                  render={({ field }) => (
+                  rules={{
+                    required: "Content is required",
+                  }}
+                  render={({ field, fieldState }) => (
                     <FormItem>
                       <FormLabel className="flex items-center justify-between">
                         <span>Content *</span>
@@ -313,7 +436,9 @@ export function NewsForm({
                           {...field}
                         />
                       </FormControl>
-                      <FormMessage />
+                      {fieldState.error && (
+                        <FormMessage>{fieldState.error.message}</FormMessage>
+                      )}
                       <FormDescription>
                         You can use HTML markup for formatting
                       </FormDescription>
@@ -325,7 +450,13 @@ export function NewsForm({
                 <FormField
                   control={form.control}
                   name="excerpt"
-                  render={({ field }) => (
+                  rules={{
+                    maxLength: {
+                      value: 500,
+                      message: "Excerpt must be less than 500 characters",
+                    },
+                  }}
+                  render={({ field, fieldState }) => (
                     <FormItem>
                       <FormLabel>Excerpt</FormLabel>
                       <FormControl>
@@ -335,7 +466,9 @@ export function NewsForm({
                           {...field}
                         />
                       </FormControl>
-                      <FormMessage />
+                      {fieldState.error && (
+                        <FormMessage>{fieldState.error.message}</FormMessage>
+                      )}
                       <FormDescription>
                         Leave empty to auto-generate from content
                       </FormDescription>
@@ -367,7 +500,13 @@ export function NewsForm({
                     <FormField
                       control={form.control}
                       name="metadata.seoTitle"
-                      render={({ field }) => (
+                      rules={{
+                        maxLength: {
+                          value: 70,
+                          message: "SEO title must be less than 70 characters",
+                        },
+                      }}
+                      render={({ field, fieldState }) => (
                         <FormItem>
                           <FormLabel>SEO Title</FormLabel>
                           <FormControl>
@@ -376,8 +515,13 @@ export function NewsForm({
                               {...field}
                             />
                           </FormControl>
+                          {fieldState.error && (
+                            <FormMessage>
+                              {fieldState.error.message}
+                            </FormMessage>
+                          )}
                           <FormDescription>
-                            {field.value?.length || 0}/70 characters
+                            {(field.value || "").length}/70 characters
                             (recommended)
                           </FormDescription>
                         </FormItem>
@@ -387,7 +531,14 @@ export function NewsForm({
                     <FormField
                       control={form.control}
                       name="metadata.seoDescription"
-                      render={({ field }) => (
+                      rules={{
+                        maxLength: {
+                          value: 160,
+                          message:
+                            "SEO description must be less than 160 characters",
+                        },
+                      }}
+                      render={({ field, fieldState }) => (
                         <FormItem>
                           <FormLabel>SEO Description</FormLabel>
                           <FormControl>
@@ -397,8 +548,13 @@ export function NewsForm({
                               {...field}
                             />
                           </FormControl>
+                          {fieldState.error && (
+                            <FormMessage>
+                              {fieldState.error.message}
+                            </FormMessage>
+                          )}
                           <FormDescription>
-                            {field.value?.length || 0}/160 characters
+                            {(field.value || "").length}/160 characters
                             (recommended)
                           </FormDescription>
                         </FormItem>
@@ -449,7 +605,7 @@ export function NewsForm({
                       <FormLabel>Status</FormLabel>
                       <Select
                         onValueChange={field.onChange}
-                        defaultValue={field.value}
+                        value={field.value}
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -499,7 +655,7 @@ export function NewsForm({
                       </div>
                       <FormControl>
                         <Switch
-                          checked={field.value}
+                          checked={field.value || false}
                           onCheckedChange={field.onChange}
                         />
                       </FormControl>
@@ -518,12 +674,13 @@ export function NewsForm({
                         <FormControl>
                           <Input
                             type="datetime-local"
-                            {...field}
                             value={
                               field.value
-                                ? new Date(field.value)
-                                    .toISOString()
-                                    .slice(0, 16)
+                                ? field.value instanceof Date
+                                  ? field.value.toISOString().slice(0, 16)
+                                  : new Date(field.value)
+                                      .toISOString()
+                                      .slice(0, 16)
                                 : ""
                             }
                             onChange={(e) =>
@@ -542,6 +699,66 @@ export function NewsForm({
                     )}
                   />
                 )}
+
+                {/* Schedule Publish */}
+                <FormField
+                  control={form.control}
+                  name="schedulePublish"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                      <div className="space-y-0.5">
+                        <FormLabel className="flex items-center gap-2">
+                          <Calendar className="w-4 h-4" />
+                          Schedule Publishing
+                        </FormLabel>
+                        <FormDescription>
+                          Schedule this article for future publishing
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value || false}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+
+                {/* Scheduled Date */}
+                {watchedValues.schedulePublish && (
+                  <FormField
+                    control={form.control}
+                    name="scheduledAt"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Scheduled Date *</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="datetime-local"
+                            value={
+                              field.value
+                                ? field.value instanceof Date
+                                  ? field.value.toISOString().slice(0, 16)
+                                  : new Date(field.value)
+                                      .toISOString()
+                                      .slice(0, 16)
+                                : ""
+                            }
+                            onChange={(e) =>
+                              field.onChange(
+                                e.target.value
+                                  ? new Date(e.target.value)
+                                  : undefined
+                              )
+                            }
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
               </CardContent>
             </Card>
 
@@ -555,12 +772,15 @@ export function NewsForm({
                 <FormField
                   control={form.control}
                   name="category"
-                  render={({ field }) => (
+                  rules={{
+                    required: "Category is required",
+                  }}
+                  render={({ field, fieldState }) => (
                     <FormItem>
                       <FormLabel>Category *</FormLabel>
                       <Select
                         onValueChange={field.onChange}
-                        defaultValue={field.value}
+                        value={field.value}
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -575,7 +795,9 @@ export function NewsForm({
                           ))}
                         </SelectContent>
                       </Select>
-                      <FormMessage />
+                      {fieldState.error && (
+                        <FormMessage>{fieldState.error.message}</FormMessage>
+                      )}
                     </FormItem>
                   )}
                 />
@@ -603,7 +825,7 @@ export function NewsForm({
                       </Button>
                     </div>
 
-                    {watchedValues.tags.length > 0 && (
+                    {watchedValues.tags && watchedValues.tags.length > 0 && (
                       <div className="flex flex-wrap gap-2">
                         {watchedValues.tags.map((tag, index) => (
                           <Badge
@@ -780,7 +1002,7 @@ export function NewsForm({
                     )}
                   </div>
 
-                  {watchedValues.tags.length > 0 && (
+                  {watchedValues.tags && watchedValues.tags.length > 0 && (
                     <div className="flex flex-wrap gap-2">
                       {watchedValues.tags.map((tag, index) => (
                         <Badge

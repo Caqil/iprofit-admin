@@ -1,4 +1,4 @@
-// components/users/user-referrals-section.tsx - NEW COMPONENT
+// components/users/user-referrals-section.tsx - FIXED COMPONENT
 "use client";
 
 import React, { useState } from "react";
@@ -88,27 +88,25 @@ export function UserReferralsSection({ userId }: UserReferralsSectionProps) {
     );
   };
 
-  const getRelationshipBadge = (relationshipType: string) => {
+  const getRelationshipBadge = (type: string) => {
     const variants = {
-      referrer: "bg-green-100 text-green-800",
-      referee: "bg-blue-100 text-blue-800",
+      referrer: "bg-emerald-100 text-emerald-800",
+      referee: "bg-orange-100 text-orange-800",
     };
     return (
-      variants[relationshipType as keyof typeof variants] ||
-      "bg-gray-100 text-gray-800"
+      variants[type as keyof typeof variants] || "bg-gray-100 text-gray-800"
     );
   };
 
   if (error) {
     return (
       <Card>
-        <CardContent className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <p className="text-red-600 mb-2">Error loading referrals</p>
-            <p className="text-sm text-muted-foreground mb-4">{error}</p>
-            <Button onClick={refreshReferrals} variant="outline">
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Try Again
+        <CardContent className="p-6">
+          <div className="text-center text-red-600">
+            <p>Error loading referrals: {error}</p>
+            <Button onClick={refreshReferrals} className="mt-2" size="sm">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Retry
             </Button>
           </div>
         </CardContent>
@@ -118,9 +116,9 @@ export function UserReferralsSection({ userId }: UserReferralsSectionProps) {
 
   return (
     <div className="space-y-6">
-      {/* Summary Statistics */}
+      {/* Summary Cards */}
       {summary && (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
@@ -131,8 +129,7 @@ export function UserReferralsSection({ userId }: UserReferralsSectionProps) {
             <CardContent>
               <div className="text-2xl font-bold">{summary.totalReferrals}</div>
               <p className="text-xs text-muted-foreground">
-                {summary.referrerCount} referred • {summary.refereeCount}{" "}
-                referee
+                {summary.referrerCount} made, {summary.refereeCount} received
               </p>
             </CardContent>
           </Card>
@@ -146,26 +143,9 @@ export function UserReferralsSection({ userId }: UserReferralsSectionProps) {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {formatCurrency(summary.totalEarnings, "BDT")}
+                {formatCurrency(summary.totalEarnings)}
               </div>
-              <p className="text-xs text-muted-foreground">
-                From referral bonuses
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Paid Earnings
-              </CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {formatCurrency(summary.paidEarnings, "BDT")}
-              </div>
-              <p className="text-xs text-muted-foreground">Already received</p>
+              <p className="text-xs text-muted-foreground">All time earnings</p>
             </CardContent>
           </Card>
 
@@ -178,21 +158,41 @@ export function UserReferralsSection({ userId }: UserReferralsSectionProps) {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {formatCurrency(summary.pendingEarnings, "BDT")}
+                {formatCurrency(summary.pendingEarnings)}
               </div>
               <p className="text-xs text-muted-foreground">Awaiting approval</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Paid Earnings
+              </CardTitle>
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {formatCurrency(summary.paidEarnings)}
+              </div>
+              <p className="text-xs text-muted-foreground">Successfully paid</p>
             </CardContent>
           </Card>
         </div>
       )}
 
-      {/* Filters and Table */}
+      {/* Referrals Table */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>Referral History</CardTitle>
-            <Button onClick={refreshReferrals} variant="outline" size="sm">
-              <RefreshCw className="mr-2 h-4 w-4" />
+            <CardTitle>Referral Activity</CardTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={refreshReferrals}
+              disabled={isLoading}
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
               Refresh
             </Button>
           </div>
@@ -214,16 +214,19 @@ export function UserReferralsSection({ userId }: UserReferralsSectionProps) {
             </Select>
 
             <Select
-              value={filters.status || ""}
+              value={filters.status ? filters.status : "all"}
               onValueChange={(value) =>
-                handleFilterChange("status", value || undefined)
+                handleFilterChange(
+                  "status",
+                  value === "all" ? undefined : value
+                )
               }
             >
               <SelectTrigger className="w-[140px]">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Statuses</SelectItem>
+                <SelectItem value="all">All Statuses</SelectItem>
                 <SelectItem value="Pending">Pending</SelectItem>
                 <SelectItem value="Paid">Paid</SelectItem>
                 <SelectItem value="Cancelled">Cancelled</SelectItem>
@@ -231,16 +234,19 @@ export function UserReferralsSection({ userId }: UserReferralsSectionProps) {
             </Select>
 
             <Select
-              value={filters.bonusType || ""}
+              value={filters.bonusType ? filters.bonusType : "all"}
               onValueChange={(value) =>
-                handleFilterChange("bonusType", value || undefined)
+                handleFilterChange(
+                  "bonusType",
+                  value === "all" ? undefined : value
+                )
               }
             >
               <SelectTrigger className="w-[160px]">
                 <SelectValue placeholder="Bonus Type" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Types</SelectItem>
+                <SelectItem value="all">All Types</SelectItem>
                 <SelectItem value="signup">Signup Bonus</SelectItem>
                 <SelectItem value="profit_share">Profit Share</SelectItem>
               </SelectContent>
@@ -335,18 +341,8 @@ export function UserReferralsSection({ userId }: UserReferralsSectionProps) {
                         )}
                       </TableCell>
                       <TableCell>
-                        <div>
-                          <div className="font-medium">
-                            {formatCurrency(referral.totalBonus, "BDT")}
-                          </div>
-                          {referral.profitBonus > 0 && (
-                            <div className="text-sm text-muted-foreground">
-                              Base:{" "}
-                              {formatCurrency(referral.bonusAmount, "BDT")} +
-                              Profit:{" "}
-                              {formatCurrency(referral.profitBonus, "BDT")}
-                            </div>
-                          )}
+                        <div className="font-medium">
+                          {formatCurrency(referral.bonusAmount)}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -360,49 +356,49 @@ export function UserReferralsSection({ userId }: UserReferralsSectionProps) {
                 </TableBody>
               </Table>
 
-              {/* Pagination */}
-              <div className="flex items-center justify-between mt-4">
-                <div className="text-sm text-muted-foreground">
-                  Showing {(pagination.page - 1) * pagination.limit + 1} to{" "}
-                  {Math.min(pagination.page * pagination.limit, totalReferrals)}{" "}
-                  of {totalReferrals} referrals
+              {/* Pagination could be added here if needed */}
+              {totalReferrals > pagination.limit && (
+                <div className="flex items-center justify-between px-2 mt-4">
+                  <div className="text-sm text-muted-foreground">
+                    Showing {referrals.length} of {totalReferrals} referrals
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setPagination((prev) => ({
+                          ...prev,
+                          page: Math.max(1, prev.page - 1),
+                        }))
+                      }
+                      disabled={pagination.page === 1}
+                    >
+                      Previous
+                    </Button>
+                    <div className="text-sm">
+                      Page {pagination.page} of{" "}
+                      {Math.ceil(totalReferrals / pagination.limit)}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setPagination((prev) => ({
+                          ...prev,
+                          page: prev.page + 1,
+                        }))
+                      }
+                      disabled={
+                        pagination.page >=
+                        Math.ceil(totalReferrals / pagination.limit)
+                      }
+                    >
+                      Next
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      setPagination((prev) => ({
-                        ...prev,
-                        page: prev.page - 1,
-                      }))
-                    }
-                    disabled={pagination.page <= 1}
-                  >
-                    Previous
-                  </Button>
-                  <span className="text-sm">
-                    Page {pagination.page} of{" "}
-                    {Math.ceil(totalReferrals / pagination.limit)}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      setPagination((prev) => ({
-                        ...prev,
-                        page: prev.page + 1,
-                      }))
-                    }
-                    disabled={
-                      pagination.page >=
-                      Math.ceil(totalReferrals / pagination.limit)
-                    }
-                  >
-                    Next
-                  </Button>
-                </div>
-              </div>
+              )}
             </>
           )}
         </CardContent>
