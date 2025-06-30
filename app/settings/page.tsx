@@ -1,12 +1,11 @@
 // app/settings/page.tsx
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,6 +16,26 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import {
   Settings as SettingsIcon,
   Shield,
@@ -31,445 +50,707 @@ import {
   RotateCcw,
   Eye,
   EyeOff,
+  Edit,
+  Trash2,
+  Plus,
+  Clock,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  History,
+  Info,
 } from "lucide-react";
 import { useSettings } from "@/hooks/use-settings";
 import { Setting, SettingCategory } from "@/types/settings";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
-const categoryIcons: Record<SettingCategory, React.ReactNode> = {
-  system: <SettingsIcon className="h-4 w-4" />,
-  security: <Shield className="h-4 w-4" />,
-  financial: <DollarSign className="h-4 w-4" />,
-  email: <Mail className="h-4 w-4" />,
-  upload: <Upload className="h-4 w-4" />,
-  business: <Users className="h-4 w-4" />,
-  api: <Server className="h-4 w-4" />,
-  maintenance: <Wrench className="h-4 w-4" />,
-};
+const categoryConfig = {
+  system: {
+    icon: SettingsIcon,
+    label: "System",
+    description: "Core application settings and configuration",
+    color: "text-blue-600 bg-blue-50 border-blue-200",
+  },
+  security: {
+    icon: Shield,
+    label: "Security",
+    description: "Authentication, authorization and security settings",
+    color: "text-red-600 bg-red-50 border-red-200",
+  },
+  financial: {
+    icon: DollarSign,
+    label: "Financial",
+    description: "Currency, rates, limits and financial configuration",
+    color: "text-green-600 bg-green-50 border-green-200",
+  },
+  email: {
+    icon: Mail,
+    label: "Email",
+    description: "SMTP settings and email configuration",
+    color: "text-purple-600 bg-purple-50 border-purple-200",
+  },
+  upload: {
+    icon: Upload,
+    label: "Upload",
+    description: "File upload limits, types and storage settings",
+    color: "text-orange-600 bg-orange-50 border-orange-200",
+  },
+  business: {
+    icon: Users,
+    label: "Business",
+    description: "Business rules, KYC, tasks and operational settings",
+    color: "text-indigo-600 bg-indigo-50 border-indigo-200",
+  },
+  api: {
+    icon: Server,
+    label: "API",
+    description: "API configuration and external services",
+    color: "text-teal-600 bg-teal-50 border-teal-200",
+  },
+  maintenance: {
+    icon: Wrench,
+    label: "Maintenance",
+    description: "System maintenance, backups and logging",
+    color: "text-gray-600 bg-gray-50 border-gray-200",
+  },
+} as const;
 
-const categoryLabels: Record<SettingCategory, string> = {
-  system: "System",
-  security: "Security",
-  financial: "Financial",
-  email: "Email",
-  upload: "Upload",
-  business: "Business",
-  api: "API",
-  maintenance: "Maintenance",
-};
-
-const categoryDescriptions: Record<SettingCategory, string> = {
-  system: "Core application settings and configuration",
-  security: "Authentication, authorization and security settings",
-  financial: "Currency, rates, limits and financial configuration",
-  email: "SMTP settings, templates and email configuration",
-  upload: "File upload limits, types and storage settings",
-  business: "Business rules, KYC, tasks and operational settings",
-  api: "API configuration, rate limits and external services",
-  maintenance: "System maintenance, backups and logging",
-};
+interface SettingFormData {
+  value: any;
+  reason?: string;
+}
 
 export default function SettingsPage() {
   const [activeCategory, setActiveCategory] =
     useState<SettingCategory>("system");
   const [searchQuery, setSearchQuery] = useState("");
-  const [showPasswords, setShowPasswords] = useState(false);
-  const [modifiedSettings, setModifiedSettings] = useState<Record<string, any>>(
-    {}
+  const [showSensitive, setShowSensitive] = useState(false);
+  const [modifiedSettings, setModifiedSettings] = useState<
+    Record<string, SettingFormData>
+  >({});
+  const [editingSettings, setEditingSettings] = useState<Set<string>>(
+    new Set()
   );
 
-  const { groupedSettings, isLoading, error, updateSetting } = useSettings(
-    { search: searchQuery },
-    undefined,
-    true
-  );
+  // Fetch grouped settings
+  const { groupedSettings, isLoading, error, updateSetting, refreshSettings } =
+    useSettings(undefined, undefined, true);
 
-  const handleSettingChange = (settingId: string, newValue: any) => {
+  // Get current category settings
+  const currentCategorySettings = useMemo(() => {
+    if (!groupedSettings?.[activeCategory]) return [];
+
+    const settings = groupedSettings[activeCategory];
+
+    if (searchQuery.trim()) {
+      return settings.filter(
+        (setting) =>
+          setting.key.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          setting.description.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+
+    return settings;
+  }, [groupedSettings, activeCategory, searchQuery]);
+
+  // Calculate category stats
+  const categoryStats = useMemo(() => {
+    if (!groupedSettings) return {};
+
+    const stats: Record<
+      string,
+      { total: number; editable: number; modified: number }
+    > = {};
+
+    Object.entries(groupedSettings).forEach(([category, settings]) => {
+      stats[category] = {
+        total: settings.length,
+        editable: settings.filter((s) => s.isEditable).length,
+        modified: settings.filter((s) => modifiedSettings[s._id]).length,
+      };
+    });
+
+    return stats;
+  }, [groupedSettings, modifiedSettings]);
+
+  // Handle setting value change
+  const handleSettingChange = (
+    settingId: string,
+    value: any,
+    reason?: string
+  ) => {
     setModifiedSettings((prev) => ({
       ...prev,
-      [settingId]: newValue,
+      [settingId]: { value, reason: reason || "Updated via settings panel" },
     }));
   };
 
+  // Handle save individual setting
   const handleSaveSetting = async (setting: Setting) => {
-    const newValue = modifiedSettings[setting._id];
-    if (newValue === undefined) return;
+    const modified = modifiedSettings[setting._id];
+    if (!modified) return;
 
     try {
       await updateSetting(setting._id, {
-        value: newValue,
-        updatedBy: "current-admin-id", // This should come from auth context
+        ...modified,
+        updatedBy: "SuperAdmin",
       });
-
-      // Remove from modified settings after successful save
       setModifiedSettings((prev) => {
         const updated = { ...prev };
         delete updated[setting._id];
         return updated;
       });
+      setEditingSettings((prev) => {
+        const updated = new Set(prev);
+        updated.delete(setting._id);
+        return updated;
+      });
+      toast.success("Setting updated successfully");
     } catch (error) {
-      console.error("Failed to save setting:", error);
+      toast.error("Failed to update setting");
+      console.error("Save setting error:", error);
     }
   };
 
-  const handleResetSetting = (settingId: string) => {
-    setModifiedSettings((prev) => {
-      const updated = { ...prev };
-      delete updated[settingId];
+  // Handle save all modified settings
+  const handleSaveAll = async () => {
+    const modifiedEntries = Object.entries(modifiedSettings);
+    if (modifiedEntries.length === 0) return;
+
+    try {
+      await Promise.all(
+        modifiedEntries.map(([settingId, data]) =>
+          updateSetting(settingId, { ...data, updatedBy: "SuperAdmin" })
+        )
+      );
+
+      setModifiedSettings({});
+      setEditingSettings(new Set());
+      toast.success(`${modifiedEntries.length} settings updated successfully`);
+    } catch (error) {
+      toast.error("Failed to save settings");
+      console.error("Save all error:", error);
+    }
+  };
+
+  // Handle discard changes
+  const handleDiscardChanges = () => {
+    setModifiedSettings({});
+    setEditingSettings(new Set());
+    toast.info("Changes discarded");
+  };
+
+  // Toggle editing mode for a setting
+  const toggleEditMode = (settingId: string) => {
+    setEditingSettings((prev) => {
+      const updated = new Set(prev);
+      if (updated.has(settingId)) {
+        updated.delete(settingId);
+      } else {
+        updated.add(settingId);
+      }
       return updated;
     });
   };
 
-  const getDisplayValue = (setting: Setting) => {
-    return modifiedSettings[setting._id] !== undefined
-      ? modifiedSettings[setting._id]
-      : setting.value;
-  };
-
-  const isModified = (settingId: string) => {
-    return modifiedSettings[settingId] !== undefined;
-  };
-
+  // Render setting input based on data type
   const renderSettingInput = (setting: Setting) => {
-    const currentValue = getDisplayValue(setting);
-    const isPassword =
+    const isEditing = editingSettings.has(setting._id);
+    const currentValue = modifiedSettings[setting._id]?.value ?? setting.value;
+    const isModified = modifiedSettings[setting._id] !== undefined;
+    const isSensitive =
       setting.isEncrypted ||
       setting.key.toLowerCase().includes("password") ||
       setting.key.toLowerCase().includes("secret");
 
-    if (!setting.isEditable) {
+    if (!isEditing) {
+      // Display mode
+      const displayValue =
+        isSensitive && !showSensitive
+          ? "••••••••"
+          : typeof currentValue === "object"
+          ? JSON.stringify(currentValue)
+          : String(currentValue);
+
       return (
-        <div className="flex items-center space-x-2">
-          <Input
-            value={currentValue?.toString() || ""}
-            disabled
-            className="flex-1"
-          />
-          <Badge variant="secondary">Read Only</Badge>
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-sm bg-gray-50 px-2 py-1 rounded">
+            {displayValue}
+          </span>
+          {setting.isEditable && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => toggleEditMode(setting._id)}
+              className="h-8 w-8 p-0"
+            >
+              <Edit className="h-4 w-4" />
+            </Button>
+          )}
         </div>
       );
     }
 
+    // Edit mode
+    const commonProps = {
+      value: currentValue,
+      onChange: (newValue: any) => handleSettingChange(setting._id, newValue),
+      className: cn(
+        "min-w-0 flex-1",
+        isModified && "border-orange-300 bg-orange-50"
+      ),
+    };
+
     switch (setting.dataType) {
       case "boolean":
         return (
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-3">
             <Switch
-              checked={currentValue === true}
+              checked={Boolean(currentValue)}
               onCheckedChange={(checked) =>
                 handleSettingChange(setting._id, checked)
               }
             />
-            <Label>{currentValue ? "Enabled" : "Disabled"}</Label>
-            {isModified(setting._id) && (
-              <Badge variant="outline">Modified</Badge>
-            )}
+            <span className="text-sm">
+              {currentValue ? "Enabled" : "Disabled"}
+            </span>
           </div>
         );
 
       case "number":
         return (
-          <div className="flex items-center space-x-2">
-            <Input
-              type="number"
-              value={currentValue?.toString() || ""}
-              onChange={(e) =>
-                handleSettingChange(
-                  setting._id,
-                  parseFloat(e.target.value) || 0
-                )
-              }
-              className="flex-1"
-              min={setting.validation?.min}
-              max={setting.validation?.max}
-            />
-            {isModified(setting._id) && (
-              <Badge variant="outline">Modified</Badge>
-            )}
-          </div>
+          <Input
+            type="number"
+            min={setting.validation?.min}
+            max={setting.validation?.max}
+            {...commonProps}
+            onChange={(e) =>
+              handleSettingChange(setting._id, parseFloat(e.target.value) || 0)
+            }
+          />
         );
 
       case "array":
         return (
-          <div className="space-y-2">
-            <Textarea
-              value={Array.isArray(currentValue) ? currentValue.join("\n") : ""}
-              onChange={(e) =>
-                handleSettingChange(
-                  setting._id,
-                  e.target.value.split("\n").filter(Boolean)
-                )
+          <Textarea
+            rows={3}
+            placeholder="Enter array values as JSON"
+            {...commonProps}
+            value={JSON.stringify(currentValue, null, 2)}
+            onChange={(e) => {
+              try {
+                const parsed = JSON.parse(e.target.value);
+                handleSettingChange(setting._id, parsed);
+              } catch {
+                // Allow invalid JSON while typing
+                handleSettingChange(setting._id, e.target.value);
               }
-              placeholder="One item per line"
-              rows={4}
-            />
-            {isModified(setting._id) && (
-              <Badge variant="outline">Modified</Badge>
-            )}
-          </div>
+            }}
+          />
         );
 
       case "object":
         return (
-          <div className="space-y-2">
-            <Textarea
-              value={
-                typeof currentValue === "object"
-                  ? JSON.stringify(currentValue, null, 2)
-                  : "{}"
+          <Textarea
+            rows={4}
+            placeholder="Enter object as JSON"
+            {...commonProps}
+            value={JSON.stringify(currentValue, null, 2)}
+            onChange={(e) => {
+              try {
+                const parsed = JSON.parse(e.target.value);
+                handleSettingChange(setting._id, parsed);
+              } catch {
+                // Allow invalid JSON while typing
+                handleSettingChange(setting._id, e.target.value);
               }
-              onChange={(e) => {
-                try {
-                  const parsed = JSON.parse(e.target.value);
-                  handleSettingChange(setting._id, parsed);
-                } catch {
-                  // Invalid JSON, ignore
-                }
-              }}
-              placeholder="JSON object"
-              rows={6}
-              className="font-mono text-sm"
-            />
-            {isModified(setting._id) && (
-              <Badge variant="outline">Modified</Badge>
-            )}
-          </div>
+            }}
+          />
         );
 
-      default: // string
-        if (setting.validation?.enum && setting.validation.enum.length > 0) {
+      default:
+        // String type
+        if (setting.validation?.enum) {
           return (
-            <div className="flex items-center space-x-2">
-              <Select
-                value={currentValue?.toString() || ""}
-                onValueChange={(value) =>
-                  handleSettingChange(setting._id, value)
-                }
+            <Select
+              value={String(currentValue)}
+              onValueChange={(value) => handleSettingChange(setting._id, value)}
+            >
+              <SelectTrigger
+                className={cn(
+                  "w-full",
+                  isModified && "border-orange-300 bg-orange-50"
+                )}
               >
-                <SelectTrigger className="flex-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {setting.validation.enum.map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {option}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {isModified(setting._id) && (
-                <Badge variant="outline">Modified</Badge>
-              )}
-            </div>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {setting.validation.enum.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           );
         }
 
+        const inputType = isSensitive
+          ? showSensitive
+            ? "text"
+            : "password"
+          : "text";
         return (
-          <div className="flex items-center space-x-2">
-            <div className="flex-1 relative">
-              <Input
-                type={isPassword && !showPasswords ? "password" : "text"}
-                value={currentValue?.toString() || ""}
-                onChange={(e) =>
-                  handleSettingChange(setting._id, e.target.value)
-                }
-                pattern={setting.validation?.pattern}
-                className="pr-10"
-              />
-              {isPassword && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="absolute right-0 top-0 h-full px-3"
-                  onClick={() => setShowPasswords(!showPasswords)}
-                >
-                  {showPasswords ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
-                </Button>
-              )}
-            </div>
-            {isModified(setting._id) && (
-              <Badge variant="outline">Modified</Badge>
+          <div className="flex items-center gap-2">
+            <Input
+              type={inputType}
+              {...commonProps}
+              onChange={(e) => handleSettingChange(setting._id, e.target.value)}
+            />
+            {isSensitive && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setShowSensitive(!showSensitive)}
+                className="h-8 w-8 p-0"
+              >
+                {showSensitive ? (
+                  <EyeOff className="h-4 w-4" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
+              </Button>
             )}
           </div>
         );
     }
   };
 
+  // Get validation status for a setting
+  const getValidationStatus = (setting: Setting) => {
+    const currentValue = modifiedSettings[setting._id]?.value ?? setting.value;
+    const validation = setting.validation;
+
+    if (!validation) return { isValid: true, message: "" };
+
+    // Required validation
+    if (
+      validation.required &&
+      (currentValue === null ||
+        currentValue === undefined ||
+        currentValue === "")
+    ) {
+      return { isValid: false, message: "This field is required" };
+    }
+
+    // Type-specific validations
+    if (setting.dataType === "number" && typeof currentValue === "number") {
+      if (validation.min !== undefined && currentValue < validation.min) {
+        return {
+          isValid: false,
+          message: `Value must be at least ${validation.min}`,
+        };
+      }
+      if (validation.max !== undefined && currentValue > validation.max) {
+        return {
+          isValid: false,
+          message: `Value must not exceed ${validation.max}`,
+        };
+      }
+    }
+
+    if (setting.dataType === "string" && typeof currentValue === "string") {
+      if (
+        validation.min !== undefined &&
+        currentValue.length < validation.min
+      ) {
+        return {
+          isValid: false,
+          message: `Minimum ${validation.min} characters required`,
+        };
+      }
+      if (
+        validation.max !== undefined &&
+        currentValue.length > validation.max
+      ) {
+        return {
+          isValid: false,
+          message: `Maximum ${validation.max} characters allowed`,
+        };
+      }
+      if (validation.enum && !validation.enum.includes(currentValue)) {
+        return {
+          isValid: false,
+          message: `Value must be one of: ${validation.enum.join(", ")}`,
+        };
+      }
+    }
+
+    return { isValid: true, message: "Valid" };
+  };
+
   if (isLoading) {
     return (
-      <div className="container mx-auto py-6">
-        <div className="flex items-center justify-center h-64">
-          <LoadingSpinner />
-        </div>
+      <div className="flex items-center justify-center h-96">
+        <LoadingSpinner size="lg" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="container mx-auto py-6">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center text-red-600">
-              Error loading settings: {error}
-            </div>
-          </CardContent>
-        </Card>
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <XCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-gray-900">
+            Failed to load settings
+          </h3>
+          <p className="text-gray-500 mt-1">{error}</p>
+          <Button onClick={refreshSettings} className="mt-4">
+            Try Again
+          </Button>
+        </div>
       </div>
     );
   }
 
-  const categories = groupedSettings
-    ? (Object.keys(groupedSettings) as SettingCategory[])
-    : [];
-  const currentCategorySettings = groupedSettings?.[activeCategory] || [];
+  const modifiedCount = Object.keys(modifiedSettings).length;
 
   return (
-    <div className="container mx-auto py-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Settings</h1>
-          <p className="text-muted-foreground">
-            Manage system configuration and preferences
-          </p>
+    <div className="flex h-full">
+      {/* Sidebar */}
+      <div className="w-64 border-r bg-white flex flex-col">
+        {/* Search */}
+        <div className="p-4 border-b">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              placeholder="Search settings..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9"
+            />
+          </div>
         </div>
-        <div className="flex items-center space-x-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowPasswords(!showPasswords)}
-          >
-            {showPasswords ? (
-              <EyeOff className="h-4 w-4 mr-2" />
-            ) : (
-              <Eye className="h-4 w-4 mr-2" />
-            )}
-            {showPasswords ? "Hide" : "Show"} Passwords
-          </Button>
-        </div>
-      </div>
 
-      {/* Search */}
-      <div className="max-w-md">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-          <Input
-            placeholder="Search settings..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-      </div>
+        {/* Categories */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-2">
+            {Object.entries(categoryConfig).map(([key, config]) => {
+              const IconComponent = config.icon;
+              const stats = categoryStats[key];
+              const isActive = activeCategory === key;
 
-      {/* Category Tabs */}
-      <Tabs
-        value={activeCategory}
-        onValueChange={(value) => setActiveCategory(value as SettingCategory)}
-      >
-        <TabsList className="grid w-full grid-cols-4 lg:grid-cols-8">
-          {categories.map((category) => (
-            <TabsTrigger
-              key={category}
-              value={category}
-              className="flex items-center space-x-1"
-            >
-              {categoryIcons[category]}
-              <span className="hidden sm:inline">
-                {categoryLabels[category]}
-              </span>
-            </TabsTrigger>
-          ))}
-        </TabsList>
-
-        {categories.map((category) => (
-          <TabsContent key={category} value={category} className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  {categoryIcons[category]}
-                  <span>{categoryLabels[category]} Settings</span>
-                </CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  {categoryDescriptions[category]}
-                </p>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {currentCategorySettings.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    No settings found in this category
-                  </div>
-                ) : (
-                  currentCategorySettings.map((setting) => (
-                    <div
-                      key={setting._id}
-                      className="space-y-2 p-4 border rounded-lg"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="space-y-1">
-                          <Label className="text-sm font-medium">
-                            {setting.key}
-                          </Label>
-                          <p className="text-xs text-muted-foreground">
-                            {setting.description}
-                          </p>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          {isModified(setting._id) && (
-                            <>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleResetSetting(setting._id)}
-                              >
-                                <RotateCcw className="h-3 w-3 mr-1" />
-                                Reset
-                              </Button>
-                              <Button
-                                size="sm"
-                                onClick={() => handleSaveSetting(setting)}
-                              >
-                                <Save className="h-3 w-3 mr-1" />
-                                Save
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                      <div className="pt-2">{renderSettingInput(setting)}</div>
-                      {setting.validation && (
-                        <div className="text-xs text-muted-foreground">
-                          {setting.validation.required && (
-                            <span>• Required </span>
-                          )}
-                          {setting.validation.min !== undefined && (
-                            <span>• Min: {setting.validation.min} </span>
-                          )}
-                          {setting.validation.max !== undefined && (
-                            <span>• Max: {setting.validation.max} </span>
-                          )}
-                          {setting.validation.pattern && (
-                            <span>
-                              • Pattern: {setting.validation.pattern}{" "}
-                            </span>
+              return (
+                <button
+                  key={key}
+                  onClick={() => setActiveCategory(key as SettingCategory)}
+                  className={cn(
+                    "w-full text-left p-3 rounded-lg transition-colors mb-1",
+                    "hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500",
+                    isActive && "bg-blue-50 border border-blue-200"
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={cn("p-2 rounded-md", config.color)}>
+                      <IconComponent className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-medium text-gray-900 truncate">
+                        {config.label}
+                      </h4>
+                      <p className="text-xs text-gray-500 truncate">
+                        {config.description}
+                      </p>
+                      {stats && (
+                        <div className="flex gap-2 mt-1">
+                          <Badge variant="secondary" className="text-xs">
+                            {stats.total}
+                          </Badge>
+                          {stats.modified > 0 && (
+                            <Badge variant="destructive" className="text-xs">
+                              {stats.modified} modified
+                            </Badge>
                           )}
                         </div>
                       )}
                     </div>
-                  ))
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        ))}
-      </Tabs>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Save Panel */}
+        {modifiedCount > 0 && (
+          <div className="border-t p-4 bg-orange-50">
+            <div className="text-sm text-orange-700 mb-3">
+              {modifiedCount} setting{modifiedCount !== 1 ? "s" : ""} modified
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={handleSaveAll} className="flex-1">
+                <Save className="h-4 w-4 mr-1" />
+                Save All
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleDiscardChanges}
+              >
+                <RotateCcw className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-6">
+          {/* Header */}
+          <div className="mb-6">
+            <div className="flex items-center gap-3 mb-2">
+              {React.createElement(categoryConfig[activeCategory].icon, {
+                className: "h-6 w-6 text-gray-600",
+              })}
+              <h1 className="text-2xl font-bold text-gray-900">
+                {categoryConfig[activeCategory].label} Settings
+              </h1>
+            </div>
+            <p className="text-gray-600">
+              {categoryConfig[activeCategory].description}
+            </p>
+          </div>
+
+          {/* Settings List */}
+          <div className="space-y-4">
+            {currentCategorySettings.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <SettingsIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    No settings found
+                  </h3>
+                  <p className="text-gray-500">
+                    {searchQuery
+                      ? "No settings match your search criteria"
+                      : "No settings available in this category"}
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              currentCategorySettings.map((setting) => {
+                const isModified = modifiedSettings[setting._id] !== undefined;
+                const isEditing = editingSettings.has(setting._id);
+                const validation = getValidationStatus(setting);
+
+                return (
+                  <Card
+                    key={setting._id}
+                    className={cn(
+                      "transition-all",
+                      isModified && "border-orange-300 shadow-md",
+                      !validation.isValid && "border-red-300"
+                    )}
+                  >
+                    <CardHeader className="pb-3">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <CardTitle className="text-lg flex items-center gap-2">
+                            {setting.key}
+                            {!setting.isEditable && (
+                              <Badge variant="secondary" className="text-xs">
+                                Read Only
+                              </Badge>
+                            )}
+                            {setting.isEncrypted && (
+                              <Badge variant="outline" className="text-xs">
+                                <Shield className="h-3 w-3 mr-1" />
+                                Encrypted
+                              </Badge>
+                            )}
+                            {isModified && (
+                              <Badge variant="destructive" className="text-xs">
+                                Modified
+                              </Badge>
+                            )}
+                          </CardTitle>
+                          <p className="text-sm text-gray-600 mt-1">
+                            {setting.description}
+                          </p>
+                          {setting.validation && (
+                            <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                              <span>Type: {setting.dataType}</span>
+                              {setting.validation.required && (
+                                <span className="text-red-600">Required</span>
+                              )}
+                              {setting.validation.min !== undefined && (
+                                <span>Min: {setting.validation.min}</span>
+                              )}
+                              {setting.validation.max !== undefined && (
+                                <span>Max: {setting.validation.max}</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {isModified && (
+                            <Button
+                              size="sm"
+                              onClick={() => handleSaveSetting(setting)}
+                              disabled={!validation.isValid}
+                            >
+                              <Save className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {isEditing && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => toggleEditMode(setting._id)}
+                            >
+                              Cancel
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                      {!validation.isValid && (
+                        <div className="flex items-center gap-2 mt-2 text-sm text-red-600">
+                          <AlertCircle className="h-4 w-4" />
+                          {validation.message}
+                        </div>
+                      )}
+                    </CardHeader>
+                    <CardContent>
+                      {renderSettingInput(setting)}
+
+                      {setting.defaultValue !== undefined && (
+                        <div className="mt-3 text-xs text-gray-500">
+                          Default: {JSON.stringify(setting.defaultValue)}
+                        </div>
+                      )}
+
+                      {setting.updatedAt && (
+                        <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
+                          <Clock className="h-3 w-3" />
+                          Last updated:{" "}
+                          {new Date(setting.updatedAt).toLocaleString()}
+                          {setting.updatedBy && (
+                            <span>by {setting.updatedBy}</span>
+                          )}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

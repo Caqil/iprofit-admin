@@ -218,7 +218,7 @@ async function signupHandler(request: NextRequest): Promise<NextResponse> {
     await logSignupAttempt(email, true, 'User created successfully', clientIP, userAgent);
 
     // Send welcome email if SMTP is configured
-    if (emailConfig.smtpHost && emailConfig.smtpUser) {
+    if (emailConfig.smtpHost && emailConfig.smtpPort) {
       try {
         const supportEmail = await getSetting('support_email', 'support@example.com');
         const loginUrl = await getSetting('login_url', `${process.env.NEXTAUTH_URL}/login`);

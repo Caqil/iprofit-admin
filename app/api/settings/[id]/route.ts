@@ -7,11 +7,10 @@ import { authMiddleware } from '@/middleware/auth';
 import { apiRateLimit } from '@/middleware/rate-limit';
 import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler } from '@/lib/api-helpers';
-import { objectIdValidator } from '@/utils/validators';
-import { z } from 'zod';
+import { updateSettingSchema } from '@/lib/validation';
 import mongoose from 'mongoose';
 import { encrypt, decrypt } from '@/lib/encryption';
-import { updateSettingSchema } from '@/lib/validation';
+import { invalidateSettingsCache } from '@/lib/settings-helper';
 
 // Next.js 15 Route Handler with proper params typing
 interface RouteContext {
@@ -79,43 +78,50 @@ async function getSettingHandler(
     // Await the params Promise (Next.js 15 requirement)
     const { id } = await context.params;
 
-    // Validate setting ID
-    const idValidation = objectIdValidator.safeParse(id);
-    if (!idValidation.success) {
-      return apiHandler.badRequest('Invalid setting ID format');
+    // Validate MongoDB ObjectId or find by key
+    let setting;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      // Find by ID
+      setting = await Setting.findById(id)
+        .populate('updatedBy', 'email role')
+        .lean();
+    } else {
+      // Find by key
+      setting = await Setting.findOne({ key: id })
+        .populate('updatedBy', 'email role')
+        .lean();
     }
-
-    // Find setting with populated updatedBy
-    const setting = await Setting.findById(id)
-      .populate('updatedBy', 'email role')
-      .lean();
 
     if (!setting) {
       return apiHandler.notFound('Setting not found');
     }
 
     // Get setting history
-    const history = await SettingHistory.find({ settingId: id })
+    const history = await SettingHistory.find({ settingId: setting._id })
       .populate('updatedBy', 'email role')
       .sort({ createdAt: -1 })
       .limit(10)
       .lean();
 
-    const response = {
-      setting: {
-        ...setting,
-        value: Array.isArray(setting) ? null : processSettingValue(setting as unknown as ISetting)
-      },
-      history: history
+    const processedSetting = {
+      ...setting,
+      value: processSettingValue(setting as ISetting),
+      history: history.map(h => ({
+        ...h,
+        oldValue: h.oldValue,
+        newValue: h.newValue
+      }))
     };
 
-    return apiHandler.success(response);
+    return apiHandler.success(processedSetting);
 
   } catch (error) {
     console.error('Get setting error:', error);
     return apiHandler.handleError(error);
   }
 }
+
+// PUT /api/settings/[id] - Update setting value
 async function updateSettingHandler(
   request: NextRequest,
   context: RouteContext
@@ -139,37 +145,41 @@ async function updateSettingHandler(
     // Await the params Promise (Next.js 15 requirement)
     const { id } = await context.params;
 
-    // Validate setting ID
-    const idValidation = objectIdValidator.safeParse(id);
-    if (!idValidation.success) {
-      return apiHandler.badRequest('Invalid setting ID format');
-    }
-
+    // Validate request body
     const body = await request.json();
     const validationResult = updateSettingSchema.safeParse(body);
     
     if (!validationResult.success) {
-      return apiHandler.badRequest('Invalid update data', validationResult.error.errors);
+      return apiHandler.badRequest('Invalid request data', validationResult.error.errors);
     }
 
     const { value, reason } = validationResult.data;
     const adminId = request.headers.get('X-Admin-Id');
 
-    // Find the setting
-    const setting = await Setting.findById(id);
-    
+    // Find setting by ID or key
+    let setting;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      setting = await Setting.findById(id);
+    } else {
+      setting = await Setting.findOne({ key: id });
+    }
+
     if (!setting) {
       return apiHandler.notFound('Setting not found');
     }
 
     // Check if setting is editable
     if (!setting.isEditable) {
-      return apiHandler.forbidden('This setting is not editable');
+      return apiHandler.forbidden('This setting cannot be modified');
     }
 
-    // Validate new value
+    // Validate the new value against setting validation rules
     if (!validateSettingValue(value, setting.validation, setting.dataType)) {
-      return apiHandler.badRequest('Setting value does not meet validation requirements');
+      return apiHandler.badRequest('Value does not meet validation requirements', {
+        validation: setting.validation,
+        dataType: setting.dataType,
+        providedValue: value
+      });
     }
 
     // Store old value for history
@@ -181,70 +191,69 @@ async function updateSettingHandler(
       processedValue = encrypt(value);
     }
 
-    // Update setting
-    setting.value = processedValue;
-    setting.updatedBy = new mongoose.Types.ObjectId(adminId!);
-    await setting.save();
-
-    // Create history record (without session)
-    try {
-      await SettingHistory.create({
-        settingId: setting._id,
-        oldValue,
-        newValue: value,
-        updatedBy: new mongoose.Types.ObjectId(adminId!),
-        reason,
-        ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
-        userAgent: request.headers.get('user-agent') || 'unknown'
-      });
-    } catch (historyError) {
-      console.error('Failed to create setting history:', historyError);
-      // Don't fail the request if history creation fails
-    }
-
-    // Create audit log (without session)
-    try {
-      await AuditLog.create({
-        adminId: new mongoose.Types.ObjectId(adminId!),
-        action: 'settings.update',
-        entity: 'Setting',
-        entityId: setting._id.toString(),
-        oldData: { value: oldValue },
-        newData: { value },
-        changes: [{
-          field: 'value',
-          oldValue,
-          newValue: value
-        }],
-        ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
-        userAgent: request.headers.get('user-agent') || 'unknown',
-        severity: setting.category === 'security' ? 'High' : 'Medium'
-      });
-    } catch (auditError) {
-      console.error('Failed to create audit log:', auditError);
-      // Don't fail the request if audit creation fails
-    }
-
-    // Fetch updated setting with population
-    const updatedSetting = await Setting.findById(id)
-      .populate('updatedBy', 'email role')
-      .lean();
+    // Update the setting
+    const updatedSetting = await Setting.findByIdAndUpdate(
+      setting._id,
+      {
+        value: processedValue,
+        updatedBy: new mongoose.Types.ObjectId(adminId!)
+      },
+      { new: true }
+    ).populate('updatedBy', 'email role');
 
     if (!updatedSetting) {
-      return apiHandler.notFound('Setting not found after update');
+      return apiHandler.handleError(new Error('Failed to update setting'));
     }
 
-    return apiHandler.success({
-      ...updatedSetting,
-      value: processSettingValue(updatedSetting as unknown as ISetting)
+    // Invalidate cache after update
+    invalidateSettingsCache();
+
+    // Create history record
+    await SettingHistory.create({
+      settingId: setting._id,
+      oldValue: oldValue,
+      newValue: value,
+      updatedBy: new mongoose.Types.ObjectId(adminId!),
+      reason: reason || `Updated ${setting.key}`,
+      ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
+      userAgent: request.headers.get('user-agent') || 'unknown'
     });
+
+    // Create audit log
+    await AuditLog.create({
+      adminId: new mongoose.Types.ObjectId(adminId!),
+      action: 'settings.update',
+      entity: 'Setting',
+      entityId: setting._id.toString(),
+      oldData: {
+        key: setting.key,
+        category: setting.category,
+        value: oldValue
+      },
+      newData: {
+        key: setting.key,
+        category: setting.category,
+        value: value
+      },
+      ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
+      userAgent: request.headers.get('user-agent') || 'unknown',
+      severity: 'Medium'
+    });
+
+    const responseData = {
+      ...updatedSetting.toObject(),
+      value: processSettingValue(updatedSetting)
+    };
+
+    return apiHandler.success(responseData, 'Setting updated successfully');
 
   } catch (error) {
     console.error('Update setting error:', error);
     return apiHandler.handleError(error);
   }
 }
-// DELETE /api/settings/[id] - Delete setting (only if custom setting)
+
+// DELETE /api/settings/[id] - Delete setting (only if not system critical)
 async function deleteSettingHandler(
   request: NextRequest,
   context: RouteContext
@@ -255,7 +264,7 @@ async function deleteSettingHandler(
   const authResult = await authMiddleware(request, {
     requireAuth: true,
     allowedUserTypes: ['admin'],
-    requiredPermission: 'settings.system' // Higher permission for deletion
+    requiredPermission: 'settings.update'
   });
   if (authResult) return authResult;
 
@@ -268,40 +277,62 @@ async function deleteSettingHandler(
     // Await the params Promise (Next.js 15 requirement)
     const { id } = await context.params;
 
-    // Validate setting ID
-    const idValidation = objectIdValidator.safeParse(id);
-    if (!idValidation.success) {
-      return apiHandler.badRequest('Invalid setting ID format');
+    // Find setting
+    let setting;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      setting = await Setting.findById(id);
+    } else {
+      setting = await Setting.findOne({ key: id });
     }
 
-    const adminId = request.headers.get('X-Admin-Id');
-
-    // Find the setting
-    const setting = await Setting.findById(id);
-    
     if (!setting) {
       return apiHandler.notFound('Setting not found');
     }
 
-    // Check if setting is system setting (cannot be deleted)
-    if (!setting.isEditable) {
-      return apiHandler.forbidden('System settings cannot be deleted');
+    // Prevent deletion of critical system settings
+    const criticalSettings = [
+      'app_name',
+      'company_name',
+      'primary_currency',
+      'usd_to_bdt_rate',
+      'min_deposit',
+      'device_limit_per_user',
+      'enable_device_limiting'
+    ];
+
+    if (criticalSettings.includes(setting.key)) {
+      return apiHandler.forbidden('Cannot delete critical system setting');
     }
 
-    // Delete setting
-    await Setting.findByIdAndDelete(id);
+    // Check if setting is editable
+    if (!setting.isEditable) {
+      return apiHandler.forbidden('This setting cannot be deleted');
+    }
+
+    const adminId = request.headers.get('X-Admin-Id');
+
+    // Store setting data for audit log
+    const settingData = {
+      key: setting.key,
+      category: setting.category,
+      value: processSettingValue(setting),
+      dataType: setting.dataType,
+      description: setting.description
+    };
+
+    // Delete the setting
+    await Setting.findByIdAndDelete(setting._id);
+
+    // Invalidate cache after deletion
+    invalidateSettingsCache();
 
     // Create audit log
     await AuditLog.create({
       adminId: new mongoose.Types.ObjectId(adminId!),
       action: 'settings.delete',
       entity: 'Setting',
-      entityId: id,
-      oldData: {
-        key: setting.key,
-        category: setting.category,
-        value: processSettingValue(setting)
-      },
+      entityId: setting._id.toString(),
+      oldData: settingData,
       ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
       userAgent: request.headers.get('user-agent') || 'unknown',
       severity: 'High'
@@ -311,6 +342,73 @@ async function deleteSettingHandler(
 
   } catch (error) {
     console.error('Delete setting error:', error);
+    return apiHandler.handleError(error);
+  }
+}
+
+// POST /api/settings/[id]/history - Get setting history
+async function getSettingHistoryHandler(
+  request: NextRequest,
+  context: RouteContext
+): Promise<NextResponse> {
+  const apiHandler = ApiHandler.create(request);
+
+  // Apply middleware
+  const authResult = await authMiddleware(request, {
+    requireAuth: true,
+    allowedUserTypes: ['admin'],
+    requiredPermission: 'settings.view'
+  });
+  if (authResult) return authResult;
+
+  try {
+    await connectToDatabase();
+
+    // Await the params Promise (Next.js 15 requirement)
+    const { id } = await context.params;
+
+    // Find setting
+    let setting;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      setting = await Setting.findById(id);
+    } else {
+      setting = await Setting.findOne({ key: id });
+    }
+
+    if (!setting) {
+      return apiHandler.notFound('Setting not found');
+    }
+
+    // Get query parameters for pagination
+    const url = new URL(request.url);
+    const page = parseInt(url.searchParams.get('page') || '1');
+    const limit = parseInt(url.searchParams.get('limit') || '20');
+    const skip = (page - 1) * limit;
+
+    // Get setting history with pagination
+    const history = await SettingHistory.find({ settingId: setting._id })
+      .populate('updatedBy', 'email role')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const totalCount = await SettingHistory.countDocuments({ settingId: setting._id });
+
+    return apiHandler.success({
+      history,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / limit),
+        hasNextPage: page < Math.ceil(totalCount / limit),
+        hasPrevPage: page > 1
+      }
+    });
+
+  } catch (error) {
+    console.error('Get setting history error:', error);
     return apiHandler.handleError(error);
   }
 }

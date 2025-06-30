@@ -1,11 +1,27 @@
 import { Setting } from '@/models/Setting';
 import { connectToDatabase } from '@/lib/db';
+import { decrypt } from '@/lib/encryption';
 
 class SettingsManager {
   private static cache = new Map<string, any>();
   private static cacheTimestamps = new Map<string, number>();
   private static CACHE_TTL = 5 * 60 * 1000; // 5 minutes
   private static isConnected = false;
+
+  /**
+   * Process setting value (decrypt if needed)
+   */
+  private static processSettingValue(setting: any): any {
+    if (setting.isEncrypted && setting.value) {
+      try {
+        return decrypt(setting.value);
+      } catch (error) {
+        console.error('Failed to decrypt setting value:', error);
+        return setting.value; // Return original value if decryption fails
+      }
+    }
+    return setting.value;
+  }
 
   /**
    * Get a single setting value with caching
@@ -24,7 +40,7 @@ class SettingsManager {
 
       // Fetch from database
       const setting = await Setting.findOne({ key }).lean();
-      const value = (setting && !Array.isArray(setting)) ? setting.value : fallback;
+      const value = setting ? this.processSettingValue(setting) : fallback;
 
       // Update cache
       this.cache.set(key, value);
@@ -69,8 +85,9 @@ class SettingsManager {
         // Process fetched settings
         const fetchedKeys = new Set();
         settings.forEach(setting => {
-          result[setting.key] = setting.value;
-          this.cache.set(setting.key, setting.value);
+          const processedValue = this.processSettingValue(setting);
+          result[setting.key] = processedValue;
+          this.cache.set(setting.key, processedValue);
           this.cacheTimestamps.set(setting.key, now);
           fetchedKeys.add(setting.key);
         });
@@ -114,7 +131,7 @@ class SettingsManager {
       const result: Record<string, any> = {};
 
       settings.forEach(setting => {
-        result[setting.key] = setting.value;
+        result[setting.key] = this.processSettingValue(setting);
       });
 
       // Update cache
@@ -140,6 +157,13 @@ class SettingsManager {
           this.cache.delete(key);
           this.cacheTimestamps.delete(key);
         });
+        // Also clear category caches that might contain these keys
+        for (const cacheKey of this.cache.keys()) {
+          if (cacheKey.startsWith('category:')) {
+            this.cache.delete(cacheKey);
+            this.cacheTimestamps.delete(cacheKey);
+          }
+        }
       } else {
         // Clear entire cache
         this.cache.clear();
@@ -192,7 +216,7 @@ export const getSettingsCacheStats = SettingsManager.getCacheStats.bind(Settings
 export { SettingsManager };
 
 // ============================================================================
-// BUSINESS RULES HELPER - Based on actual settings data
+// BUSINESS RULES HELPER - Enhanced for new database structure
 // ============================================================================
 
 export class BusinessRules {
@@ -225,19 +249,25 @@ export class BusinessRules {
     usdToBdtRate: number;
     minDeposit: number;
     signupBonus: number;
+    withdrawalBankFeePercentage: number;
+    withdrawalMobileFeePercentage: number;
   }> {
     const settings = await getSettings([
       'primary_currency',
       'usd_to_bdt_rate',
       'min_deposit',
-      'signup_bonus'
+      'signup_bonus',
+      'withdrawal_bank_fee_percentage',
+      'withdrawal_mobile_fee_percentage'
     ]);
 
     return {
       primaryCurrency: settings.primary_currency || 'BDT',
       usdToBdtRate: settings.usd_to_bdt_rate || 110.50,
       minDeposit: settings.min_deposit || 100,
-      signupBonus: settings.signup_bonus || 100
+      signupBonus: settings.signup_bonus || 100,
+      withdrawalBankFeePercentage: settings.withdrawal_bank_fee_percentage || 0.02,
+      withdrawalMobileFeePercentage: settings.withdrawal_mobile_fee_percentage || 0.015
     };
   }
 
@@ -246,19 +276,19 @@ export class BusinessRules {
    */
   static async getSecurityConfig(): Promise<{
     deviceLimitPerUser: number;
+    enableDeviceLimiting: boolean;
     sessionTimeoutMinutes: number;
-    maxFailedLoginAttempts: number;
   }> {
     const settings = await getSettings([
       'device_limit_per_user',
-      'session_timeout_minutes',
-      'max_failed_login_attempts'
+      'enable_device_limiting',
+      'session_timeout_minutes'
     ]);
 
     return {
       deviceLimitPerUser: settings.device_limit_per_user || 1,
-      sessionTimeoutMinutes: settings.session_timeout_minutes || 30,
-      maxFailedLoginAttempts: settings.max_failed_login_attempts || 5
+      enableDeviceLimiting: settings.enable_device_limiting !== false, // Default true
+      sessionTimeoutMinutes: settings.session_timeout_minutes || 30
     };
   }
 
@@ -268,36 +298,15 @@ export class BusinessRules {
   static async getEmailConfig(): Promise<{
     smtpHost: string;
     smtpPort: number;
-    smtpUser: string;
   }> {
     const settings = await getSettings([
       'smtp_host',
-      'smtp_port',
-      'smtp_user'
+      'smtp_port'
     ]);
 
     return {
       smtpHost: settings.smtp_host || 'smtp.gmail.com',
-      smtpPort: settings.smtp_port || 587,
-      smtpUser: settings.smtp_user || ''
-    };
-  }
-
-  /**
-   * Get upload configuration
-   */
-  static async getUploadConfig(): Promise<{
-    maxFileSizeMb: number;
-    allowedFileTypes: string[];
-  }> {
-    const settings = await getSettings([
-      'max_file_size_mb',
-      'allowed_file_types'
-    ]);
-
-    return {
-      maxFileSizeMb: settings.max_file_size_mb || 10,
-      allowedFileTypes: settings.allowed_file_types || ['jpg', 'jpeg', 'png', 'pdf', 'doc', 'docx']
+      smtpPort: settings.smtp_port || 587
     };
   }
 
@@ -306,64 +315,41 @@ export class BusinessRules {
    */
   static async getBusinessConfig(): Promise<{
     autoKycApproval: boolean;
-    maxTasksPerUser: number;
+    enableReferralSystem: boolean;
   }> {
     const settings = await getSettings([
       'auto_kyc_approval',
-      'max_tasks_per_user'
+      'enable_referral_system'
     ]);
 
     return {
       autoKycApproval: settings.auto_kyc_approval || false,
-      maxTasksPerUser: settings.max_tasks_per_user || 10
+      enableReferralSystem: settings.enable_referral_system !== false // Default true
     };
   }
 
   /**
-   * Get withdrawal configuration
+   * Get withdrawal configuration - updated to match actual database structure
    */
   static async getWithdrawalConfig(): Promise<{
-    bankTransferFeePercentage: number;
-    bankTransferMinFee: number;
-    mobileBankingFeePercentage: number;
-    cryptoWalletFeePercentage: number;
-    checkFlatFee: number;
-    urgentProcessingFeePercentage: number;
+    bankFeePercentage: number;
+    mobileFeePercentage: number;
     processingTimes: {
-      bankTransfer: string;
-      mobileBanking: string;
-      cryptoWallet: string;
-      check: string;
-      urgent: string;
+      bank: string;
+      mobile: string;
     };
   }> {
     const settings = await getSettings([
       'withdrawal_bank_fee_percentage',
-      'withdrawal_bank_min_fee',
-      'withdrawal_mobile_fee_percentage',
-      'withdrawal_crypto_fee_percentage',
-      'withdrawal_check_flat_fee',
-      'withdrawal_urgent_fee_percentage',
-      'withdrawal_processing_time_bank',
-      'withdrawal_processing_time_mobile',
-      'withdrawal_processing_time_crypto',
-      'withdrawal_processing_time_check',
-      'withdrawal_processing_time_urgent'
+      'withdrawal_mobile_fee_percentage'
     ]);
 
     return {
-      bankTransferFeePercentage: settings.withdrawal_bank_fee_percentage || 0.02, // 2%
-      bankTransferMinFee: settings.withdrawal_bank_min_fee || 5, // $5 minimum
-      mobileBankingFeePercentage: settings.withdrawal_mobile_fee_percentage || 0.015, // 1.5%
-      cryptoWalletFeePercentage: settings.withdrawal_crypto_fee_percentage || 0.01, // 1%
-      checkFlatFee: settings.withdrawal_check_flat_fee || 10, // $10 flat fee
-      urgentProcessingFeePercentage: settings.withdrawal_urgent_fee_percentage || 0.005, // 0.5%
+      bankFeePercentage: settings.withdrawal_bank_fee_percentage || 0.02, // 2%
+      mobileFeePercentage: settings.withdrawal_mobile_fee_percentage || 0.015, // 1.5%
       processingTimes: {
-        bankTransfer: settings.withdrawal_processing_time_bank || '1-3 business days',
-        mobileBanking: settings.withdrawal_processing_time_mobile || '2-4 hours',
-        cryptoWallet: settings.withdrawal_processing_time_crypto || '4-6 hours',
-        check: settings.withdrawal_processing_time_check || '5-7 business days',
-        urgent: settings.withdrawal_processing_time_urgent || '1-2 hours'
+        bank: '1-3 business days',
+        mobile: '2-4 hours'
       }
     };
   }
@@ -372,104 +358,47 @@ export class BusinessRules {
    * Calculate withdrawal fees based on method and amount
    */
   static async calculateWithdrawalFee(
-    method: string, 
-    amount: number, 
-    isUrgent: boolean = false
-  ): Promise<{ fee: number; netAmount: number; breakdown: any }> {
+    method: 'bank' | 'mobile', 
+    amount: number
+  ): Promise<{ fee: number; netAmount: number; feePercentage: number }> {
     const config = await this.getWithdrawalConfig();
-    let baseFee = 0;
-
+    
+    let feePercentage = 0;
     switch (method) {
-      case 'bank_transfer':
-        baseFee = Math.max(amount * config.bankTransferFeePercentage, config.bankTransferMinFee);
+      case 'bank':
+        feePercentage = config.bankFeePercentage;
         break;
-      case 'mobile_banking':
-        baseFee = amount * config.mobileBankingFeePercentage;
-        break;
-      case 'crypto_wallet':
-        baseFee = amount * config.cryptoWalletFeePercentage;
-        break;
-      case 'check':
-        baseFee = config.checkFlatFee;
+      case 'mobile':
+        feePercentage = config.mobileFeePercentage;
         break;
       default:
-        baseFee = 0;
+        feePercentage = 0;
     }
 
-    const urgentFee = isUrgent ? amount * config.urgentProcessingFeePercentage : 0;
-    const totalFee = baseFee + urgentFee;
-    const netAmount = amount - totalFee;
+    const fee = amount * feePercentage;
+    const netAmount = amount - fee;
 
     return {
-      fee: totalFee,
+      fee,
       netAmount,
-      breakdown: {
-        baseFee,
-        urgentFee,
-        method,
-        isUrgent,
-        feeRates: {
-          base: method === 'bank_transfer' ? config.bankTransferFeePercentage : 
-                method === 'mobile_banking' ? config.mobileBankingFeePercentage :
-                method === 'crypto_wallet' ? config.cryptoWalletFeePercentage : 0,
-          urgent: config.urgentProcessingFeePercentage
-        }
-      }
+      feePercentage
     };
   }
 
   /**
    * Get processing time estimate for withdrawal method
    */
-  static async getWithdrawalProcessingTime(method: string, isUrgent: boolean = false): Promise<string> {
+  static async getWithdrawalProcessingTime(method: 'bank' | 'mobile'): Promise<string> {
     const config = await this.getWithdrawalConfig();
     
-    if (isUrgent) {
-      return config.processingTimes.urgent;
-    }
-
     switch (method) {
-      case 'bank_transfer':
-        return config.processingTimes.bankTransfer;
-      case 'mobile_banking':
-        return config.processingTimes.mobileBanking;
-      case 'crypto_wallet':
-        return config.processingTimes.cryptoWallet;
-      case 'check':
-        return config.processingTimes.check;
+      case 'bank':
+        return config.processingTimes.bank;
+      case 'mobile':
+        return config.processingTimes.mobile;
       default:
         return '1-3 business days';
     }
-  }
-
-  /**
-   * Get API configuration
-   */
-  static async getApiConfig(): Promise<{
-    apiTimeoutSeconds: number;
-  }> {
-    const settings = await getSettings([
-      'api_timeout_seconds'
-    ]);
-
-    return {
-      apiTimeoutSeconds: settings.api_timeout_seconds || 30
-    };
-  }
-
-  /**
-   * Get maintenance configuration
-   */
-  static async getMaintenanceConfig(): Promise<{
-    autoBackupEnabled: boolean;
-  }> {
-    const settings = await getSettings([
-      'auto_backup_enabled'
-    ]);
-
-    return {
-      autoBackupEnabled: settings.auto_backup_enabled || true
-    };
   }
 
   /**
@@ -497,35 +426,6 @@ export class BusinessRules {
   }
 
   /**
-   * Check if user can upload file
-   */
-  static async validateFileUpload(
-    fileName: string, 
-    fileSizeMb: number
-  ): Promise<{ valid: boolean; error?: string }> {
-    const uploadConfig = await this.getUploadConfig();
-    
-    // Check file size
-    if (fileSizeMb > uploadConfig.maxFileSizeMb) {
-      return {
-        valid: false,
-        error: `File size exceeds maximum limit of ${uploadConfig.maxFileSizeMb}MB`
-      };
-    }
-
-    // Check file type
-    const fileExtension = fileName.split('.').pop()?.toLowerCase();
-    if (!fileExtension || !uploadConfig.allowedFileTypes.includes(fileExtension)) {
-      return {
-        valid: false,
-        error: `File type not allowed. Allowed types: ${uploadConfig.allowedFileTypes.join(', ')}`
-      };
-    }
-
-    return { valid: true };
-  }
-
-  /**
    * Get signup bonus amount
    */
   static async getSignupBonus(): Promise<number> {
@@ -540,17 +440,17 @@ export class BusinessRules {
   }
 
   /**
+   * Check if device limiting is enabled
+   */
+  static async isDeviceLimitingEnabled(): Promise<boolean> {
+    return await getSetting('enable_device_limiting', true);
+  }
+
+  /**
    * Get session timeout in minutes
    */
   static async getSessionTimeout(): Promise<number> {
     return await getSetting('session_timeout_minutes', 30);
-  }
-
-  /**
-   * Get max failed login attempts
-   */
-  static async getMaxFailedLogins(): Promise<number> {
-    return await getSetting('max_failed_login_attempts', 5);
   }
 
   /**
@@ -568,10 +468,10 @@ export class BusinessRules {
   }
 
   /**
-   * Get max tasks per user
+   * Check if referral system is enabled
    */
-  static async getMaxTasksPerUser(): Promise<number> {
-    return await getSetting('max_tasks_per_user', 10);
+  static async isReferralSystemEnabled(): Promise<boolean> {
+    return await getSetting('enable_referral_system', true);
   }
 
   /**
@@ -600,5 +500,117 @@ export class BusinessRules {
    */
   static async getCompanyName(): Promise<string> {
     return await getSetting('company_name', 'IProfit Technologies');
+  }
+
+  /**
+   * Convert currency amount
+   */
+  static async convertCurrency(
+    amount: number, 
+    fromCurrency: string, 
+    toCurrency: string
+  ): Promise<number> {
+    if (fromCurrency === toCurrency) return amount;
+    
+    const exchangeRate = await this.getExchangeRate();
+    
+    if (fromCurrency === 'USD' && toCurrency === 'BDT') {
+      return amount * exchangeRate;
+    }
+    
+    if (fromCurrency === 'BDT' && toCurrency === 'USD') {
+      return amount / exchangeRate;
+    }
+    
+    return amount; // Default to original amount if conversion not supported
+  }
+
+  /**
+   * Get minimum deposit in specific currency
+   */
+  static async getMinDepositInCurrency(currency: string): Promise<number> {
+    const minDepositBDT = await getSetting('min_deposit', 100);
+    
+    if (currency === 'BDT') {
+      return minDepositBDT;
+    }
+    
+    if (currency === 'USD') {
+      return await this.convertCurrency(minDepositBDT, 'BDT', 'USD');
+    }
+    
+    return minDepositBDT;
+  }
+
+  /**
+   * Get signup bonus in specific currency
+   */
+  static async getSignupBonusInCurrency(currency: string): Promise<number> {
+    const signupBonusBDT = await getSetting('signup_bonus', 100);
+    
+    if (currency === 'BDT') {
+      return signupBonusBDT;
+    }
+    
+    if (currency === 'USD') {
+      return await this.convertCurrency(signupBonusBDT, 'BDT', 'USD');
+    }
+    
+    return signupBonusBDT;
+  }
+
+  /**
+   * Validate if user can create more devices
+   */
+  static async validateDeviceLimit(currentDeviceCount: number): Promise<{ valid: boolean; error?: string; maxDevices?: number }> {
+    const isEnabled = await this.isDeviceLimitingEnabled();
+    
+    if (!isEnabled) {
+      return { valid: true };
+    }
+    
+    const maxDevices = await this.getDeviceLimit();
+    
+    if (currentDeviceCount >= maxDevices) {
+      return {
+        valid: false,
+        error: `Maximum ${maxDevices} device(s) allowed per user`,
+        maxDevices
+      };
+    }
+    
+    return { valid: true, maxDevices };
+  }
+
+  /**
+   * Get all financial settings formatted for transaction processing
+   */
+  static async getTransactionSettings(): Promise<{
+    primaryCurrency: string;
+    exchangeRate: number;
+    minDeposit: number;
+    signupBonus: number;
+    fees: {
+      bankWithdrawal: number;
+      mobileWithdrawal: number;
+    };
+    autoKycApproval: boolean;
+  }> {
+    const [financial, business] = await Promise.all([
+      this.getFinancialConfig(),
+      this.getBusinessConfig()
+    ]);
+
+    return {
+      primaryCurrency: financial.primaryCurrency,
+      exchangeRate: financial.usdToBdtRate,
+      minDeposit: financial.minDeposit,
+      signupBonus: financial.signupBonus,
+      fees: {
+        bankWithdrawal: financial.withdrawalBankFeePercentage,
+        mobileWithdrawal: financial.withdrawalMobileFeePercentage
+      },
+      autoKycApproval: business.autoKycApproval
+    };
   }
 }

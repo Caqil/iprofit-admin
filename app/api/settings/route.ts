@@ -7,12 +7,10 @@ import { authMiddleware } from '@/middleware/auth';
 import { apiRateLimit } from '@/middleware/rate-limit';
 import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler, createPaginatedResponse, createPaginationStages } from '@/lib/api-helpers';
-import { createSettingSchema, paginationSchema, settingsListQuerySchema } from '@/lib/validation';
-import { SettingFilter, SettingsOverview, SettingsGroupedByCategory } from '@/types/settings';
-import { z } from 'zod';
+import { createSettingSchema, settingsListQuerySchema } from '@/lib/validation';
+import { SettingsGroupedByCategory } from '@/types/settings';
 import mongoose from 'mongoose';
 import { encrypt, decrypt } from '@/lib/encryption';
-
 
 // Helper function to build settings filter
 function buildSettingsFilter(params: any): any {
@@ -36,7 +34,7 @@ function buildSettingsFilter(params: any): any {
   return filter;
 }
 
-// Helper function to process setting value
+// Helper function to process setting value (decrypt if needed)
 function processSettingValue(setting: ISetting): any {
   if (setting.isEncrypted && setting.value) {
     try {
@@ -49,7 +47,7 @@ function processSettingValue(setting: ISetting): any {
   return setting.value;
 }
 
-// Helper function to validate setting value
+// Helper function to validate setting value against validation rules
 function validateSettingValue(value: any, validation: any, dataType: string): boolean {
   if (!validation) return true;
 
@@ -119,7 +117,7 @@ async function getSettingsHandler(request: NextRequest): Promise<NextResponse> {
       settings.forEach((setting: any) => {
         const processedSetting = {
           ...setting,
-          value: processSettingValue(setting)
+          value: processSettingValue(setting as unknown as ISetting)
         };
         
         if (!groupedSettings[setting.category]) {
@@ -208,7 +206,7 @@ async function createSettingHandler(request: NextRequest): Promise<NextResponse>
       return apiHandler.conflict('Setting with this key already exists');
     }
 
-    // Validate setting value
+    // Validate setting value against validation rules
     if (!validateSettingValue(data.value, data.validation, data.dataType)) {
       return apiHandler.badRequest('Setting value does not meet validation requirements');
     }
@@ -219,10 +217,17 @@ async function createSettingHandler(request: NextRequest): Promise<NextResponse>
       processedValue = encrypt(data.value);
     }
 
-    // Create setting
+    // Create setting with new structure
     const setting = new Setting({
-      ...data,
+      category: data.category,
+      key: data.key,
       value: processedValue,
+      dataType: data.dataType,
+      description: data.description,
+      isEditable: data.isEditable,
+      isEncrypted: data.isEncrypted,
+      defaultValue: data.defaultValue,
+      validation: data.validation,
       updatedBy: new mongoose.Types.ObjectId(adminId!)
     });
 
@@ -234,7 +239,12 @@ async function createSettingHandler(request: NextRequest): Promise<NextResponse>
       action: 'settings.create',
       entity: 'Setting',
       entityId: setting._id.toString(),
-      newData: { key: data.key, category: data.category },
+      newData: { 
+        key: data.key, 
+        category: data.category,
+        value: data.value,
+        dataType: data.dataType
+      },
       ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
       userAgent: request.headers.get('user-agent') || 'unknown',
       severity: 'Medium'
@@ -247,6 +257,7 @@ async function createSettingHandler(request: NextRequest): Promise<NextResponse>
     if (!populatedSetting) {
       return apiHandler.handleError(new Error('Failed to populate setting after creation'));
     }
+
     return apiHandler.created({
       ...populatedSetting,
       value: processSettingValue(populatedSetting as unknown as ISetting)
@@ -258,6 +269,266 @@ async function createSettingHandler(request: NextRequest): Promise<NextResponse>
   }
 }
 
+// POST /api/settings/bulk-update - Bulk update settings
+async function bulkUpdateSettingsHandler(request: NextRequest): Promise<NextResponse> {
+  const apiHandler = ApiHandler.create(request);
+
+  // Apply middleware
+  const authResult = await authMiddleware(request, {
+    requireAuth: true,
+    allowedUserTypes: ['admin'],
+    requiredPermission: 'settings.update'
+  });
+  if (authResult) return authResult;
+
+  const rateLimitResult = await apiRateLimit(request);
+  if (rateLimitResult) return rateLimitResult;
+
+  try {
+    await connectToDatabase();
+
+    const body = await request.json();
+    const { settings, reason } = body;
+
+    if (!Array.isArray(settings) || settings.length === 0) {
+      return apiHandler.badRequest('Settings array is required');
+    }
+
+    if (settings.length > 50) {
+      return apiHandler.badRequest('Cannot update more than 50 settings at once');
+    }
+
+    const adminId = request.headers.get('X-Admin-Id');
+    const updatedSettings: any[] = [];
+    const errors: any[] = [];
+
+    // Start a session for transaction
+    const session = await mongoose.startSession();
+    
+    try {
+      await session.withTransaction(async () => {
+        for (const settingUpdate of settings) {
+          try {
+            const { key, value } = settingUpdate;
+
+            // Find the setting
+            const existingSetting = await Setting.findOne({ key }).session(session);
+            if (!existingSetting) {
+              errors.push({ key, error: 'Setting not found' });
+              continue;
+            }
+
+            // Check if setting is editable
+            if (!existingSetting.isEditable) {
+              errors.push({ key, error: 'Setting is not editable' });
+              continue;
+            }
+
+            // Validate the new value
+            if (!validateSettingValue(value, existingSetting.validation, existingSetting.dataType)) {
+              errors.push({ key, error: 'Value does not meet validation requirements' });
+              continue;
+            }
+
+            // Store old value for history
+            const oldValue = processSettingValue(existingSetting);
+
+            // Encrypt new value if needed
+            let processedValue = value;
+            if (existingSetting.isEncrypted && value) {
+              processedValue = encrypt(value);
+            }
+
+            // Update the setting
+            const updatedSetting = await Setting.findByIdAndUpdate(
+              existingSetting._id,
+              {
+                value: processedValue,
+                updatedBy: new mongoose.Types.ObjectId(adminId!)
+              },
+              { new: true, session }
+            ).populate('updatedBy', 'email role');
+
+            // Create history record
+            await SettingHistory.create([{
+              settingId: existingSetting._id,
+              oldValue: oldValue,
+              newValue: value,
+              updatedBy: new mongoose.Types.ObjectId(adminId!),
+              reason: reason || 'Bulk update',
+              ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
+              userAgent: request.headers.get('user-agent') || 'unknown'
+            }], { session });
+
+            updatedSettings.push({
+              ...updatedSetting.toObject(),
+              value: processSettingValue(updatedSetting)
+            });
+
+          } catch (error) {
+            console.error(`Error updating setting ${settingUpdate.key}:`, error);
+            errors.push({ 
+              key: settingUpdate.key, 
+              error: error instanceof Error ? error.message : 'Unknown error' 
+            });
+          }
+        }
+      });
+
+      // Create audit log for bulk update
+      await AuditLog.create({
+        adminId: new mongoose.Types.ObjectId(adminId!),
+        action: 'settings.bulk_update',
+        entity: 'Setting',
+        newData: {
+          updatedCount: updatedSettings.length,
+          errorCount: errors.length,
+          reason,
+          updatedKeys: updatedSettings.map(s => s.key)
+        },
+        ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
+        userAgent: request.headers.get('user-agent') || 'unknown',
+        severity: 'High'
+      });
+
+      return apiHandler.success({
+        updated: updatedSettings,
+        errors,
+        summary: {
+          total: settings.length,
+          successful: updatedSettings.length,
+          failed: errors.length
+        }
+      });
+
+    } finally {
+      await session.endSession();
+    }
+
+  } catch (error) {
+    console.error('Bulk update settings error:', error);
+    return apiHandler.handleError(error);
+  }
+}
+
+// POST /api/settings/reset - Reset settings to default values
+async function resetSettingsHandler(request: NextRequest): Promise<NextResponse> {
+  const apiHandler = ApiHandler.create(request);
+
+  // Apply middleware
+  const authResult = await authMiddleware(request, {
+    requireAuth: true,
+    allowedUserTypes: ['admin'],
+    requiredPermission: 'settings.update'
+  });
+  if (authResult) return authResult;
+
+  try {
+    await connectToDatabase();
+
+    const body = await request.json();
+    const { keys, reason } = body;
+
+    if (!Array.isArray(keys) || keys.length === 0) {
+      return apiHandler.badRequest('Setting keys array is required');
+    }
+
+    const adminId = request.headers.get('X-Admin-Id');
+    const resetSettings: { key: any; oldValue: any; newValue: any }[] = [];
+
+    for (const key of keys) {
+      const setting = await Setting.findOne({ key });
+      if (!setting) {
+        continue;
+      }
+
+      if (!setting.isEditable) {
+        continue;
+      }
+
+      if (setting.defaultValue !== undefined) {
+        const oldValue = processSettingValue(setting);
+        
+        // Encrypt default value if needed
+        let processedDefaultValue = setting.defaultValue;
+        if (setting.isEncrypted && setting.defaultValue) {
+          processedDefaultValue = encrypt(setting.defaultValue);
+        }
+
+        // Update to default value
+        await Setting.findByIdAndUpdate(setting._id, {
+          value: processedDefaultValue,
+          updatedBy: new mongoose.Types.ObjectId(adminId!)
+        });
+
+        // Create history record
+        await SettingHistory.create({
+          settingId: setting._id,
+          oldValue: oldValue,
+          newValue: setting.defaultValue,
+          updatedBy: new mongoose.Types.ObjectId(adminId!),
+          reason: reason || 'Reset to default',
+          ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
+          userAgent: request.headers.get('user-agent') || 'unknown'
+        });
+
+        resetSettings.push({
+          key: setting.key,
+          oldValue,
+          newValue: setting.defaultValue
+        });
+      }
+    }
+
+    // Create audit log
+    await AuditLog.create({
+      adminId: new mongoose.Types.ObjectId(adminId!),
+      action: 'settings.reset',
+      entity: 'Setting',
+      newData: {
+        resetCount: resetSettings.length,
+        reason,
+        resetKeys: resetSettings.map(s => s.key)
+      },
+      ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
+      userAgent: request.headers.get('user-agent') || 'unknown',
+      severity: 'High'
+    });
+
+    return apiHandler.success({
+      resetSettings,
+      message: `${resetSettings.length} settings reset to default values`
+    });
+
+  } catch (error) {
+    console.error('Reset settings error:', error);
+    return apiHandler.handleError(error);
+  }
+}
+
+// Helper function to get settings by category
+async function getSettingsByCategory(category: string): Promise<any[]> {
+  const settings = await Setting.find({ category })
+    .populate('updatedBy', 'email role')
+    .sort({ key: 1 })
+    .lean();
+    
+  return settings.map(setting => ({
+    ...setting,
+    value: processSettingValue(setting as unknown as ISetting)
+  }));
+}
+
+// Helper function to get specific setting value
+async function getSettingValue(key: string): Promise<any> {
+  const setting = await Setting.findOne({ key }).lean();
+  if (!setting) return null;
+  return processSettingValue(setting as unknown as ISetting);
+}
+
 // Export handlers
 export const GET = withErrorHandler(getSettingsHandler);
 export const POST = withErrorHandler(createSettingHandler);
+
+// Export helper functions for use in other parts of the application
+export { getSettingsByCategory, getSettingValue, processSettingValue };
