@@ -1,3 +1,4 @@
+// hooks/use-referrals.ts - FIXED VERSION
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
   Referral, 
@@ -23,13 +24,21 @@ interface ReferralsHookReturn {
   refreshReferrals: () => void;
 }
 
+// FIXED: API Response wrapper type to match actual response structure
+interface ApiResponseWrapper<T> {
+  success: boolean;
+  data: T;
+  message?: string;
+  timestamp: string;
+}
+
 export function useReferrals(
   filters?: ReferralFilter,
   pagination?: PaginationParams
 ): ReferralsHookReturn {
   const queryClient = useQueryClient();
 
-  // Referrals list query - FIXED to handle nested pagination structure
+  // FIXED: Referrals list query to handle actual API response structure
   const referralsQuery = useQuery({
     queryKey: ['referrals', 'list', filters, pagination],
     queryFn: async (): Promise<ListResponse<Referral>> => {
@@ -50,12 +59,25 @@ export function useReferrals(
         if (pagination.sortOrder) params.append('sortOrder', pagination.sortOrder);
       }
 
+      console.log('🔍 Referrals Hook - Fetching with params:', params.toString());
+
       const response = await fetch(`/api/referrals?${params}`);
+      
       if (!response.ok) {
-        throw new Error('Failed to fetch referrals');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to fetch referrals');
       }
 
-      return response.json();
+      const result: ApiResponseWrapper<ListResponse<Referral>> = await response.json();
+      
+      console.log('📊 Referrals Hook - Raw API response:', result);
+      
+      // FIXED: Handle the actual API response structure
+      if (!result.success) {
+        throw new Error(result.message || 'API request failed');
+      }
+
+      return result.data;
     },
     staleTime: 60 * 1000 // 1 minute
   });
@@ -68,7 +90,15 @@ export function useReferrals(
       if (!response.ok) {
         throw new Error('Failed to fetch referral overview');
       }
-      return response.json();
+      
+      const result: ApiResponseWrapper<any> = await response.json();
+      console.log('📊 Referrals Overview - Raw API response:', result);
+      
+      if (!result.success) {
+        throw new Error(result.message || 'API request failed');
+      }
+
+      return result.data;
     },
     staleTime: 5 * 60 * 1000 // 5 minutes
   });
@@ -160,10 +190,44 @@ export function useReferrals(
     }
   });
 
+  // FIXED: Extract data properly from API response
+  const extractReferralsData = (queryData: any) => {
+    console.log('🔍 Extracting referrals data from:', queryData);
+    
+    if (!queryData) {
+      return { referrals: [], totalReferrals: 0 };
+    }
+
+    // Handle different response structures
+    if (queryData.data && Array.isArray(queryData.data)) {
+      // Structure: { data: [...], pagination: {...} }
+      console.log('✅ Using direct structure - data array found');
+      return {
+        referrals: queryData.data,
+        totalReferrals: queryData.pagination?.total || 0
+      };
+    } else if (Array.isArray(queryData)) {
+      // Raw array structure
+      console.log('✅ Using raw array structure');
+      return {
+        referrals: queryData,
+        totalReferrals: queryData.length
+      };
+    } else {
+      console.log('❌ Unknown response structure, using empty array');
+      console.log('Response structure:', Object.keys(queryData || {}));
+      return {
+        referrals: [],
+        totalReferrals: 0
+      };
+    }
+  };
+
+  const { referrals, totalReferrals } = extractReferralsData(referralsQuery.data);
+
   return {
-    // FIXED: Access data and total through proper structure
-    referrals: referralsQuery.data?.data || [],
-    totalReferrals: referralsQuery.data?.pagination?.total || 0,
+    referrals,
+    totalReferrals,
     overview: overviewQuery.data?.overview,
     topReferrers: overviewQuery.data?.topReferrers || [],
     isLoading: referralsQuery.isLoading,

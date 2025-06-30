@@ -43,6 +43,7 @@ import { UserProfile } from "../components/user-profile";
 import { KYCVerification } from "../components/kyc-verification";
 import { TransactionHistory } from "../components/transaction-history";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
+import { UserReferralsSection } from "../components/user-referrals-section";
 
 export default function UserDetailsPage() {
   const params = useParams();
@@ -597,45 +598,7 @@ export default function UserDetailsPage() {
         </TabsContent>
 
         <TabsContent value="referrals" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Referrals</CardTitle>
-              <CardDescription>Users referred by this user</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {userProfile.referrals && userProfile.referrals.length > 0 ? (
-                <div className="space-y-4">
-                  {userProfile.referrals.map((referral) => (
-                    <div
-                      key={referral.refereeId}
-                      className="flex items-center justify-between"
-                    >
-                      <div>
-                        <p className="text-sm font-medium">
-                          {referral.refereeName}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {referral.refereeEmail}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-medium">
-                          ${referral.bonusEarned.toLocaleString()}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(referral.joinedAt).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  No referrals found
-                </p>
-              )}
-            </CardContent>
-          </Card>
+          <UserReferralsSection userId={userId} />
         </TabsContent>
       </Tabs>
     </div>

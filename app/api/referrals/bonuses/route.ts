@@ -1,3 +1,4 @@
+// app/api/referrals/bonuses/route.ts - FIXED VERSION
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { Referral, IReferral } from '@/models/Referral';
@@ -13,7 +14,6 @@ import { sendEmail } from '@/lib/email';
 import { z } from 'zod';
 import mongoose from 'mongoose';
 import { bonusApprovalSchema, bonusRecalculationSchema } from '@/lib/validation';
-
 
 // GET /api/referrals/bonuses - Get bonus overview and pending approvals
 async function getBonusesHandler(request: NextRequest): Promise<NextResponse> {
@@ -41,25 +41,90 @@ async function getBonusesHandler(request: NextRequest): Promise<NextResponse> {
     const matchConditions: any = { status };
     if (bonusType) matchConditions.bonusType = bonusType;
 
-    // Get bonus overview statistics
+    // FIXED: Comprehensive bonus overview statistics
     const overviewPipeline: mongoose.PipelineStage[] = [
       {
         $group: {
           _id: null,
-          totalBonuses: { $sum: 1 },
-          totalAmount: { $sum: '$bonusAmount' },
-          totalProfitBonus: { $sum: '$profitBonus' },
-          pendingBonuses: {
-            $sum: { $cond: [{ $eq: ['$status', 'Pending'] }, 1, 0] }
-          },
-          pendingAmount: {
-            $sum: { $cond: [{ $eq: ['$status', 'Pending'] }, '$bonusAmount', 0] }
-          },
-          paidBonuses: {
+          // Total counts
+          totalReferrals: { $sum: 1 },
+          activeReferrals: {
             $sum: { $cond: [{ $eq: ['$status', 'Paid'] }, 1, 0] }
           },
-          paidAmount: {
+          
+          // Total amounts (including profit bonuses)
+          totalBonusPaid: {
+            $sum: { 
+              $cond: [
+                { $eq: ['$status', 'Paid'] }, 
+                { $add: ['$bonusAmount', { $ifNull: ['$profitBonus', 0] }] },
+                0
+              ] 
+            }
+          },
+          pendingBonuses: {
+            $sum: { 
+              $cond: [
+                { $eq: ['$status', 'Pending'] }, 
+                { $add: ['$bonusAmount', { $ifNull: ['$profitBonus', 0] }] },
+                0
+              ] 
+            }
+          },
+          
+          // Count breakdowns
+          totalBonusCount: { $sum: 1 },
+          paidBonusCount: {
+            $sum: { $cond: [{ $eq: ['$status', 'Paid'] }, 1, 0] }
+          },
+          pendingBonusCount: {
+            $sum: { $cond: [{ $eq: ['$status', 'Pending'] }, 1, 0] }
+          },
+          
+          // Base amounts only (excluding profit bonuses)
+          baseBonusPaid: {
             $sum: { $cond: [{ $eq: ['$status', 'Paid'] }, '$bonusAmount', 0] }
+          },
+          baseBonusPending: {
+            $sum: { $cond: [{ $eq: ['$status', 'Pending'] }, '$bonusAmount', 0] }
+          },
+          
+          // Profit bonuses
+          profitBonusPaid: {
+            $sum: { 
+              $cond: [
+                { $eq: ['$status', 'Paid'] }, 
+                { $ifNull: ['$profitBonus', 0] },
+                0
+              ] 
+            }
+          },
+          profitBonusPending: {
+            $sum: { 
+              $cond: [
+                { $eq: ['$status', 'Pending'] }, 
+                { $ifNull: ['$profitBonus', 0] },
+                0
+              ] 
+            }
+          }
+        }
+      },
+      {
+        $addFields: {
+          averageBonusPerReferral: {
+            $cond: [
+              { $gt: ['$activeReferrals', 0] },
+              { $divide: ['$totalBonusPaid', '$activeReferrals'] },
+              0
+            ]
+          },
+          conversionRate: {
+            $cond: [
+              { $gt: ['$totalReferrals', 0] },
+              { $multiply: [{ $divide: ['$activeReferrals', '$totalReferrals'] }, 100] },
+              0
+            ]
           }
         }
       }
@@ -126,7 +191,7 @@ async function getBonusesHandler(request: NextRequest): Promise<NextResponse> {
         $group: {
           _id: '$referrerId',
           totalReferrals: { $sum: 1 },
-          totalEarnings: { $sum: { $add: ['$bonusAmount', '$profitBonus'] } },
+          totalEarnings: { $sum: { $add: ['$bonusAmount', { $ifNull: ['$profitBonus', 0] }] } },
           signupBonuses: {
             $sum: { $cond: [{ $eq: ['$bonusType', 'signup'] }, 1, 0] }
           },
@@ -148,6 +213,17 @@ async function getBonusesHandler(request: NextRequest): Promise<NextResponse> {
       { $sort: { totalEarnings: -1 } },
       { $limit: 10 },
       {
+        $addFields: {
+          conversionRate: {
+            $cond: [
+              { $gt: ['$totalReferrals', 0] },
+              { $multiply: [{ $divide: ['$signupBonuses', '$totalReferrals'] }, 100] },
+              0
+            ]
+          }
+        }
+      },
+      {
         $project: {
           userId: '$_id',
           userName: '$user.name',
@@ -156,7 +232,8 @@ async function getBonusesHandler(request: NextRequest): Promise<NextResponse> {
           totalReferrals: 1,
           totalEarnings: 1,
           signupBonuses: 1,
-          profitShares: 1
+          profitShares: 1,
+          conversionRate: 1
         }
       }
     ];
@@ -173,18 +250,31 @@ async function getBonusesHandler(request: NextRequest): Promise<NextResponse> {
       userAgent: request.headers.get('user-agent') || 'unknown'
     });
 
+    // FIXED: Return properly structured overview data matching ReferralOverview interface
+    const overview = {
+      totalReferrals: overviewResult?.totalReferrals || 0,
+      activeReferrals: overviewResult?.activeReferrals || 0,
+      totalBonusPaid: overviewResult?.totalBonusPaid || 0,
+      pendingBonuses: overviewResult?.pendingBonuses || 0,
+      averageBonusPerReferral: overviewResult?.averageBonusPerReferral || 0,
+      conversionRate: overviewResult?.conversionRate || 0,
+      topReferrers: topReferrers
+    };
+
     return apiHandler.success({
-      overview: {
-        totalBonuses: overviewResult?.totalBonuses || 0,
-        totalAmount: overviewResult?.totalAmount || 0,
-        totalProfitBonus: overviewResult?.totalProfitBonus || 0,
-        pendingBonuses: overviewResult?.pendingBonuses || 0,
-        pendingAmount: overviewResult?.pendingAmount || 0,
-        paidBonuses: overviewResult?.paidBonuses || 0,
-        paidAmount: overviewResult?.paidAmount || 0
-      },
+      overview,
       pendingBonuses,
-      topReferrers
+      topReferrers,
+      // Additional detailed stats for admin dashboard
+      detailedStats: {
+        totalBonusCount: overviewResult?.totalBonusCount || 0,
+        paidBonusCount: overviewResult?.paidBonusCount || 0,
+        pendingBonusCount: overviewResult?.pendingBonusCount || 0,
+        baseBonusPaid: overviewResult?.baseBonusPaid || 0,
+        baseBonusPending: overviewResult?.baseBonusPending || 0,
+        profitBonusPaid: overviewResult?.profitBonusPaid || 0,
+        profitBonusPending: overviewResult?.profitBonusPending || 0
+      }
     });
 
   } catch (error) {
@@ -233,8 +323,10 @@ async function processBonusesHandler(request: NextRequest): Promise<NextResponse
 
     const { referralIds, action, reason, adminNotes, adjustedAmount } = validationResult.data;
 
-    // Start transaction
     const session = await mongoose.startSession();
+    
+    // Declare variables outside the transaction scope
+    let processedReferrals: { id: any; status: string; amount: any }[] = [];
     
     try {
       await session.withTransaction(async () => {
@@ -251,14 +343,16 @@ async function processBonusesHandler(request: NextRequest): Promise<NextResponse
           throw new Error('Some referrals not found or already processed');
         }
 
-        const processedReferrals: { id: any; status: string; amount: any }[] = [];
+        // Reset arrays for this transaction
+        processedReferrals = [];
         const failedReferrals: { id: any; error: string }[] = [];
 
         for (const referral of referrals) {
           try {
             if (action === 'approve') {
-              // Calculate final bonus amount
-              const finalAmount = adjustedAmount !== undefined ? adjustedAmount : referral.bonusAmount;
+              // Calculate final bonus amount (base + profit bonus)
+              const baseAmount = adjustedAmount !== undefined ? adjustedAmount : referral.bonusAmount;
+              const finalAmount = baseAmount + (referral.profitBonus || 0);
 
               // Create bonus transaction
               const transaction = new Transaction({
@@ -274,7 +368,9 @@ async function processBonusesHandler(request: NextRequest): Promise<NextResponse
                 metadata: {
                   referralId: referral._id,
                   refereeId: referral.refereeId,
-                  bonusType: referral.bonusType
+                  bonusType: referral.bonusType,
+                  baseAmount: baseAmount,
+                  profitBonus: referral.profitBonus || 0
                 }
               });
 
@@ -291,64 +387,31 @@ async function processBonusesHandler(request: NextRequest): Promise<NextResponse
               referral.status = 'Paid';
               referral.transactionId = transaction._id;
               referral.paidAt = new Date();
-              if (adjustedAmount !== undefined) {
-                referral.bonusAmount = adjustedAmount;
-              }
+              if (adminNotes) referral.adminNotes = adminNotes;
+              
               await referral.save({ session });
 
-              // Send notification email
-              const referrer = referral.referrerId as any;
-              await sendEmail({
-                to: referrer.email,
-                subject: 'Referral Bonus Approved',
-                templateId: 'referral-bonus-approved',
-                variables: {
-                  userName: referrer.name,
-                  bonusAmount: finalAmount,
-                  bonusType: referral.bonusType,
-                  transactionId: transaction.transactionId
-                }
+              processedReferrals.push({
+                id: referral._id,
+                status: 'Paid',
+                amount: finalAmount
               });
 
-              // Create in-app notification
-              await Notification.create([{
-                userId: referral.referrerId,
-                type: 'Referral',
-                channel: 'in_app',
-                title: 'Referral Bonus Approved',
-                message: `Your ${referral.bonusType} bonus of ${finalAmount} BDT has been approved and added to your balance.`,
-                priority: 'Medium',
-                data: {
-                  referralId: referral._id,
-                  transactionId: transaction._id,
-                  amount: finalAmount
-                }
-              }], { session });
-
-            } else {
-              // Reject the referral
+            } else if (action === 'reject') {
+              // Update referral status to rejected
               referral.status = 'Cancelled';
+              referral.rejectedAt = new Date();
+              referral.rejectionReason = reason;
+              if (adminNotes) referral.adminNotes = adminNotes;
+              
               await referral.save({ session });
 
-              // Send rejection notification
-              const referrer = referral.referrerId as any;
-              await sendEmail({
-                to: referrer.email,
-                subject: 'Referral Bonus Rejected',
-                templateId: 'referral-bonus-rejected',
-                variables: {
-                  userName: referrer.name,
-                  bonusType: referral.bonusType,
-                  reason: reason || 'Not specified'
-                }
+              processedReferrals.push({
+                id: referral._id,
+                status: 'Cancelled',
+                amount: 0
               });
             }
-
-            processedReferrals.push({
-              id: referral._id,
-              status: action === 'approve' ? 'Paid' : 'Cancelled',
-              amount: action === 'approve' ? (adjustedAmount || referral.bonusAmount) : 0
-            });
 
           } catch (error) {
             console.error(`Error processing referral ${referral._id}:`, error);
@@ -385,7 +448,7 @@ async function processBonusesHandler(request: NextRequest): Promise<NextResponse
         message: `Successfully ${action}ed ${referralIds.length} referral bonuses`,
         processedCount: referralIds.length,
         totalAmount: action === 'approve' ? 
-          (adjustedAmount ? adjustedAmount * referralIds.length : 0) : 0
+          processedReferrals.reduce((sum, r) => sum + r.amount, 0) : 0
       });
 
     } finally {

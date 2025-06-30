@@ -1,3 +1,4 @@
+// app/referrals/components/referrals-table.tsx - FIXED VERSION
 "use client";
 
 import React, { useState } from "react";
@@ -146,11 +147,28 @@ export function ReferralsTable({
       accessorKey: "referrer",
       header: "Referrer",
       cell: ({ row }) => {
-        // Assuming you only have referrerId, display it
-        const referrerId = row.original.referrerId;
+        // FIXED: Access the populated referrer data correctly
+        const referrer = row.original.referrer;
+
+        if (!referrer) {
+          return (
+            <div className="text-muted-foreground">
+              <div className="text-sm">No referrer data</div>
+            </div>
+          );
+        }
+
         return (
           <div>
-            <div className="font-medium">{referrerId}</div>
+            <div className="font-medium">{referrer.name}</div>
+            <div className="text-sm text-muted-foreground">
+              {referrer.email}
+            </div>
+            {referrer.referralCode && (
+              <div className="text-xs text-blue-600">
+                #{referrer.referralCode}
+              </div>
+            )}
           </div>
         );
       },
@@ -159,10 +177,35 @@ export function ReferralsTable({
       accessorKey: "referee",
       header: "Referee",
       cell: ({ row }) => {
-        const refereeId = row.original.refereeId;
+        // FIXED: Access the populated referee data correctly
+        const referee = row.original.referee;
+
+        if (!referee) {
+          return (
+            <div className="text-muted-foreground">
+              <div className="text-sm">No referee data</div>
+            </div>
+          );
+        }
+
         return (
           <div>
-            <div className="font-medium">{refereeId}</div>
+            <div className="font-medium">{referee.name}</div>
+            <div className="text-sm text-muted-foreground">{referee.email}</div>
+            {referee.kycStatus && (
+              <Badge
+                variant="outline"
+                className={`text-xs mt-1 ${
+                  referee.kycStatus === "Approved"
+                    ? "text-green-600"
+                    : referee.kycStatus === "Rejected"
+                    ? "text-red-600"
+                    : "text-yellow-600"
+                }`}
+              >
+                KYC: {referee.kycStatus}
+              </Badge>
+            )}
           </div>
         );
       },
@@ -182,12 +225,17 @@ export function ReferralsTable({
       cell: ({ row }) => {
         const amount = row.getValue("bonusAmount") as number;
         const profitBonus = row.original.profitBonus || 0;
+        const totalBonus = amount + profitBonus;
+
         return (
           <div>
-            <div className="font-medium">{formatCurrency(amount, "BDT")}</div>
+            <div className="font-medium">
+              {formatCurrency(totalBonus, "BDT")}
+            </div>
             {profitBonus > 0 && (
               <div className="text-sm text-muted-foreground">
-                + {formatCurrency(profitBonus, "BDT")} profit
+                Base: {formatCurrency(amount, "BDT")} + Profit:{" "}
+                {formatCurrency(profitBonus, "BDT")}
               </div>
             )}
           </div>
@@ -249,6 +297,15 @@ export function ReferralsTable({
                   </DropdownMenuItem>
                 </>
               )}
+              {referral.bonusType === "profit_share" && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem>
+                    <Calculator className="mr-2 h-4 w-4" />
+                    Recalculate Profit
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         );
@@ -263,196 +320,182 @@ export function ReferralsTable({
     onRowSelectionChange: (selection) => {
       const newSelection =
         typeof selection === "function"
-          ? selection(
-              selectedReferrals.reduce(
-                (acc, id) => ({ ...acc, [id]: true }),
-                {}
-              )
-            )
+          ? selection(table.getState().rowSelection)
           : selection;
+
+      const selectedIds = Object.keys(newSelection).filter(
+        (key) => newSelection[key]
+      );
       setSelectedReferrals(
-        Object.keys(newSelection).filter((key) => newSelection[key])
+        selectedIds.map((index) => referrals[parseInt(index)]._id)
       );
     },
     state: {
-      rowSelection: selectedReferrals.reduce(
-        (acc, id) => ({ ...acc, [id]: true }),
-        {}
-      ),
+      rowSelection: selectedReferrals.reduce((acc, id) => {
+        const index = referrals.findIndex((r) => r._id === id);
+        if (index !== -1) acc[index] = true;
+        return acc;
+      }, {} as Record<string, boolean>),
     },
   });
 
-  const totalPages = Math.ceil(totalReferrals / pagination.limit);
-  const hasSelectedPending = selectedReferrals.some(
-    (id) => referrals.find((r) => r._id === id)?.status === "Pending"
-  );
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="flex items-center justify-center h-64">
+          <LoadingSpinner />
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-4">
       {/* Bulk Actions */}
       {selectedReferrals.length > 0 && (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">
-                {selectedReferrals.length} referral(s) selected
-              </span>
-              {hasSelectedPending && (
-                <div className="flex space-x-2">
-                  <Button size="sm" onClick={() => setShowApproveDialog(true)}>
-                    <Check className="mr-2 h-4 w-4" />
-                    Approve Selected
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => setShowRejectDialog(true)}
-                  >
-                    <X className="mr-2 h-4 w-4" />
-                    Reject Selected
-                  </Button>
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="flex items-center gap-2 p-4 bg-muted rounded-lg">
+          <span className="text-sm font-medium">
+            {selectedReferrals.length} referral(s) selected
+          </span>
+          <div className="flex gap-2 ml-auto">
+            <Button
+              size="sm"
+              onClick={() => setShowApproveDialog(true)}
+              disabled={processingAction}
+            >
+              <Check className="mr-2 h-4 w-4" />
+              Approve Selected
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowRejectDialog(true)}
+              disabled={processingAction}
+            >
+              <X className="mr-2 h-4 w-4" />
+              Reject Selected
+            </Button>
+          </div>
+        </div>
       )}
 
       {/* Table */}
       <Card>
-        <CardHeader>
-          <CardTitle>Referrals ({totalReferrals.toLocaleString()})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="flex items-center justify-center h-64">
-              <LoadingSpinner />
-            </div>
-          ) : (
-            <>
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    {table.getHeaderGroups().map((headerGroup) => (
-                      <TableRow key={headerGroup.id}>
-                        {headerGroup.headers.map((header) => (
-                          <TableHead key={header.id}>
-                            {header.isPlaceholder
-                              ? null
-                              : flexRender(
-                                  header.column.columnDef.header,
-                                  header.getContext()
-                                )}
-                          </TableHead>
-                        ))}
-                      </TableRow>
-                    ))}
-                  </TableHeader>
-                  <TableBody>
-                    {table.getRowModel().rows?.length ? (
-                      table.getRowModel().rows.map((row) => (
-                        <TableRow
-                          key={row.id}
-                          data-state={row.getIsSelected() && "selected"}
-                        >
-                          {row.getVisibleCells().map((cell) => (
-                            <TableCell key={cell.id}>
-                              {flexRender(
-                                cell.column.columnDef.cell,
-                                cell.getContext()
-                              )}
-                            </TableCell>
-                          ))}
-                        </TableRow>
-                      ))
-                    ) : (
-                      <TableRow>
-                        <TableCell
-                          colSpan={columns.length}
-                          className="h-24 text-center"
-                        >
-                          No referrals found.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-
-              {/* Pagination */}
-              <div className="flex items-center justify-between space-x-2 py-4">
-                <div className="text-sm text-muted-foreground">
-                  Showing {(pagination.page - 1) * pagination.limit + 1} to{" "}
-                  {Math.min(pagination.page * pagination.limit, totalReferrals)}{" "}
-                  of {totalReferrals} referrals
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      onPaginationChange({
-                        ...pagination,
-                        page: pagination.page - 1,
-                      })
-                    }
-                    disabled={pagination.page <= 1}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                    Previous
-                  </Button>
-                  <span className="text-sm">
-                    Page {pagination.page} of {totalPages}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      onPaginationChange({
-                        ...pagination,
-                        page: pagination.page + 1,
-                      })
-                    }
-                    disabled={pagination.page >= totalPages}
-                  >
-                    Next
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </>
-          )}
-        </CardContent>
+        <Table>
+          <TableHeader>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <TableRow key={headerGroup.id}>
+                {headerGroup.headers.map((header) => (
+                  <TableHead key={header.id}>
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(
+                          header.column.columnDef.header,
+                          header.getContext()
+                        )}
+                  </TableHead>
+                ))}
+              </TableRow>
+            ))}
+          </TableHeader>
+          <TableBody>
+            {table.getRowModel().rows?.length ? (
+              table.getRowModel().rows.map((row) => (
+                <TableRow
+                  key={row.id}
+                  data-state={row.getIsSelected() && "selected"}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id}>
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext()
+                      )}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell
+                  colSpan={columns.length}
+                  className="h-24 text-center"
+                >
+                  No referrals found.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
       </Card>
 
-      {/* Approve Dialog */}
+      {/* Pagination */}
+      <div className="flex items-center justify-between">
+        <div className="text-sm text-muted-foreground">
+          Showing {(pagination.page - 1) * pagination.limit + 1} to{" "}
+          {Math.min(pagination.page * pagination.limit, totalReferrals)} of{" "}
+          {totalReferrals} referrals
+        </div>
+        <div className="flex items-center space-x-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              onPaginationChange({ ...pagination, page: pagination.page - 1 })
+            }
+            disabled={pagination.page <= 1}
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Previous
+          </Button>
+          <span className="text-sm">
+            Page {pagination.page} of{" "}
+            {Math.ceil(totalReferrals / pagination.limit)}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              onPaginationChange({ ...pagination, page: pagination.page + 1 })
+            }
+            disabled={
+              pagination.page >= Math.ceil(totalReferrals / pagination.limit)
+            }
+          >
+            Next
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Approval Dialog */}
       <Dialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Approve Referral Bonuses</DialogTitle>
             <DialogDescription>
-              You are about to approve {selectedReferrals.length} referral
-              bonus(es). This will create transactions and update user balances.
+              Are you sure you want to approve {selectedReferrals.length}{" "}
+              referral bonus(es)? This will create transactions and update user
+              balances.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="adjustedAmount">Adjusted Amount (Optional)</Label>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="adjusted-amount" className="text-right">
+                Adjusted Amount (optional)
+              </Label>
               <Input
-                id="adjustedAmount"
+                id="adjusted-amount"
                 type="number"
-                placeholder="Leave empty to use original amount"
+                placeholder="Leave empty for original amount"
                 value={adjustedAmount || ""}
                 onChange={(e) =>
                   setAdjustedAmount(
                     e.target.value ? Number(e.target.value) : undefined
                   )
                 }
+                className="col-span-3"
               />
-              <p className="text-xs text-muted-foreground mt-1">
-                If specified, this amount will be used instead of the original
-                bonus amount
-              </p>
             </div>
           </div>
           <DialogFooter>
@@ -464,31 +507,40 @@ export function ReferralsTable({
               Cancel
             </Button>
             <Button onClick={handleApprove} disabled={processingAction}>
-              {processingAction && <LoadingSpinner className="mr-2 h-4 w-4" />}
-              Approve Bonuses
+              {processingAction ? (
+                <>
+                  <LoadingSpinner className="mr-2 h-4 w-4" />
+                  Processing...
+                </>
+              ) : (
+                "Approve"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Reject Dialog */}
+      {/* Rejection Dialog */}
       <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Reject Referral Bonuses</DialogTitle>
             <DialogDescription>
-              You are about to reject {selectedReferrals.length} referral
-              bonus(es). This action cannot be undone.
+              Are you sure you want to reject {selectedReferrals.length}{" "}
+              referral bonus(es)? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="rejectionReason">Rejection Reason</Label>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="rejection-reason" className="text-right">
+                Reason
+              </Label>
               <Textarea
-                id="rejectionReason"
-                placeholder="Enter reason for rejection..."
+                id="rejection-reason"
+                placeholder="Enter rejection reason..."
                 value={rejectionReason}
                 onChange={(e) => setRejectionReason(e.target.value)}
+                className="col-span-3"
               />
             </div>
           </div>
@@ -505,8 +557,14 @@ export function ReferralsTable({
               onClick={handleReject}
               disabled={processingAction}
             >
-              {processingAction && <LoadingSpinner className="mr-2 h-4 w-4" />}
-              Reject Bonuses
+              {processingAction ? (
+                <>
+                  <LoadingSpinner className="mr-2 h-4 w-4" />
+                  Processing...
+                </>
+              ) : (
+                "Reject"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

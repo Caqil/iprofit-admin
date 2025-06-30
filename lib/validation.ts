@@ -643,17 +643,46 @@ export const faqCreateSchema = z.object({
   priority: z.number().min(0).max(10).default(0),
   isActive: z.boolean().default(true)
 });
-export const referralListQuerySchema = paginationSchema.extend({
+export const referralListQuerySchema = urlPaginationSchema.extend({
   sortBy: z.string().optional().default('createdAt'),
   sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
   status: z.enum(['Pending', 'Paid', 'Cancelled']).optional(),
   bonusType: z.enum(['signup', 'profit_share']).optional(),
   referrerId: z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
   refereeId: z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
-  amountMin: z.string().transform(Number).pipe(z.number().min(0)).optional(),
-  amountMax: z.string().transform(Number).pipe(z.number().min(0)).optional(),
-  search: z.string().optional()
-}).merge(dateRangeSchema);
+  search: z.string().optional(),
+  
+  // FIXED: Add missing amount range filters with proper transformation
+  amountMin: z.string().optional().transform(val => {
+    if (!val || val === '') return undefined;
+    const num = parseFloat(val);
+    return isNaN(num) ? undefined : num;
+  }),
+  amountMax: z.string().optional().transform(val => {
+    if (!val || val === '') return undefined;
+    const num = parseFloat(val);
+    return isNaN(num) ? undefined : num;
+  }),
+  
+  // FIXED: Add missing date range filters with proper transformation
+  dateFrom: z.string().optional().transform(val => {
+    if (!val || val === '') return undefined;
+    const date = new Date(val);
+    return isNaN(date.getTime()) ? undefined : date;
+  }),
+  dateTo: z.string().optional().transform(val => {
+    if (!val || val === '') return undefined;
+    const date = new Date(val);
+    return isNaN(date.getTime()) ? undefined : date;
+  })
+});
+export const userReferralsQuerySchema = urlPaginationSchema.extend({
+  sortBy: z.string().optional().default('createdAt'),
+  sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
+  type: z.enum(['referrer', 'referee', 'all']).optional().default('all'),
+  status: z.enum(['Pending', 'Paid', 'Cancelled']).optional(),
+  bonusType: z.enum(['signup', 'profit_share']).optional(),
+});
 
 // Referral creation schema
 export const createReferralSchema = z.object({

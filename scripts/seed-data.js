@@ -1078,7 +1078,7 @@ async resetDatabase() {
         refereeId: referee._id,
         bonusAmount: REFERRAL_CONFIG.SIGNUP_BONUS,
         profitBonus: 0,
-        status: 'Pending', // Will be processed later
+        status: 'Active', // Will be processed later
         bonusType: 'signup',
         metadata: {
           refereeFirstDeposit: null,
