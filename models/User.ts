@@ -1,12 +1,12 @@
-// models/User.ts - Complete User Model with Device Management
+// models/User.ts - Complete Fixed User Model without Duplicate Indexes
 import mongoose, { Document, Schema } from 'mongoose';
 
-// Device subdocument schema
+// Device subdocument schema - FIXED: Removed all index: true properties
 const DeviceSchema = new Schema({
   deviceId: { 
     type: String, 
-    required: true,
-    index: true
+    required: true
+    // REMOVED: index: true (will be handled by parent schema)
   },
   deviceName: { 
     type: String, 
@@ -35,13 +35,13 @@ const DeviceSchema = new Schema({
   },
   fingerprint: { 
     type: String, 
-    required: true,
-    index: true
+    required: true
+    // REMOVED: index: true (will be handled by parent schema)
   },
   fcmToken: { 
     type: String, 
-    default: null,
-    index: true
+    default: null
+    // REMOVED: index: true (will be handled by parent schema)
   },
   deviceInfo: {
     brand: { type: String, maxlength: 50 },
@@ -62,8 +62,8 @@ const DeviceSchema = new Schema({
   },
   isPrimary: { 
     type: Boolean, 
-    default: false,
-    index: true
+    default: false
+    // REMOVED: index: true (will be handled by parent schema)
   },
   isTrusted: { 
     type: Boolean, 
@@ -71,8 +71,8 @@ const DeviceSchema = new Schema({
   },
   isActive: { 
     type: Boolean, 
-    default: true,
-    index: true
+    default: true
+    // REMOVED: index: true (will be handled by parent schema)
   },
   biometricEnabled: { 
     type: Boolean, 
@@ -94,13 +94,13 @@ const DeviceSchema = new Schema({
   },
   registeredAt: { 
     type: Date, 
-    default: Date.now,
-    index: true
+    default: Date.now
+    // REMOVED: index: true (will be handled by parent schema)
   },
   lastActiveAt: { 
     type: Date, 
-    default: Date.now,
-    index: true
+    default: Date.now
+    // REMOVED: index: true (will be handled by parent schema)
   },
   lastLoginAt: { 
     type: Date, 
@@ -150,27 +150,9 @@ export interface IUser extends Document {
   
   // Referral System
   referralCode: string;
-  referredBy?: string;
-  
-  // Authentication & Security
-  loginAttempts: number;
-  lockedUntil?: Date;
-  twoFactorEnabled: boolean;
-  twoFactorSecret?: string;
-  
-  // Email Verification
-  emailVerificationToken?: string;
-  emailVerificationExpires?: Date;
-  
-  // Phone Verification
-  phoneVerificationCode?: string;
-  phoneVerificationExpires?: Date;
-  phoneVerificationAttempts: number;
-  
-  // Password Reset
-  passwordResetToken?: string;
-  passwordResetExpires?: Date;
-  passwordResetAttempts: number;
+  referredBy?: mongoose.Types.ObjectId;
+  totalReferrals: number;
+  referralEarnings: number;
   
   // Address Information
   address?: {
@@ -181,85 +163,26 @@ export interface IUser extends Document {
     zipCode?: string;
   };
   
-  // User Preferences
-  preferences?: {
-    notifications: {
-      email: {
-        kyc: boolean;
-        transactions: boolean;
-        loans: boolean;
-        referrals: boolean;
-        tasks: boolean;
-        system: boolean;
-        marketing: boolean;
-        security: boolean;
-      };
-      push: {
-        kyc: boolean;
-        transactions: boolean;
-        loans: boolean;
-        referrals: boolean;
-        tasks: boolean;
-        system: boolean;
-        marketing: boolean;
-        security: boolean;
-      };
-      sms: {
-        kyc: boolean;
-        transactions: boolean;
-        loans: boolean;
-        referrals: boolean;
-        tasks: boolean;
-        system: boolean;
-        marketing: boolean;
-        security: boolean;
-      };
-      inApp: {
-        kyc: boolean;
-        transactions: boolean;
-        loans: boolean;
-        referrals: boolean;
-        tasks: boolean;
-        system: boolean;
-        marketing: boolean;
-        security: boolean;
-      };
-    };
-    privacy: {
-      profileVisibility: 'public' | 'private';
-      showBalance: boolean;
-      showTransactions: boolean;
-      showReferrals: boolean;
-      allowContact: boolean;
-    };
-    app: {
-      language: string;
-      currency: 'USD' | 'BDT';
-      theme: 'light' | 'dark' | 'auto';
-      biometricLogin: boolean;
-      autoLock: boolean;
-      autoLockDuration: number;
-      soundEnabled: boolean;
-      vibrationEnabled: boolean;
-    };
-    security: {
-      twoFactorEnabled: boolean;
-      loginNotifications: boolean;
-      suspiciousActivityAlerts: boolean;
-      deviceRegistrationNotifications: boolean;
-      sessionTimeout: number;
-    };
-    marketing: {
-      emailMarketing: boolean;
-      smsMarketing: boolean;
-      pushMarketing: boolean;
-      personalizedOffers: boolean;
-      referralNotifications: boolean;
-    };
-  };
+  // Security & Verification
+  emailVerificationToken?: string;
+  emailVerificationExpires?: Date;
+  phoneVerificationCode?: string;
+  phoneVerificationExpires?: Date;
+  phoneVerificationAttempts: number;
+  isPhoneVerificationExpired: boolean;
+  passwordResetToken?: string;
+  passwordResetExpires?: Date;
+  twoFactorSecret?: string;
+  twoFactorEnabled: boolean;
+  twoFactorBackupCodes: string[];
   
-  // Mobile App Specific Fields (Legacy - for backwards compatibility)
-  deviceId: string; // Primary device ID
+  // Login Security
+  loginAttempts: number;
+  lockUntil?: Date;
+  lastFailedLogin?: Date;
+  
+  // Device Management (Legacy for backward compatibility)
+  deviceId?: string; // Primary device ID
   fcmToken?: string; // Primary device FCM token
   fingerprint?: string; // Primary device fingerprint (legacy)
   lastAppVersion?: string;
@@ -320,7 +243,7 @@ export interface IUser extends Document {
   updateLastActive(): Promise<IUser>;
 }
 
-// Main User Schema
+// Main User Schema - FIXED: Removed all duplicate index properties
 const UserSchema = new Schema<IUser>({
   // Basic Information
   name: {
@@ -333,24 +256,21 @@ const UserSchema = new Schema<IUser>({
   email: {
     type: String,
     required: true,
-    unique: true,
     lowercase: true,
     trim: true,
     match: /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    // REMOVED: unique: true (will be defined explicitly)
   },
   phone: {
     type: String,
-    required: true,
-    unique: true,
     trim: true,
-    minlength: 10,
-    maxlength: 20
+    match: /^[\+]?[1-9][\d]{0,15}$/
+    // REMOVED: unique: true (will be defined explicitly)
   },
   password: {
     type: String,
     required: true,
-    minlength: 8,
-    select: false // Don't include password in queries by default
+    minlength: 8
   },
   dateOfBirth: {
     type: Date,
@@ -360,7 +280,7 @@ const UserSchema = new Schema<IUser>({
     type: String,
     default: null
   },
-
+  
   // Account Status
   status: {
     type: String,
@@ -398,11 +318,10 @@ const UserSchema = new Schema<IUser>({
     type: String,
     default: null
   },
-
+  
   // Financial Information
   balance: {
     type: Number,
-    required: true,
     default: 0,
     min: 0
   },
@@ -411,58 +330,50 @@ const UserSchema = new Schema<IUser>({
     ref: 'Plan',
     required: true
   },
-
+  
   // Referral System
   referralCode: {
     type: String,
-    required: true,
-    unique: true,
-    uppercase: true,
-    minlength: 6,
-    maxlength: 10
+    required: true
+    // REMOVED: unique: true (will be defined explicitly)
   },
   referredBy: {
-    type: String,
+    type: Schema.Types.ObjectId,
+    ref: 'User',
     default: null
   },
-
-  // Authentication & Security
-  loginAttempts: {
+  totalReferrals: {
     type: Number,
     default: 0,
-    min: 0,
-    max: 10
+    min: 0
   },
-  lockedUntil: {
-    type: Date,
-    default: null
+  referralEarnings: {
+    type: Number,
+    default: 0,
+    min: 0
   },
-  twoFactorEnabled: {
-    type: Boolean,
-    default: false
+  
+  // Address Information
+  address: {
+    street: String,
+    city: String,
+    state: String,
+    country: String,
+    zipCode: String
   },
-  twoFactorSecret: {
-    type: String,
-    default: null,
-    select: false
-  },
-
-  // Email Verification
+  
+  // Security & Verification
   emailVerificationToken: {
     type: String,
-    default: null,
-    select: false
+    default: null
   },
   emailVerificationExpires: {
     type: Date,
     default: null
   },
-
-  // Phone Verification
   phoneVerificationCode: {
     type: String,
-    default: null,
-    select: false
+    default: null
   },
   phoneVerificationExpires: {
     type: Date,
@@ -474,125 +385,59 @@ const UserSchema = new Schema<IUser>({
     min: 0,
     max: 5
   },
-
-  // Password Reset
+  isPhoneVerificationExpired: {
+    type: Boolean,
+    default: false
+  },
   passwordResetToken: {
     type: String,
-    default: null,
-    select: false
+    default: null
   },
   passwordResetExpires: {
     type: Date,
     default: null
   },
-  passwordResetAttempts: {
+  twoFactorSecret: {
+    type: String,
+    default: null
+  },
+  twoFactorEnabled: {
+    type: Boolean,
+    default: false
+  },
+  twoFactorBackupCodes: [{
+    type: String
+  }],
+  
+  // Login Security
+  loginAttempts: {
     type: Number,
     default: 0,
     min: 0,
     max: 5
   },
-
-  // Address Information
-  address: {
-    street: { type: String, trim: true, maxlength: 200 },
-    city: { type: String, trim: true, maxlength: 100 },
-    state: { type: String, trim: true, maxlength: 100 },
-    country: { type: String, trim: true, maxlength: 100 },
-    zipCode: { type: String, trim: true, maxlength: 20 }
+  lockUntil: {
+    type: Date,
+    default: null
   },
-
-  // User Preferences
-  preferences: {
-    notifications: {
-      email: {
-        kyc: { type: Boolean, default: true },
-        transactions: { type: Boolean, default: true },
-        loans: { type: Boolean, default: true },
-        referrals: { type: Boolean, default: true },
-        tasks: { type: Boolean, default: true },
-        system: { type: Boolean, default: true },
-        marketing: { type: Boolean, default: false },
-        security: { type: Boolean, default: true }
-      },
-      push: {
-        kyc: { type: Boolean, default: true },
-        transactions: { type: Boolean, default: true },
-        loans: { type: Boolean, default: true },
-        referrals: { type: Boolean, default: true },
-        tasks: { type: Boolean, default: true },
-        system: { type: Boolean, default: true },
-        marketing: { type: Boolean, default: false },
-        security: { type: Boolean, default: true }
-      },
-      sms: {
-        kyc: { type: Boolean, default: true },
-        transactions: { type: Boolean, default: true },
-        loans: { type: Boolean, default: false },
-        referrals: { type: Boolean, default: false },
-        tasks: { type: Boolean, default: false },
-        system: { type: Boolean, default: true },
-        marketing: { type: Boolean, default: false },
-        security: { type: Boolean, default: true }
-      },
-      inApp: {
-        kyc: { type: Boolean, default: true },
-        transactions: { type: Boolean, default: true },
-        loans: { type: Boolean, default: true },
-        referrals: { type: Boolean, default: true },
-        tasks: { type: Boolean, default: true },
-        system: { type: Boolean, default: true },
-        marketing: { type: Boolean, default: true },
-        security: { type: Boolean, default: true }
-      }
-    },
-    privacy: {
-      profileVisibility: { type: String, enum: ['public', 'private'], default: 'private' },
-      showBalance: { type: Boolean, default: false },
-      showTransactions: { type: Boolean, default: false },
-      showReferrals: { type: Boolean, default: false },
-      allowContact: { type: Boolean, default: true }
-    },
-    app: {
-      language: { type: String, default: 'en', maxlength: 5 },
-      currency: { type: String, enum: ['USD', 'BDT'], default: 'BDT' },
-      theme: { type: String, enum: ['light', 'dark', 'auto'], default: 'auto' },
-      biometricLogin: { type: Boolean, default: false },
-      autoLock: { type: Boolean, default: true },
-      autoLockDuration: { type: Number, default: 5, min: 1, max: 60 },
-      soundEnabled: { type: Boolean, default: true },
-      vibrationEnabled: { type: Boolean, default: true }
-    },
-    security: {
-      twoFactorEnabled: { type: Boolean, default: false },
-      loginNotifications: { type: Boolean, default: true },
-      suspiciousActivityAlerts: { type: Boolean, default: true },
-      deviceRegistrationNotifications: { type: Boolean, default: true },
-      sessionTimeout: { type: Number, default: 30, min: 5, max: 120 }
-    },
-    marketing: {
-      emailMarketing: { type: Boolean, default: false },
-      smsMarketing: { type: Boolean, default: false },
-      pushMarketing: { type: Boolean, default: false },
-      personalizedOffers: { type: Boolean, default: true },
-      referralNotifications: { type: Boolean, default: true }
-    }
+  lastFailedLogin: {
+    type: Date,
+    default: null
   },
-
-  // Mobile App Specific Fields (Legacy - for backwards compatibility)
+  
+  // Device Management (Legacy for backward compatibility)
   deviceId: {
     type: String,
-    required: true,
-    index: true
+    default: null
+    // REMOVED: index: true (will be defined explicitly)
   },
   fcmToken: {
     type: String,
-    default: null,
-    index: true
+    default: null
   },
   fingerprint: {
     type: String,
-    default: null,
-    index: true
+    default: null
   },
   lastAppVersion: {
     type: String,
@@ -616,11 +461,14 @@ const UserSchema = new Schema<IUser>({
   collection: 'users'
 });
 
-// Indexes for better performance
+// FIXED: Define ALL indexes explicitly to avoid duplicates
+// Core unique indexes
 UserSchema.index({ email: 1 }, { unique: true });
-UserSchema.index({ phone: 1 }, { unique: true });
+UserSchema.index({ phone: 1 }, { unique: true, sparse: true }); // sparse allows null values
 UserSchema.index({ referralCode: 1 }, { unique: true });
-UserSchema.index({ deviceId: 1 });
+
+// Regular indexes
+UserSchema.index({ deviceId: 1 }, { sparse: true }); // sparse for legacy compatibility
 UserSchema.index({ status: 1 });
 UserSchema.index({ kycStatus: 1 });
 UserSchema.index({ emailVerified: 1 });
@@ -630,7 +478,7 @@ UserSchema.index({ referredBy: 1 });
 UserSchema.index({ createdAt: -1 });
 UserSchema.index({ lastActiveAt: -1 });
 
-// Device-related indexes
+// Device-related indexes (for subdocuments)
 UserSchema.index({ 'devices.deviceId': 1 });
 UserSchema.index({ 'devices.fingerprint': 1 });
 UserSchema.index({ 'devices.isPrimary': 1 });
@@ -665,47 +513,46 @@ UserSchema.methods.updateLastActive = function() {
   return this.save();
 };
 
-// Static method to get default preferences
-UserSchema.statics.getDefaultPreferences = function() {
+// Static method to get default device settings
+UserSchema.statics.getDefaultDeviceSettings = function() {
   return {
-    notifications: {
-      email: { kyc: true, transactions: true, loans: true, referrals: true, tasks: true, system: true, marketing: false, security: true },
-      push: { kyc: true, transactions: true, loans: true, referrals: true, tasks: true, system: true, marketing: false, security: true },
-      sms: { kyc: true, transactions: true, loans: false, referrals: false, tasks: false, system: true, marketing: false, security: true },
-      inApp: { kyc: true, transactions: true, loans: true, referrals: true, tasks: true, system: true, marketing: true, security: true }
-    },
-    privacy: { profileVisibility: 'private', showBalance: false, showTransactions: false, showReferrals: false, allowContact: true },
-    app: { language: 'en', currency: 'BDT', theme: 'auto', biometricLogin: false, autoLock: true, autoLockDuration: 5, soundEnabled: true, vibrationEnabled: true },
-    security: { twoFactorEnabled: false, loginNotifications: true, suspiciousActivityAlerts: true, deviceRegistrationNotifications: true, sessionTimeout: 30 },
-    marketing: { emailMarketing: false, smsMarketing: false, pushMarketing: false, personalizedOffers: true, referralNotifications: true }
+    deviceType: 'mobile',
+    platform: 'android',
+    isPrimary: true,
+    isTrusted: true,
+    isActive: true,
+    biometricEnabled: false,
+    securityLevel: 'standard',
+    loginAttempts: 0
   };
 };
 
-// Pre-save middleware
-UserSchema.pre('save', function(next) {
-  // Ensure referral code is uppercase
-  if (this.referralCode) {
-    this.referralCode = this.referralCode.toUpperCase();
-  }
-  
-  // Set default preferences if not set
-  if (!this.preferences) {
-    // @ts-ignore
-    this.preferences = (this.constructor as any).getDefaultPreferences();
-  }
-  
-  // Sync primary device with legacy fields for backwards compatibility
-  if (this.devices && this.devices.length > 0) {
-    const primaryDevice = this.devices.find(d => d.isPrimary);
-    if (primaryDevice) {
-      this.deviceId = primaryDevice.deviceId;
-      this.fcmToken = primaryDevice.fcmToken || this.fcmToken;
-      this.fingerprint = primaryDevice.fingerprint;
-      this.lastAppVersion = primaryDevice.appVersion;
-    }
+// Pre-save middleware to generate referral code if not exists
+UserSchema.pre('save', async function(next) {
+  if (this.isNew && !this.referralCode) {
+    // Generate unique referral code
+    let referralCode;
+    let attempts = 0;
+    const maxAttempts = 10;
+    
+    do {
+      referralCode = Math.random().toString(36).substr(2, 8).toUpperCase();
+      attempts++;
+      
+      if (attempts >= maxAttempts) {
+        return next(new Error('Failed to generate unique referral code'));
+      }
+      
+      const existingUser = await mongoose.model('User').findOne({ referralCode });
+      if (!existingUser) {
+        this.referralCode = referralCode;
+        break;
+      }
+    } while (attempts < maxAttempts);
   }
   
   next();
 });
 
+// Export the model
 export const User = mongoose.models.User || mongoose.model<IUser>('User', UserSchema);

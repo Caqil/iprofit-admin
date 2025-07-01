@@ -52,13 +52,6 @@ export const fileUploadSchema = z.object({
   content: z.string() // base64 content
 });
 
-// Device validation
-export const deviceInfoSchema = z.object({
-  deviceId: z.string().min(1),
-  fingerprint: z.string().min(1),
-  userAgent: z.string().min(1),
-  ipAddress: z.string().ip()
-});
 
 // ============================================================================
 // USER SCHEMAS
@@ -1305,3 +1298,160 @@ export const bulkActionSchema = z.object({
     rejectionReason: z.string().optional()
   }).optional()
 });
+
+// Base device info validation
+export const deviceInfoSchema = z.object({
+  deviceId: z.string().min(1, 'Device ID is required'),
+  fingerprint: z.string().min(1, 'Device fingerprint is required'),
+  userAgent: z.string().min(1, 'User agent is required'),
+  ipAddress: z.string().ip('Invalid IP address')
+});
+
+// Enhanced device registration schema
+export const deviceRegistrationSchema = z.object({
+  deviceId: z.string().min(1, 'Device ID is required'),
+  deviceName: z.string().min(1, 'Device name is required').max(100, 'Device name too long'),
+  deviceType: z.enum(['mobile', 'tablet', 'desktop', 'web'], {
+    errorMap: () => ({ message: 'Invalid device type' })
+  }),
+  platform: z.enum(['ios', 'android', 'windows', 'macos', 'linux', 'web'], {
+    errorMap: () => ({ message: 'Invalid platform' })
+  }),
+  osVersion: z.string().min(1, 'OS version is required').max(50, 'OS version too long'),
+  appVersion: z.string().min(1, 'App version is required').max(20, 'App version too long'),
+  fingerprint: z.string().min(1, 'Device fingerprint is required'),
+  fcmToken: z.string().optional(),
+  
+  // Device info (optional)
+  deviceInfo: z.object({
+    brand: z.string().max(50).optional(),
+    model: z.string().max(100).optional(),
+    manufacturer: z.string().max(50).optional(),
+    screenResolution: z.string().optional(),
+    isTablet: z.boolean().optional(),
+    isEmulator: z.boolean().optional(),
+    hasNotch: z.boolean().optional(),
+    supportsBiometric: z.boolean().optional(),
+    biometricTypes: z.array(z.enum(['fingerprint', 'face', 'voice', 'iris', 'palm'])).optional()
+  }).optional(),
+  
+  // Location info (optional)
+  locationInfo: z.object({
+    timezone: z.string().optional(),
+    locale: z.string().optional(),
+    country: z.string().max(100).optional(),
+    region: z.string().max(100).optional()
+  }).optional(),
+  
+  // Security settings
+  isPrimary: z.boolean().default(false),
+  isTrusted: z.boolean().default(false),
+  biometricEnabled: z.boolean().default(false),
+  securityLevel: z.enum(['weak', 'standard', 'strong']).default('standard')
+});
+
+// Device update schema
+export const deviceUpdateSchema = z.object({
+  deviceName: z.string().min(1).max(100).optional(),
+  fcmToken: z.string().optional(),
+  osVersion: z.string().max(50).optional(),
+  appVersion: z.string().max(20).optional(),
+  
+  deviceInfo: z.object({
+    brand: z.string().max(50).optional(),
+    model: z.string().max(100).optional(),
+    manufacturer: z.string().max(50).optional(),
+    screenResolution: z.string().optional(),
+    isTablet: z.boolean().optional(),
+    isEmulator: z.boolean().optional(),
+    hasNotch: z.boolean().optional(),
+    supportsBiometric: z.boolean().optional(),
+    biometricTypes: z.array(z.enum(['fingerprint', 'face', 'voice', 'iris', 'palm'])).optional()
+  }).optional(),
+  
+  locationInfo: z.object({
+    timezone: z.string().optional(),
+    locale: z.string().optional(),
+    country: z.string().max(100).optional(),
+    region: z.string().max(100).optional()
+  }).optional(),
+  
+  isTrusted: z.boolean().optional(),
+  biometricEnabled: z.boolean().optional(),
+  securityLevel: z.enum(['weak', 'standard', 'strong']).optional()
+});
+
+// Device security action schema
+export const deviceSecurityActionSchema = z.object({
+  action: z.enum(['trust', 'untrust', 'activate', 'deactivate', 'lock', 'unlock', 'set_primary', 'remove_primary']),
+  reason: z.string().max(500).optional()
+});
+
+// Biometric enrollment schema
+export const biometricEnrollmentSchema = z.object({
+  biometricType: z.enum(['fingerprint', 'face', 'voice', 'iris', 'palm']),
+  template: z.string().min(1, 'Biometric template is required'), // This should be encrypted
+  enabled: z.boolean().default(true)
+});
+
+// Device list query schema
+export const deviceListQuerySchema = z.object({
+  page: z.string().optional().default('1').transform(val => {
+    const num = parseInt(val, 10);
+    return isNaN(num) || num < 1 ? 1 : num;
+  }),
+  limit: z.string().optional().default('10').transform(val => {
+    const num = parseInt(val, 10);
+    return isNaN(num) || num < 1 ? 10 : Math.min(num, 50);
+  }),
+  platform: z.enum(['ios', 'android', 'windows', 'macos', 'linux', 'web']).optional(),
+  deviceType: z.enum(['mobile', 'tablet', 'desktop', 'web']).optional(),
+  isActive: z.enum(['true', 'false']).transform(val => val === 'true').optional(),
+  isPrimary: z.enum(['true', 'false']).transform(val => val === 'true').optional(),
+  isTrusted: z.enum(['true', 'false']).transform(val => val === 'true').optional(),
+  sortBy: z.enum(['lastActiveAt', 'registeredAt', 'deviceName']).default('lastActiveAt'),
+  sortOrder: z.enum(['asc', 'desc']).default('desc')
+});
+
+// Device activity schema
+export const deviceActivitySchema = z.object({
+  action: z.enum(['login', 'logout', 'app_open', 'app_close', 'background', 'foreground']),
+  timestamp: z.date().default(() => new Date()),
+  metadata: z.record(z.any()).optional()
+});
+
+// FCM token update schema
+export const fcmTokenUpdateSchema = z.object({
+  fcmToken: z.string().min(1, 'FCM token is required'),
+  deviceId: z.string().min(1, 'Device ID is required')
+});
+
+// Device verification schema
+export const deviceVerificationSchema = z.object({
+  deviceId: z.string().min(1, 'Device ID is required'),
+  fingerprint: z.string().min(1, 'Device fingerprint is required'),
+  verificationCode: z.string().length(6, 'Verification code must be 6 digits'),
+  biometricData: z.string().optional() // Encrypted biometric verification data
+});
+
+// Device transfer schema (for transferring primary device)
+export const deviceTransferSchema = z.object({
+  fromDeviceId: z.string().min(1, 'Source device ID is required'),
+  toDeviceId: z.string().min(1, 'Target device ID is required'),
+  transferData: z.object({
+    settings: z.boolean().default(true),
+    biometrics: z.boolean().default(false),
+    notifications: z.boolean().default(true)
+  }).optional()
+});
+
+// Type exports for TypeScript
+export type DeviceRegistrationInput = z.infer<typeof deviceRegistrationSchema>;
+export type DeviceUpdateInput = z.infer<typeof deviceUpdateSchema>;
+export type DeviceSecurityAction = z.infer<typeof deviceSecurityActionSchema>;
+export type BiometricEnrollment = z.infer<typeof biometricEnrollmentSchema>;
+export type DeviceListQuery = z.infer<typeof deviceListQuerySchema>;
+export type DeviceActivity = z.infer<typeof deviceActivitySchema>;
+export type FcmTokenUpdate = z.infer<typeof fcmTokenUpdateSchema>;
+export type DeviceVerification = z.infer<typeof deviceVerificationSchema>;
+export type DeviceTransfer = z.infer<typeof deviceTransferSchema>;

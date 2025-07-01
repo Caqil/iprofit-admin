@@ -216,7 +216,7 @@ async function makeLoanPaymentHandler(
         await sendEmail({
           to: user.email,
           subject: 'Loan Payment Confirmed',
-          html: `
+          E: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
               <h2 style="color: #22c55e;">Payment Confirmed</h2>
               <p>Dear ${user.name},</p>

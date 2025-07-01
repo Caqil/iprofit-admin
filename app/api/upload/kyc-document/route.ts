@@ -132,7 +132,7 @@ async function uploadKYCDocumentHandler(request: NextRequest) {
 
       // Resize if too large
       if (imageInfo.width! > KYC_CONFIG.maxImageDimension || imageInfo.height! > KYC_CONFIG.maxImageDimension) {
-        fileBuffer = await sharp(fileBuffer)
+         await sharp(fileBuffer)
           .resize(KYC_CONFIG.maxImageDimension, KYC_CONFIG.maxImageDimension, {
             fit: 'inside',
             withoutEnlargement: true
@@ -471,7 +471,7 @@ async function uploadTaskProofHandler(request: NextRequest) {
 
       // Resize if too large
       if (imageInfo.width! > TASK_CONFIG.maxImageDimension || imageInfo.height! > TASK_CONFIG.maxImageDimension) {
-        fileBuffer = await sharp(fileBuffer)
+         await sharp(fileBuffer)
           .resize(TASK_CONFIG.maxImageDimension, TASK_CONFIG.maxImageDimension, {
             fit: 'inside',
             withoutEnlargement: true
