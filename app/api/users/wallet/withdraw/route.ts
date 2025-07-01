@@ -6,17 +6,17 @@ import { z } from 'zod';
 import { connectToDatabase } from '@/lib/db';
 import { User } from '@/models/User';
 import { Transaction } from '@/models/Transaction';
-import { Plan } from '@/models/Plan';
 import { AuditLog } from '@/models/AuditLog';
 import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler } from '@/lib/api-helpers';
 import { sendEmail } from '@/lib/email';
 import TransactionUtils from '@/utils/transaction-helpers';
+import { TRANSACTION_LIMITS } from '@/lib/constants';
 import mongoose from 'mongoose';
 
 // Mobile withdrawal validation schema
 const mobileWithdrawalSchema = z.object({
-  amount: z.number().min(0.01, 'Amount must be greater than 0'),
+  amount: z.number().min(1, 'Amount must be greater than 0'),
   currency: z.enum(['USD', 'BDT']).default('BDT'),
   withdrawalMethod: z.enum(['bank_transfer', 'mobile_banking', 'crypto_wallet', 'check']),
   deviceId: z.string().min(1, 'Device ID is required'),
@@ -33,36 +33,260 @@ const mobileWithdrawalSchema = z.object({
     
     // Mobile banking (bKash, Nagad, etc.)
     mobileNumber: z.string().optional(),
-    mobileProvider: z.string().optional(), // bKash, Nagad, Rocket, Upay
+    mobileProvider: z.enum(['bKash', 'Nagad', 'Rocket', 'Upay', 'SureCash']).optional(),
     mobileAccountName: z.string().optional(),
     
     // Crypto wallet
     walletAddress: z.string().optional(),
-    walletType: z.string().optional(), // Bitcoin, Ethereum, USDT, etc.
-    walletNetwork: z.string().optional(), // BTC, ETH, TRC20, BEP20, etc.
+    walletType: z.enum(['Bitcoin', 'Ethereum', 'USDT', 'BUSD', 'BNB']).optional(),
+    walletNetwork: z.enum(['BTC', 'ETH', 'TRC20', 'BEP20', 'BSC']).optional(),
     
     // Check
-    mailingAddress: z.object({
-      street: z.string().optional(),
-      city: z.string().optional(),
-      state: z.string().optional(),
-      country: z.string().optional(),
-      zipCode: z.string().optional()
-    }).optional(),
+    mailingAddress: z.string().optional(),
+    postalCode: z.string().optional(),
+    city: z.string().optional(),
+    country: z.string().optional(),
     
-    // Common fields
+    // Common
     note: z.string().max(500).optional()
   }),
-
-  // Processing options
-  urgentWithdrawal: z.boolean().optional().default(false),
-  reason: z.string().max(200).optional(),
   
-  // Security confirmation
-  confirmAmount: z.boolean().refine(val => val === true, 'Please confirm the withdrawal amount'),
-  acceptFees: z.boolean().refine(val => val === true, 'You must accept the withdrawal fees'),
-  authorizeWithdrawal: z.boolean().refine(val => val === true, 'You must authorize this withdrawal')
+  // Additional fields
+  reason: z.string().max(200).optional(),
+  urgentWithdrawal: z.boolean().optional().default(false),
+  
+  // Security verification
+  securityPin: z.string().min(4, 'Security PIN required').max(6),
+  twoFactorCode: z.string().optional(),
+  biometricVerification: z.boolean().optional().default(false),
+  
+  // User confirmation
+  confirmWithdrawal: z.boolean().refine(val => val === true, 'Please confirm withdrawal'),
+  acceptFees: z.boolean().refine(val => val === true, 'Please accept withdrawal fees'),
+  
+  // Schedule withdrawal (optional)
+  scheduledFor: z.string().optional().transform(val => {
+    if (!val) return undefined;
+    const date = new Date(val);
+    return isNaN(date.getTime()) ? undefined : date;
+  })
 });
+
+export interface WithdrawalResponse {
+  success: boolean;
+  transactionId: string;
+  amount: number;
+  currency: string;
+  withdrawalMethod: string;
+  status: string;
+  fees: {
+    baseFee: number;
+    percentageFee: number;
+    totalFee: number;
+    urgentFee?: number;
+    networkFee?: number;
+  };
+  netAmount: number;
+  estimatedProcessingTime: string;
+  processingSteps: {
+    step: string;
+    description: string;
+    estimatedTime: string;
+    status: 'pending' | 'in_progress' | 'completed';
+  }[];
+  accountDetails: {
+    method: string;
+    maskedDetails: any;
+    verificationRequired: boolean;
+  };
+  warnings: string[];
+  restrictions: string[];
+  trackingInfo: {
+    referenceNumber: string;
+    statusCheckUrl: string;
+    estimatedCompletion: Date;
+    canCancel: boolean;
+    cancelDeadline?: Date;
+  };
+  balanceAfterWithdrawal: number;
+}
+
+// Validation helper functions
+function validateAccountDetails(method: string, details: any): string[] {
+  const errors: string[] = [];
+
+  switch (method) {
+    case 'bank_transfer':
+      if (!details.bankName) errors.push('Bank name is required');
+      if (!details.accountNumber) errors.push('Account number is required');
+      if (!details.accountHolderName) errors.push('Account holder name is required');
+      if (!details.routingNumber) errors.push('Routing number is required');
+      
+      // Validate account number format (simple check)
+      if (details.accountNumber && !/^\d{8,20}$/.test(details.accountNumber.replace(/\s+/g, ''))) {
+        errors.push('Invalid account number format');
+      }
+      break;
+
+    case 'mobile_banking':
+      if (!details.mobileNumber) errors.push('Mobile number is required');
+      if (!details.mobileProvider) errors.push('Mobile provider is required');
+      if (!details.mobileAccountName) errors.push('Account holder name is required');
+      
+      // Validate Bangladesh mobile number
+      if (details.mobileNumber && !/^(\+88)?01[3-9]\d{8}$/.test(details.mobileNumber)) {
+        errors.push('Invalid Bangladesh mobile number format');
+      }
+      break;
+
+    case 'crypto_wallet':
+      if (!details.walletAddress) errors.push('Wallet address is required');
+      if (!details.walletType) errors.push('Wallet type is required');
+      if (!details.walletNetwork) errors.push('Wallet network is required');
+      
+      // Basic wallet address validation
+      if (details.walletAddress) {
+        const address = details.walletAddress;
+        if (details.walletType === 'Bitcoin' && !/^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$|^bc1[a-z0-9]{39,59}$/.test(address)) {
+          errors.push('Invalid Bitcoin wallet address');
+        } else if (details.walletType === 'Ethereum' && !/^0x[a-fA-F0-9]{40}$/.test(address)) {
+          errors.push('Invalid Ethereum wallet address');
+        }
+      }
+      break;
+
+    case 'check':
+      if (!details.mailingAddress) errors.push('Mailing address is required');
+      if (!details.city) errors.push('City is required');
+      if (!details.postalCode) errors.push('Postal code is required');
+      if (!details.country) errors.push('Country is required');
+      break;
+  }
+
+  return errors;
+}
+
+function maskAccountDetails(method: string, details: any): any {
+  switch (method) {
+    case 'bank_transfer':
+      return {
+        bankName: details.bankName,
+        accountNumber: details.accountNumber ? 
+          `****${details.accountNumber.slice(-4)}` : '',
+        accountHolderName: details.accountHolderName,
+        bankBranch: details.bankBranch
+      };
+
+    case 'mobile_banking':
+      return {
+        mobileProvider: details.mobileProvider,
+        mobileNumber: details.mobileNumber ? 
+          `****${details.mobileNumber.slice(-4)}` : '',
+        mobileAccountName: details.mobileAccountName
+      };
+
+    case 'crypto_wallet':
+      return {
+        walletType: details.walletType,
+        walletNetwork: details.walletNetwork,
+        walletAddress: details.walletAddress ? 
+          `${details.walletAddress.slice(0, 6)}...${details.walletAddress.slice(-6)}` : ''
+      };
+
+    case 'check':
+      return {
+        city: details.city,
+        country: details.country,
+        maskedAddress: details.mailingAddress ? 
+          `${details.mailingAddress.slice(0, 10)}...` : ''
+      };
+
+    default:
+      return details;
+  }
+}
+
+function generateProcessingSteps(method: string, amount: number, isUrgent: boolean): any[] {
+  const baseSteps = [
+    {
+      step: 'verification',
+      description: 'Account and transaction verification',
+      estimatedTime: isUrgent ? '30 minutes' : '2-6 hours',
+      status: 'pending' as const
+    },
+    {
+      step: 'approval',
+      description: 'Admin approval and compliance check',
+      estimatedTime: isUrgent ? '1-2 hours' : '6-24 hours',
+      status: 'pending' as const
+    }
+  ];
+
+  const methodSteps: { [key: string]: any[] } = {
+    bank_transfer: [
+      ...baseSteps,
+      {
+        step: 'processing',
+        description: 'Bank transfer initiation',
+        estimatedTime: '1-2 hours',
+        status: 'pending' as const
+      },
+      {
+        step: 'completion',
+        description: 'Funds credited to your account',
+        estimatedTime: '24-48 hours',
+        status: 'pending' as const
+      }
+    ],
+    mobile_banking: [
+      ...baseSteps,
+      {
+        step: 'processing',
+        description: 'Mobile banking transfer',
+        estimatedTime: '30 minutes - 2 hours',
+        status: 'pending' as const
+      },
+      {
+        step: 'completion',
+        description: 'Funds credited to your mobile wallet',
+        estimatedTime: '2-6 hours',
+        status: 'pending' as const
+      }
+    ],
+    crypto_wallet: [
+      ...baseSteps,
+      {
+        step: 'processing',
+        description: 'Blockchain transaction broadcast',
+        estimatedTime: '15-30 minutes',
+        status: 'pending' as const
+      },
+      {
+        step: 'completion',
+        description: 'Blockchain confirmation',
+        estimatedTime: '30 minutes - 2 hours',
+        status: 'pending' as const
+      }
+    ],
+    check: [
+      ...baseSteps,
+      {
+        step: 'processing',
+        description: 'Check preparation and mailing',
+        estimatedTime: '2-3 days',
+        status: 'pending' as const
+      },
+      {
+        step: 'completion',
+        description: 'Check delivery',
+        estimatedTime: '5-10 business days',
+        status: 'pending' as const
+      }
+    ]
+  };
+
+  return methodSteps[method] || baseSteps;
+}
 
 // POST /api/user/wallet/withdraw - Create mobile withdrawal
 async function createMobileWithdrawalHandler(request: NextRequest): Promise<NextResponse> {
@@ -97,8 +321,12 @@ async function createMobileWithdrawalHandler(request: NextRequest): Promise<Next
       withdrawalMethod, 
       deviceId, 
       accountDetails,
+      reason,
       urgentWithdrawal,
-      reason
+      securityPin,
+      twoFactorCode,
+      biometricVerification,
+      scheduledFor
     } = validationResult.data;
 
     const clientIP = request.headers.get('x-forwarded-for')?.split(',')[0] || '127.0.0.1';
@@ -110,7 +338,7 @@ async function createMobileWithdrawalHandler(request: NextRequest): Promise<Next
       return apiHandler.notFound('User not found');
     }
 
-    // Check account status and requirements
+    // Comprehensive account status checks
     if (user.status !== 'Active') {
       return apiHandler.forbidden(`Account is ${user.status.toLowerCase()}`);
     }
@@ -130,6 +358,18 @@ async function createMobileWithdrawalHandler(request: NextRequest): Promise<Next
     // Check if account is locked
     if (user.lockedUntil && user.lockedUntil > new Date()) {
       return apiHandler.forbidden('Account is temporarily locked');
+    }
+
+    // Validate account details
+    const accountValidationErrors = validateAccountDetails(withdrawalMethod, accountDetails);
+    if (accountValidationErrors.length > 0) {
+      return apiHandler.validationError(
+        accountValidationErrors.map(error => ({
+          field: 'accountDetails',
+          message: error,
+          code: 'ACCOUNT_DETAILS_ERROR'
+        }))
+      );
     }
 
     // Check sufficient balance
@@ -164,359 +404,198 @@ async function createMobileWithdrawalHandler(request: NextRequest): Promise<Next
     );
 
     // Check if user has enough balance after fees
+    const totalDeduction = feeCalculation.totalFee;
     if (amount > user.balance) {
-      return apiHandler.badRequest(`Insufficient balance including fees. Available: ${user.balance}, Required: ${amount}`);
+      return apiHandler.badRequest(`Insufficient balance including fees. Available: ${user.balance}, Required: ${amount + totalDeduction}`);
     }
 
-    // Validate withdrawal method specific data
-    const accountValidation = validateAccountDetails(withdrawalMethod, accountDetails);
-    if (!accountValidation.isValid) {
-      return apiHandler.badRequest(accountValidation.error || 'Invalid account details');
-    }
+    // Risk assessment
+    const riskScore = TransactionUtils.calculateRiskScore(
+      { amount }, // transaction object with amount
+      user,
+      existingTransactions
+    );
 
     // Generate unique transaction ID
     const transactionId = TransactionUtils.generateTransactionId('withdrawal');
 
-    // Check for suspicious activity (basic fraud detection)
-    const riskAssessment = await assessWithdrawalRisk(user, amount, withdrawalMethod, clientIP);
-
-    // Create transaction record
-    const transaction = await Transaction.create({
-      userId,
-      type: 'withdrawal',
-      amount,
-      currency,
-      gateway: 'Manual', // All withdrawals are manual processing
-      status: riskAssessment.riskLevel === 'high' ? 'Pending' : 'Pending', // Can be flagged for review
-      description: `Mobile withdrawal via ${withdrawalMethod}`,
-      transactionId,
-      fees: feeCalculation.totalFee,
-      netAmount: feeCalculation.netAmount,
-      balanceBefore: user.balance,
-      metadata: {
-        ipAddress: clientIP,
-        userAgent,
-        deviceId,
-        withdrawalMethod,
-        accountDetails: sanitizeAccountDetails(accountDetails),
-        mobileWithdrawal: true,
-        urgentWithdrawal,
-        reason,
-        riskAssessment,
-        feeBreakdown: {
-          baseFee: feeCalculation.baseFee,
-          percentageFee: feeCalculation.percentageFee,
-          totalFee: feeCalculation.totalFee
-        }
-      }
-    });
-
-    // Reserve balance (don't deduct yet, wait for approval)
-    // This could be implemented with a separate "reserved" field in user model
-
-    // Log audit
-    await AuditLog.create({
-      adminId: null,
-      action: 'MOBILE_WITHDRAWAL_REQUEST',
-      entity: 'Transaction',
-      entityId: transaction._id.toString(),
-      oldData: { balance: user.balance },
-      newData: {
-        amount,
-        currency,
-        withdrawalMethod,
-        transactionId,
-        netAmount: feeCalculation.netAmount
-      },
-      status: 'Success',
-      metadata: {
-        userSelfAction: true,
-        withdrawalMethod,
-        urgentWithdrawal,
-        riskLevel: riskAssessment.riskLevel
-      },
-      ipAddress: clientIP,
-      userAgent,
-      severity: riskAssessment.riskLevel === 'high' ? 'High' : 'Low'
-    });
-
-    // Send notification emails
-    try {
-      // User notification
-      await sendEmail({
-        to: user.email,
-        subject: 'Withdrawal Request Submitted',
-        templateId: 'withdrawal_requested',
-        variables: {
-          userName: user.name,
-          amount: amount.toFixed(2),
-          currency,
-          transactionId,
-          withdrawalMethod: getWithdrawalMethodName(withdrawalMethod),
-          fees: feeCalculation.totalFee.toFixed(2),
-          netAmount: feeCalculation.netAmount.toFixed(2),
-          estimatedProcessingTime: getEstimatedWithdrawalTime(withdrawalMethod),
-          trackingUrl: `${process.env.NEXTAUTH_URL}/user/transactions/${transaction._id}`,
-          supportEmail: process.env.SUPPORT_EMAIL || 'support@iprofit.com'
-        }
-      });
-
-      // Admin notification for high-risk or large amounts
-      if (riskAssessment.riskLevel === 'high' || amount > 5000) {
-        await sendEmail({
-          to: process.env.ADMIN_EMAIL || 'admin@iprofit.com',
-          subject: `High Priority Withdrawal Request - ${transactionId}`,
-          templateId: 'withdrawal_admin_alert',
-          variables: {
-            userName: user.name,
-            userEmail: user.email,
-            amount: amount.toFixed(2),
-            currency,
-            transactionId,
-            withdrawalMethod,
-            riskLevel: riskAssessment.riskLevel,
-            riskReasons: riskAssessment.reasons.join(', '),
-            reviewUrl: `${process.env.NEXTAUTH_URL}/dashboard/transactions/${transaction._id}`
-          }
-        });
-      }
-    } catch (emailError) {
-      console.error('Failed to send withdrawal notification emails:', emailError);
+    // Determine initial status
+    let initialStatus = 'Pending';
+    if (riskScore > 80 || amount > 100000) {
+      initialStatus = 'Pending'; // High risk - manual review required
+    } else if (scheduledFor && scheduledFor > new Date()) {
+      initialStatus = 'Scheduled';
     }
 
-    const response = {
-      transaction: {
-        id: transaction._id.toString(),
-        transactionId,
-        amount,
-        currency,
-        withdrawalMethod,
-        fees: feeCalculation.totalFee,
-        netAmount: feeCalculation.netAmount,
-        status: 'Pending',
-        createdAt: transaction.createdAt,
-        estimatedProcessingTime: getEstimatedWithdrawalTime(withdrawalMethod)
-      },
-      
-      feeBreakdown: {
-        withdrawalAmount: amount,
-        baseFee: feeCalculation.baseFee,
-        percentageFee: feeCalculation.percentageFee,
-        urgentFee: urgentWithdrawal ? amount * 0.005 : 0,
-        totalFees: feeCalculation.totalFee,
-        netWithdrawal: feeCalculation.netAmount
-      },
+    // Start database transaction
+    const session_db = await mongoose.startSession();
+    
+    try {
+      const result = await session_db.withTransaction(async () => {
+        // Create withdrawal transaction
+        const transaction = await Transaction.create([{
+          userId: new mongoose.Types.ObjectId(userId),
+          type: 'withdrawal',
+          amount,
+          currency,
+          gateway: 'Manual', // Withdrawals are manually processed
+          status: initialStatus,
+          transactionId,
+          fees: feeCalculation.totalFee,
+          netAmount: feeCalculation.netAmount,
+          description: `Withdrawal via ${withdrawalMethod}${urgentWithdrawal ? ' (Urgent)' : ''}${reason ? ` - ${reason}` : ''}`,
+          gatewayResponse: {
+            withdrawalMethod,
+            accountDetails,
+            urgentWithdrawal,
+            scheduledFor
+          },
+          metadata: {
+            ipAddress: clientIP,
+            userAgent,
+            deviceId,
+            withdrawalMethod,
+            urgentWithdrawal: urgentWithdrawal || false,
+            riskScore,
+            securityVerification: {
+              pin: 'PROVIDED',
+              twoFactor: twoFactorCode ? 'PROVIDED' : 'NOT_PROVIDED',
+              biometric: biometricVerification || false
+            },
+            reason,
+            scheduledFor
+          },
+          balanceBefore: user.balance,
+          balanceAfter: user.balance // Will be updated when approved
+        }], { session: session_db });
 
-      accountDetails: {
-        method: withdrawalMethod,
-        displayName: getAccountDisplayName(withdrawalMethod, accountDetails),
-        lastFourDigits: getLastFourDigits(withdrawalMethod, accountDetails)
-      },
+        // Reserve balance for non-scheduled withdrawals
+        if (initialStatus !== 'Scheduled') {
+          await User.findByIdAndUpdate(
+            userId,
+            { 
+              $inc: { 
+                balance: 0, // Don't deduct yet, wait for approval
+                // You might want to track reserved amounts separately
+              }
+            },
+            { session: session_db }
+          );
+        }
 
-      processingInfo: {
-        estimatedTime: getEstimatedWithdrawalTime(withdrawalMethod),
-        businessDaysOnly: withdrawalMethod !== 'crypto_wallet',
-        priority: urgentWithdrawal ? 'urgent' : 'normal',
-        riskLevel: riskAssessment.riskLevel
-      },
+        // Create audit log
+        await AuditLog.create([{
+          userId: new mongoose.Types.ObjectId(userId),
+          action: 'withdrawal.create',
+          entity: 'Transaction',
+          entityId: transaction[0]._id.toString(),
+          changes: [{
+            field: 'status',
+            oldValue: null,
+            newValue: initialStatus
+          }],
+          ipAddress: clientIP,
+          userAgent,
+          status: 'Success',
+          severity: amount >= 50000 ? 'High' : riskScore > 70 ? 'Medium' : 'Low',
+          metadata: {
+            amount,
+            withdrawalMethod,
+            riskScore,
+            urgentWithdrawal
+          }
+        }], { session: session_db });
 
-      nextSteps: [
-        'Your withdrawal request is under review',
-        'You will receive email confirmation once approved',
-        'Funds will be transferred to your specified account',
-        `Expected processing: ${getEstimatedWithdrawalTime(withdrawalMethod)}`
-      ],
+        // Generate response data
+        const processingSteps = generateProcessingSteps(withdrawalMethod, amount, urgentWithdrawal || false);
+        const estimatedProcessingTime = TransactionUtils.getProcessingTime('Manual', withdrawalMethod, urgentWithdrawal);
 
-      supportInfo: {
-        trackingId: transactionId,
-        supportEmail: process.env.SUPPORT_EMAIL || 'support@iprofit.com',
-        helpUrl: `${process.env.NEXTAUTH_URL}/user/help/withdrawals`,
-        canCancel: true,
-        cancelDeadline: new Date(Date.now() + 60 * 60 * 1000) // 1 hour
-      },
+        // Generate warnings and restrictions
+        const warnings: string[] = [];
+        const restrictions: string[] = [];
 
-      warnings: [
-        ...limitValidation.warnings,
-        ...(riskAssessment.riskLevel === 'high' ? ['This withdrawal may require additional verification'] : [])
-      ]
-    };
+        if (riskScore > 60) {
+          warnings.push('This withdrawal may require additional verification');
+        }
+        if (urgentWithdrawal) {
+          warnings.push('Urgent processing fee has been applied');
+        }
+        if (amount > 50000) {
+          warnings.push('Large withdrawal amounts may take longer to process');
+          restrictions.push('Additional compliance checks required');
+        }
+        if (withdrawalMethod === 'crypto_wallet') {
+          warnings.push('Cryptocurrency withdrawals are irreversible');
+          restrictions.push('Ensure wallet address is correct');
+        }
 
-    return apiHandler.created(response, 'Withdrawal request created successfully');
+        // Calculate balance after withdrawal (estimated)
+        const balanceAfterWithdrawal = user.balance - amount;
+
+        const response: WithdrawalResponse = {
+          success: true,
+          transactionId: transaction[0].transactionId,
+          amount,
+          currency,
+          withdrawalMethod,
+          status: initialStatus,
+          fees: {
+            baseFee: feeCalculation.baseFee,
+            percentageFee: feeCalculation.percentageFee - (urgentWithdrawal ? amount * 0.005 : 0),
+            totalFee: feeCalculation.totalFee,
+            ...(urgentWithdrawal && { urgentFee: amount * 0.005 }),
+            ...(withdrawalMethod === 'crypto_wallet' && { networkFee: 10 })
+          },
+          netAmount: feeCalculation.netAmount,
+          estimatedProcessingTime,
+          processingSteps,
+          accountDetails: {
+            method: withdrawalMethod,
+            maskedDetails: maskAccountDetails(withdrawalMethod, accountDetails),
+            verificationRequired: riskScore > 70
+          },
+          warnings,
+          restrictions,
+          trackingInfo: {
+            referenceNumber: transaction[0].transactionId,
+            statusCheckUrl: `/api/user/transactions/${transaction[0]._id}/status`,
+            estimatedCompletion: scheduledFor || new Date(Date.now() + (urgentWithdrawal ? 6 * 60 * 60 * 1000 : 48 * 60 * 60 * 1000)),
+            canCancel: initialStatus === 'Pending' || initialStatus === 'Scheduled',
+            ...(initialStatus === 'Pending' && { 
+              cancelDeadline: new Date(Date.now() + 60 * 60 * 1000) // 1 hour to cancel
+            })
+          },
+          balanceAfterWithdrawal
+        };
+
+        // Send notification email (async)
+        sendEmail({
+          to: user.email,
+          subject: 'Withdrawal Request Received',
+          templateId: 'withdrawal_created',
+          variables: {
+            userName: user.name,
+            amount,
+            currency,
+            transactionId: transaction[0].transactionId,
+            withdrawalMethod,
+            estimatedTime: estimatedProcessingTime,
+            canCancel: response.trackingInfo.canCancel
+          }
+        }).catch(err => console.error('Email error:', err));
+
+        return response;
+      });
+
+      return apiHandler.success(result, 'Withdrawal request created successfully');
+
+    } finally {
+      await session_db.endSession();
+    }
 
   } catch (error) {
-    console.error('Mobile withdrawal error:', error);
+    console.error('Withdrawal API Error:', error);
     return apiHandler.internalError('Failed to create withdrawal request');
-  }
-}
-
-// Helper functions
-function validateAccountDetails(method: string, details: any): { isValid: boolean; error?: string } {
-  switch (method) {
-    case 'bank_transfer':
-      if (!details.bankName || !details.accountNumber || !details.accountHolderName) {
-        return { isValid: false, error: 'Bank name, account number, and account holder name are required' };
-      }
-      break;
-
-    case 'mobile_banking':
-      if (!details.mobileNumber || !details.mobileProvider) {
-        return { isValid: false, error: 'Mobile number and provider are required' };
-      }
-      
-      const cleanMobile = details.mobileNumber.replace(/[^\d]/g, '');
-      if (cleanMobile.length < 10 || cleanMobile.length > 15) {
-        return { isValid: false, error: 'Invalid mobile number format' };
-      }
-      break;
-
-    case 'crypto_wallet':
-      if (!details.walletAddress || !details.walletType) {
-        return { isValid: false, error: 'Wallet address and type are required' };
-      }
-      
-      // Basic wallet address validation
-      if (details.walletAddress.length < 20 || details.walletAddress.length > 100) {
-        return { isValid: false, error: 'Invalid wallet address format' };
-      }
-      break;
-
-    case 'check':
-      if (!details.mailingAddress || !details.mailingAddress.street || !details.mailingAddress.city) {
-        return { isValid: false, error: 'Complete mailing address is required for check delivery' };
-      }
-      break;
-
-    default:
-      return { isValid: false, error: 'Invalid withdrawal method' };
-  }
-
-  return { isValid: true };
-}
-
-async function assessWithdrawalRisk(user: any, amount: number, method: string, ip: string): Promise<{
-  riskLevel: 'low' | 'medium' | 'high';
-  reasons: string[];
-  score: number;
-}> {
-  const reasons: string[] = [];
-  let score = 0;
-
-  // Large amount check
-  if (amount > user.balance * 0.8) {
-    score += 30;
-    reasons.push('Large percentage of balance');
-  }
-
-  if (amount > 5000) {
-    score += 20;
-    reasons.push('High amount withdrawal');
-  }
-
-  // Account age check
-  const accountAge = (Date.now() - user.createdAt.getTime()) / (1000 * 60 * 60 * 24);
-  if (accountAge < 30) {
-    score += 25;
-    reasons.push('New account');
-  }
-
-  // Recent verification check
-  if (!user.emailVerified || !user.phoneVerified) {
-    score += 15;
-    reasons.push('Incomplete verification');
-  }
-
-  // Multiple recent withdrawals
-  const recentWithdrawals = await Transaction.countDocuments({
-    userId: user._id,
-    type: 'withdrawal',
-    createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
-  });
-
-  if (recentWithdrawals > 2) {
-    score += 20;
-    reasons.push('Multiple recent withdrawals');
-  }
-
-  // Determine risk level
-  let riskLevel: 'low' | 'medium' | 'high' = 'low';
-  if (score >= 50) riskLevel = 'high';
-  else if (score >= 25) riskLevel = 'medium';
-
-  return { riskLevel, reasons, score };
-}
-
-function sanitizeAccountDetails(details: any): any {
-  // Remove or mask sensitive information for storage
-  const sanitized = { ...details };
-  
-  if (sanitized.accountNumber) {
-    sanitized.accountNumber = maskAccountNumber(sanitized.accountNumber);
-  }
-  
-  if (sanitized.walletAddress) {
-    sanitized.walletAddress = maskWalletAddress(sanitized.walletAddress);
-  }
-  
-  return sanitized;
-}
-
-function maskAccountNumber(accountNumber: string): string {
-  if (accountNumber.length <= 4) return accountNumber;
-  return '*'.repeat(accountNumber.length - 4) + accountNumber.slice(-4);
-}
-
-function maskWalletAddress(address: string): string {
-  if (address.length <= 8) return address;
-  return address.slice(0, 4) + '*'.repeat(address.length - 8) + address.slice(-4);
-}
-
-function getWithdrawalMethodName(method: string): string {
-  const names = {
-    bank_transfer: 'Bank Transfer',
-    mobile_banking: 'Mobile Banking',
-    crypto_wallet: 'Cryptocurrency Wallet',
-    check: 'Check Payment'
-  };
-  return names[method as keyof typeof names] || method;
-}
-
-function getEstimatedWithdrawalTime(method: string): string {
-  const times = {
-    bank_transfer: '2-3 business days',
-    mobile_banking: '1-2 business days',
-    crypto_wallet: '30 minutes - 2 hours',
-    check: '5-7 business days'
-  };
-  return times[method as keyof typeof times] || '3-5 business days';
-}
-
-function getAccountDisplayName(method: string, details: any): string {
-  switch (method) {
-    case 'bank_transfer':
-      return `${details.bankName} - ${details.accountHolderName}`;
-    case 'mobile_banking':
-      return `${details.mobileProvider} - ${details.mobileNumber}`;
-    case 'crypto_wallet':
-      return `${details.walletType} Wallet`;
-    case 'check':
-      return `Check to ${details.mailingAddress?.street}`;
-    default:
-      return 'Unknown Account';
-  }
-}
-
-function getLastFourDigits(method: string, details: any): string {
-  switch (method) {
-    case 'bank_transfer':
-      return details.accountNumber ? details.accountNumber.slice(-4) : '';
-    case 'mobile_banking':
-      return details.mobileNumber ? details.mobileNumber.slice(-4) : '';
-    case 'crypto_wallet':
-      return details.walletAddress ? details.walletAddress.slice(-4) : '';
-    case 'check':
-      return details.mailingAddress?.zipCode || '';
-    default:
-      return '';
   }
 }
 
