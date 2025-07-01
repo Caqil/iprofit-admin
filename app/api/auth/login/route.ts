@@ -5,7 +5,7 @@ import { User } from '@/models/User';
 import { AuditLog } from '@/models/AuditLog';
 import { verifyPassword } from '@/lib/encryption';
 import { checkDeviceLimit } from '@/lib/device-detection';
-import { generateSecureToken } from '@/lib/encryption';
+import { Plan } from '@/models/Plan'; 
 import { withErrorHandler } from '@/middleware/error-handler';
 import { authRateLimit } from '@/middleware/rate-limit';
 import { ApiHandler } from '@/lib/api-helpers';
@@ -231,10 +231,10 @@ try {
   } catch (dbError) {
     console.error('🔍 DEBUG: Database query error:', dbError);
   }
-      const user = await User.findOne({ 
-        email: email.toLowerCase(),
-        status: 'Active'
-      }).populate('planId');
+     const user = await User.findOne({ 
+  email: email.toLowerCase(),
+  status: 'Active'
+});
 
       if (!user) {
         await logAuthAttempt(email, userType, false, 'User not found', clientIP, userAgent);

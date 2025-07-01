@@ -550,3 +550,69 @@ export function validateRateLimit(
     remaining
   };
 }
+export const forgotPasswordSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  userType: z.enum(['user', 'admin']).default('user')
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(1, 'Reset token is required'),
+  password: z.string()
+    .min(8, 'Password must be at least 8 characters')
+    .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/, 
+      'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character'),
+  confirmPassword: z.string().min(1, 'Password confirmation is required'),
+  userType: z.enum(['user', 'admin']).default('user')
+}).refine(data => data.password === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ["confirmPassword"]
+});
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required'),
+  newPassword: z.string()
+    .min(8, 'Password must be at least 8 characters')
+    .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/, 
+      'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character'),
+  confirmPassword: z.string().min(1, 'Password confirmation is required')
+}).refine(data => data.newPassword === data.confirmPassword, {
+  message: "New passwords don't match",
+  path: ["confirmPassword"]
+}).refine(data => data.currentPassword !== data.newPassword, {
+  message: "New password must be different from current password",
+  path: ["newPassword"]
+});
+
+export const verifyEmailSchema = z.object({
+  token: z.string().min(1, 'Verification token is required'),
+  userType: z.enum(['user', 'admin']).default('user')
+});
+
+export const resendVerificationSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  userType: z.enum(['user', 'admin']).default('user')
+});
+
+export const verifyPhoneSchema = z.object({
+  code: z.string().length(6, 'Verification code must be 6 digits'),
+  userType: z.enum(['user', 'admin']).default('user')
+});
+
+export const sendPhoneCodeSchema = z.object({
+  phone: z.string().regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone number format'),
+  userType: z.enum(['user', 'admin']).default('user')
+});
+
+export const updateProfileSchema = z.object({
+  name: z.string().min(2, 'Name must be at least 2 characters').max(100).optional(),
+  phone: z.string().min(10, 'Phone number must be at least 10 digits').max(20).optional(),
+  dateOfBirth: z.string().datetime().optional(),
+  address: z.object({
+    street: z.string().min(5).max(200).optional(),
+    city: z.string().min(2).max(100).optional(),
+    state: z.string().min(2).max(100).optional(),
+    country: z.string().min(2).max(100).optional(),
+    zipCode: z.string().min(3).max(20).optional()
+  }).optional(),
+  profilePicture: z.string().url().optional()
+}).strict();
