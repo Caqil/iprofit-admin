@@ -1,70 +1,187 @@
-// models/User.ts - Enhanced with mobile features and preferences
+// models/User.ts - Complete User Model with Device Management
 import mongoose, { Document, Schema } from 'mongoose';
 
+// Device subdocument schema
+const DeviceSchema = new Schema({
+  deviceId: { 
+    type: String, 
+    required: true,
+    index: true
+  },
+  deviceName: { 
+    type: String, 
+    required: true,
+    maxlength: 100
+  },
+  deviceType: { 
+    type: String, 
+    enum: ['mobile', 'tablet', 'desktop', 'web'], 
+    default: 'mobile' 
+  },
+  platform: { 
+    type: String, 
+    enum: ['ios', 'android', 'windows', 'macos', 'linux', 'web'], 
+    required: true 
+  },
+  osVersion: { 
+    type: String, 
+    required: true,
+    maxlength: 50
+  },
+  appVersion: { 
+    type: String, 
+    required: true,
+    maxlength: 20
+  },
+  fingerprint: { 
+    type: String, 
+    required: true,
+    index: true
+  },
+  fcmToken: { 
+    type: String, 
+    default: null,
+    index: true
+  },
+  deviceInfo: {
+    brand: { type: String, maxlength: 50 },
+    model: { type: String, maxlength: 100 },
+    manufacturer: { type: String, maxlength: 50 },
+    screenResolution: String,
+    isTablet: Boolean,
+    isEmulator: Boolean,
+    hasNotch: Boolean,
+    supportsBiometric: Boolean,
+    biometricTypes: [String]
+  },
+  locationInfo: {
+    timezone: String,
+    locale: String,
+    country: String,
+    region: String
+  },
+  isPrimary: { 
+    type: Boolean, 
+    default: false,
+    index: true
+  },
+  isTrusted: { 
+    type: Boolean, 
+    default: false 
+  },
+  isActive: { 
+    type: Boolean, 
+    default: true,
+    index: true
+  },
+  biometricEnabled: { 
+    type: Boolean, 
+    default: false 
+  },
+  biometricData: {
+    type: Map,
+    of: {
+      enrolled: Boolean,
+      template: String, // Encrypted biometric template
+      enrolledAt: Date
+    },
+    default: new Map()
+  },
+  securityLevel: { 
+    type: String, 
+    enum: ['weak', 'standard', 'strong'], 
+    default: 'standard' 
+  },
+  registeredAt: { 
+    type: Date, 
+    default: Date.now,
+    index: true
+  },
+  lastActiveAt: { 
+    type: Date, 
+    default: Date.now,
+    index: true
+  },
+  lastLoginAt: { 
+    type: Date, 
+    default: null 
+  },
+  loginAttempts: { 
+    type: Number, 
+    default: 0,
+    min: 0,
+    max: 10
+  },
+  lockedUntil: { 
+    type: Date, 
+    default: null 
+  }
+}, {
+  timestamps: true
+});
+
+// Complete User Interface
 export interface IUser extends Document {
   _id: string;
+  
+  // Basic Information
   name: string;
   email: string;
   phone: string;
-  passwordHash?: string;
-  planId: mongoose.Types.ObjectId;
-  balance: number;
-  kycStatus: 'Pending' | 'Approved' | 'Rejected' | 'Verified';
+  password: string;
+  dateOfBirth?: Date;
+  profilePicture?: string;
+  
+  // Account Status
+  status: 'Active' | 'Suspended' | 'Banned';
+  emailVerified: boolean;
+  phoneVerified: boolean;
+  kycStatus: 'Pending' | 'Approved' | 'Rejected';
   kycDocuments: {
     type: string;
     url: string;
     uploadedAt: Date;
   }[];
   kycRejectionReason?: string;
+  
+  // Financial Information
+  balance: number;
+  planId: mongoose.Types.ObjectId;
+  
+  // Referral System
   referralCode: string;
-  referredBy?: mongoose.Types.ObjectId;
-  deviceId: string;
-  profilePicture?: string;
-  dateOfBirth?: Date;
-  address?: {
-    street: string;
-    city: string;
-    state: string;
-    country: string;
-    zipCode: string;
-  };
-  status: 'Active' | 'Suspended' | 'Banned';
-  lastLogin?: Date;
+  referredBy?: string;
+  
+  // Authentication & Security
   loginAttempts: number;
   lockedUntil?: Date;
-  
-  // Email verification fields
-  emailVerified: boolean;
-  emailVerificationToken?: string;
-  emailVerificationExpires?: Date;
-  emailVerificationAttempts: number;
-  emailVerificationRequestedAt?: Date;
-  emailVerifiedAt?: Date;
-  
-  // Phone verification fields
-  phoneVerified: boolean;
-  phoneVerificationCode?: string;
-  phoneVerificationExpires?: Date;
-  phoneVerificationAttempts: number;
-  phoneCodeRequestedAt?: Date;
-  phoneVerifiedAt?: Date;
-  
-  // Password reset fields
-  passwordResetToken?: string;
-  passwordResetExpires?: Date;
-  passwordResetAttempts: number;
-  passwordResetRequestedAt?: Date;
-  
-  // Password security fields
-  lastPasswordChange?: Date;
-  passwordHistory?: string[];
-  passwordChangedFromDevice?: string;
-  
-  // Two-factor authentication
   twoFactorEnabled: boolean;
   twoFactorSecret?: string;
   
-  // User preferences for mobile app
+  // Email Verification
+  emailVerificationToken?: string;
+  emailVerificationExpires?: Date;
+  
+  // Phone Verification
+  phoneVerificationCode?: string;
+  phoneVerificationExpires?: Date;
+  phoneVerificationAttempts: number;
+  
+  // Password Reset
+  passwordResetToken?: string;
+  passwordResetExpires?: Date;
+  passwordResetAttempts: number;
+  
+  // Address Information
+  address?: {
+    street?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    zipCode?: string;
+  };
+  
+  // User Preferences
   preferences?: {
     notifications: {
       email: {
@@ -109,19 +226,19 @@ export interface IUser extends Document {
       };
     };
     privacy: {
-      profileVisibility: 'public' | 'private' | 'friends';
+      profileVisibility: 'public' | 'private';
       showBalance: boolean;
       showTransactions: boolean;
       showReferrals: boolean;
       allowContact: boolean;
     };
     app: {
-      language: 'en' | 'bn' | 'hi';
-      currency: 'BDT' | 'USD';
+      language: string;
+      currency: 'USD' | 'BDT';
       theme: 'light' | 'dark' | 'auto';
       biometricLogin: boolean;
       autoLock: boolean;
-      autoLockDuration: number; // minutes
+      autoLockDuration: number;
       soundEnabled: boolean;
       vibrationEnabled: boolean;
     };
@@ -130,7 +247,7 @@ export interface IUser extends Document {
       loginNotifications: boolean;
       suspiciousActivityAlerts: boolean;
       deviceRegistrationNotifications: boolean;
-      sessionTimeout: number; // minutes
+      sessionTimeout: number;
     };
     marketing: {
       emailMarketing: boolean;
@@ -141,58 +258,127 @@ export interface IUser extends Document {
     };
   };
   
-  // Mobile app specific fields
-  fcmToken?: string; // Firebase Cloud Messaging token
+  // Mobile App Specific Fields (Legacy - for backwards compatibility)
+  deviceId: string; // Primary device ID
+  fcmToken?: string; // Primary device FCM token
+  fingerprint?: string; // Primary device fingerprint (legacy)
   lastAppVersion?: string;
   appInstallDate?: Date;
-  lastActiveAt?: Date;
   
+  // Device Management (New Multi-Device Support)
+  devices?: Array<{
+    deviceId: string;
+    deviceName: string;
+    deviceType: 'mobile' | 'tablet' | 'desktop' | 'web';
+    platform: 'ios' | 'android' | 'windows' | 'macos' | 'linux' | 'web';
+    osVersion: string;
+    appVersion: string;
+    fingerprint: string;
+    fcmToken?: string;
+    deviceInfo?: {
+      brand?: string;
+      model?: string;
+      manufacturer?: string;
+      screenResolution?: string;
+      isTablet?: boolean;
+      isEmulator?: boolean;
+      hasNotch?: boolean;
+      supportsBiometric?: boolean;
+      biometricTypes?: string[];
+    };
+    locationInfo?: {
+      timezone?: string;
+      locale?: string;
+      country?: string;
+      region?: string;
+    };
+    isPrimary: boolean;
+    isTrusted: boolean;
+    isActive: boolean;
+    biometricEnabled: boolean;
+    biometricData: Map<string, {
+      enrolled: boolean;
+      template: string;
+      enrolledAt: Date;
+    }>;
+    securityLevel: 'weak' | 'standard' | 'strong';
+    registeredAt: Date;
+    lastActiveAt: Date;
+    lastLoginAt?: Date;
+    loginAttempts: number;
+    lockedUntil?: Date;
+  }>;
+  
+  // Timestamps
+  lastActiveAt?: Date;
   createdAt: Date;
   updatedAt: Date;
+  
+  // Methods
+  isEmailVerificationValid(): boolean;
+  isPhoneVerificationValid(): boolean;
+  updateLastActive(): Promise<IUser>;
 }
 
+// Main User Schema
 const UserSchema = new Schema<IUser>({
+  // Basic Information
   name: {
     type: String,
     required: true,
     trim: true,
-    index: true
+    minlength: 2,
+    maxlength: 100
   },
   email: {
     type: String,
     required: true,
     unique: true,
     lowercase: true,
-    trim: true
+    trim: true,
+    match: /^[^\s@]+@[^\s@]+\.[^\s@]+$/
   },
   phone: {
     type: String,
     required: true,
+    unique: true,
     trim: true,
-    index: true
+    minlength: 10,
+    maxlength: 20
   },
-  passwordHash: {
+  password: {
     type: String,
-    required: function() {
-      return !this.isNew || this.passwordHash !== undefined;
-    }
-  },
-  planId: {
-    type: Schema.Types.ObjectId,
-    ref: 'Plan',
     required: true,
-    index: true
+    minlength: 8,
+    select: false // Don't include password in queries by default
   },
-  balance: {
-    type: Number,
-    default: 0,
-    min: 0
+  dateOfBirth: {
+    type: Date,
+    default: null
+  },
+  profilePicture: {
+    type: String,
+    default: null
+  },
+
+  // Account Status
+  status: {
+    type: String,
+    enum: ['Active', 'Suspended', 'Banned'],
+    default: 'Active'
+  },
+  emailVerified: {
+    type: Boolean,
+    default: false
+  },
+  phoneVerified: {
+    type: Boolean,
+    default: false
   },
   kycStatus: {
     type: String,
-    enum: ['Pending', 'Approved', 'Rejected', 'Verified'],
-    default: 'Pending',
-    index: true
+    enum: ['Pending', 'Approved', 'Rejected'],
+    default: 'Pending'
   },
   kycDocuments: [{
     type: {
@@ -212,99 +398,71 @@ const UserSchema = new Schema<IUser>({
     type: String,
     default: null
   },
+
+  // Financial Information
+  balance: {
+    type: Number,
+    required: true,
+    default: 0,
+    min: 0
+  },
+  planId: {
+    type: Schema.Types.ObjectId,
+    ref: 'Plan',
+    required: true
+  },
+
+  // Referral System
   referralCode: {
     type: String,
-    unique: true,
     required: true,
+    unique: true,
     uppercase: true,
-    index: true
+    minlength: 6,
+    maxlength: 10
   },
   referredBy: {
-    type: Schema.Types.ObjectId,
-    ref: 'User',
-    default: null,
-    index: true
-  },
-  deviceId: {
-    type: String,
-    required: true,
-    unique: true,
-    index: true
-  },
-  profilePicture: {
     type: String,
     default: null
   },
-  dateOfBirth: {
-    type: Date,
-    default: null
-  },
-  address: {
-    street: { type: String, trim: true },
-    city: { type: String, trim: true },
-    state: { type: String, trim: true },
-    country: { type: String, trim: true },
-    zipCode: { type: String, trim: true }
-  },
-  status: {
-    type: String,
-    enum: ['Active', 'Suspended', 'Banned'],
-    default: 'Active',
-    index: true
-  },
-  lastLogin: {
-    type: Date,
-    default: null
-  },
+
+  // Authentication & Security
   loginAttempts: {
     type: Number,
     default: 0,
-    min: 0
+    min: 0,
+    max: 10
   },
   lockedUntil: {
     type: Date,
     default: null
   },
-  
-  // Email verification fields
-  emailVerified: {
+  twoFactorEnabled: {
     type: Boolean,
-    default: false,
-    index: true
+    default: false
   },
+  twoFactorSecret: {
+    type: String,
+    default: null,
+    select: false
+  },
+
+  // Email Verification
   emailVerificationToken: {
     type: String,
     default: null,
-    index: true
+    select: false
   },
   emailVerificationExpires: {
     type: Date,
     default: null
   },
-  emailVerificationAttempts: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
-  emailVerificationRequestedAt: {
-    type: Date,
-    default: null
-  },
-  emailVerifiedAt: {
-    type: Date,
-    default: null
-  },
-  
-  // Phone verification fields
-  phoneVerified: {
-    type: Boolean,
-    default: false,
-    index: true
-  },
+
+  // Phone Verification
   phoneVerificationCode: {
     type: String,
     default: null,
-    index: true
+    select: false
   },
   phoneVerificationExpires: {
     type: Date,
@@ -313,22 +471,15 @@ const UserSchema = new Schema<IUser>({
   phoneVerificationAttempts: {
     type: Number,
     default: 0,
-    min: 0
+    min: 0,
+    max: 5
   },
-  phoneCodeRequestedAt: {
-    type: Date,
-    default: null
-  },
-  phoneVerifiedAt: {
-    type: Date,
-    default: null
-  },
-  
-  // Password reset fields
+
+  // Password Reset
   passwordResetToken: {
     type: String,
     default: null,
-    index: true
+    select: false
   },
   passwordResetExpires: {
     type: Date,
@@ -337,37 +488,20 @@ const UserSchema = new Schema<IUser>({
   passwordResetAttempts: {
     type: Number,
     default: 0,
-    min: 0
+    min: 0,
+    max: 5
   },
-  passwordResetRequestedAt: {
-    type: Date,
-    default: null
+
+  // Address Information
+  address: {
+    street: { type: String, trim: true, maxlength: 200 },
+    city: { type: String, trim: true, maxlength: 100 },
+    state: { type: String, trim: true, maxlength: 100 },
+    country: { type: String, trim: true, maxlength: 100 },
+    zipCode: { type: String, trim: true, maxlength: 20 }
   },
-  
-  // Password security fields
-  lastPasswordChange: {
-    type: Date,
-    default: null
-  },
-  passwordHistory: [{
-    type: String
-  }],
-  passwordChangedFromDevice: {
-    type: String,
-    default: null
-  },
-  
-  // Two-factor authentication
-  twoFactorEnabled: {
-    type: Boolean,
-    default: false
-  },
-  twoFactorSecret: {
-    type: String,
-    default: null
-  },
-  
-  // User preferences
+
+  // User Preferences
   preferences: {
     notifications: {
       email: {
@@ -412,15 +546,15 @@ const UserSchema = new Schema<IUser>({
       }
     },
     privacy: {
-      profileVisibility: { type: String, enum: ['public', 'private', 'friends'], default: 'private' },
+      profileVisibility: { type: String, enum: ['public', 'private'], default: 'private' },
       showBalance: { type: Boolean, default: false },
       showTransactions: { type: Boolean, default: false },
       showReferrals: { type: Boolean, default: false },
       allowContact: { type: Boolean, default: true }
     },
     app: {
-      language: { type: String, enum: ['en', 'bn', 'hi'], default: 'en' },
-      currency: { type: String, enum: ['BDT', 'USD'], default: 'BDT' },
+      language: { type: String, default: 'en', maxlength: 5 },
+      currency: { type: String, enum: ['USD', 'BDT'], default: 'BDT' },
       theme: { type: String, enum: ['light', 'dark', 'auto'], default: 'auto' },
       biometricLogin: { type: Boolean, default: false },
       autoLock: { type: Boolean, default: true },
@@ -443,9 +577,19 @@ const UserSchema = new Schema<IUser>({
       referralNotifications: { type: Boolean, default: true }
     }
   },
-  
-  // Mobile app specific fields
+
+  // Mobile App Specific Fields (Legacy - for backwards compatibility)
+  deviceId: {
+    type: String,
+    required: true,
+    index: true
+  },
   fcmToken: {
+    type: String,
+    default: null,
+    index: true
+  },
+  fingerprint: {
     type: String,
     default: null,
     index: true
@@ -458,6 +602,11 @@ const UserSchema = new Schema<IUser>({
     type: Date,
     default: null
   },
+
+  // Device Management (New Multi-Device Support)
+  devices: [DeviceSchema],
+
+  // Timestamps
   lastActiveAt: {
     type: Date,
     default: null
@@ -467,78 +616,46 @@ const UserSchema = new Schema<IUser>({
   collection: 'users'
 });
 
-// Additional indexes for mobile authentication and features
-UserSchema.index({ emailVerificationToken: 1, emailVerificationExpires: 1 });
-UserSchema.index({ phoneVerificationCode: 1, phoneVerificationExpires: 1 });
-UserSchema.index({ passwordResetToken: 1, passwordResetExpires: 1 });
-UserSchema.index({ status: 1, emailVerified: 1, phoneVerified: 1 });
-UserSchema.index({ lastActiveAt: -1 });
+// Indexes for better performance
+UserSchema.index({ email: 1 }, { unique: true });
+UserSchema.index({ phone: 1 }, { unique: true });
+UserSchema.index({ referralCode: 1 }, { unique: true });
+UserSchema.index({ deviceId: 1 });
+UserSchema.index({ status: 1 });
+UserSchema.index({ kycStatus: 1 });
+UserSchema.index({ emailVerified: 1 });
+UserSchema.index({ phoneVerified: 1 });
+UserSchema.index({ planId: 1 });
+UserSchema.index({ referredBy: 1 });
 UserSchema.index({ createdAt: -1 });
+UserSchema.index({ lastActiveAt: -1 });
 
-// Compound indexes for better performance
+// Device-related indexes
+UserSchema.index({ 'devices.deviceId': 1 });
+UserSchema.index({ 'devices.fingerprint': 1 });
+UserSchema.index({ 'devices.isPrimary': 1 });
+UserSchema.index({ 'devices.lastActiveAt': -1 });
+UserSchema.index({ 'devices.isActive': 1 });
+UserSchema.index({ 'devices.platform': 1 });
+
+// Compound indexes for better query performance
+UserSchema.index({ status: 1, emailVerified: 1, phoneVerified: 1 });
 UserSchema.index({ status: 1, kycStatus: 1 });
 UserSchema.index({ planId: 1, status: 1 });
 UserSchema.index({ referredBy: 1, createdAt: -1 });
 
-// Indexes for rate limiting and security
-UserSchema.index({ email: 1, passwordResetRequestedAt: -1 });
-UserSchema.index({ phone: 1, phoneCodeRequestedAt: -1 });
-UserSchema.index({ email: 1, emailVerificationRequestedAt: -1 });
+// Rate limiting and security indexes
+UserSchema.index({ emailVerificationToken: 1, emailVerificationExpires: 1 });
+UserSchema.index({ phoneVerificationCode: 1, phoneVerificationExpires: 1 });
+UserSchema.index({ passwordResetToken: 1, passwordResetExpires: 1 });
 
-// Virtual for checking if account is locked
-UserSchema.virtual('isLocked').get(function() {
-  return this.lockedUntil && this.lockedUntil > new Date();
-});
-
-// Virtual for checking if email verification is expired
-UserSchema.virtual('isEmailVerificationExpired').get(function() {
-  return this.emailVerificationExpires && this.emailVerificationExpires < new Date();
-});
-
-// Virtual for checking if phone verification is expired
-UserSchema.virtual('isPhoneVerificationExpired').get(function() {
-  return this.phoneVerificationExpires && this.phoneVerificationExpires < new Date();
-});
-
-// Virtual for checking if password reset is expired
-UserSchema.virtual('isPasswordResetExpired').get(function() {
-  return this.passwordResetExpires && this.passwordResetExpires < new Date();
-});
-
-// Virtual for account completion percentage
-UserSchema.virtual('completionPercentage').get(function() {
-  const fields = [
-    this.name,
-    this.email,
-    this.phone,
-    this.emailVerified,
-    this.phoneVerified,
-    this.dateOfBirth,
-    this.address?.street,
-    this.address?.city,
-    this.kycStatus === 'Approved',
-    this.profilePicture
-  ];
-
-  const completedFields = fields.filter(field => 
-    field !== null && field !== undefined && field !== ''
-  ).length;
-
-  return Math.round((completedFields / fields.length) * 100);
-});
-
-// Method to check if user can attempt password reset
-UserSchema.methods.canAttemptPasswordReset = function() {
-  return this.passwordResetAttempts < 5 && !this.isPasswordResetExpired;
+// Method to check if email verification is valid
+UserSchema.methods.isEmailVerificationValid = function() {
+  return this.emailVerificationExpires && this.emailVerificationExpires > new Date();
 };
 
-// Method to check if user can attempt email verification
-UserSchema.methods.canAttemptEmailVerification = function() {
-  return this.emailVerificationAttempts < 3 && !this.isEmailVerificationExpired;
-};
-
-// Method to check if user can attempt phone verification
-UserSchema.methods.canAttemptPhoneVerification = function() {
+// Method to check if phone verification is valid
+UserSchema.methods.isPhoneVerificationValid = function() {
   return this.phoneVerificationAttempts < 5 && !this.isPhoneVerificationExpired;
 };
 
@@ -575,6 +692,17 @@ UserSchema.pre('save', function(next) {
   if (!this.preferences) {
     // @ts-ignore
     this.preferences = (this.constructor as any).getDefaultPreferences();
+  }
+  
+  // Sync primary device with legacy fields for backwards compatibility
+  if (this.devices && this.devices.length > 0) {
+    const primaryDevice = this.devices.find(d => d.isPrimary);
+    if (primaryDevice) {
+      this.deviceId = primaryDevice.deviceId;
+      this.fcmToken = primaryDevice.fcmToken || this.fcmToken;
+      this.fingerprint = primaryDevice.fingerprint;
+      this.lastAppVersion = primaryDevice.appVersion;
+    }
   }
   
   next();

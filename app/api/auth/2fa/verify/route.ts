@@ -6,6 +6,7 @@ import { Admin } from '@/models/Admin';
 import { verifyTwoFactorToken } from '@/lib/auth';
 import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler } from '@/lib/api-helpers';
+import { getUserFromRequest } from '@/lib/auth-helper';
 
 async function verify2FAHandler(request: NextRequest): Promise<NextResponse> {
   const apiHandler = ApiHandler.create(request);
@@ -13,11 +14,10 @@ async function verify2FAHandler(request: NextRequest): Promise<NextResponse> {
   try {
     await connectToDatabase();
 
-    const session = await getServerSession(authConfig);
-
-    if (!session?.user || session.user.userType !== 'admin') {
-      return apiHandler.unauthorized('Admin authentication required');
-    }
+     const authResult = await getUserFromRequest(request);
+     if (!authResult) {
+       return apiHandler.unauthorized('Authentication required');
+     }
 
     const { token } = await request.json();
 
@@ -25,7 +25,7 @@ async function verify2FAHandler(request: NextRequest): Promise<NextResponse> {
       return apiHandler.badRequest('2FA token is required');
     }
 
-    const admin = await Admin.findById(session.user.id);
+    const admin = await Admin.findById(authResult.userId);
     if (!admin || !admin.twoFactorSecret) {
       return apiHandler.badRequest('2FA not set up');
     }

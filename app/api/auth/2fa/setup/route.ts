@@ -7,6 +7,7 @@ import { Admin } from '@/models/Admin';
 import { generateTwoFactorSecret } from '@/lib/auth';
 import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler } from '@/lib/api-helpers';
+import { getUserFromRequest } from '@/lib/auth-helper';
 
 async function setup2FAHandler(request: NextRequest): Promise<NextResponse> {
   const apiHandler = ApiHandler.create(request);
@@ -14,13 +15,14 @@ async function setup2FAHandler(request: NextRequest): Promise<NextResponse> {
   try {
     await connectToDatabase();
 
-    const session = await getServerSession(authConfig);
+    const authResult = await getUserFromRequest(request);
+       if (!authResult) {
+         return apiHandler.unauthorized('Authentication required');
+       }
 
-    if (!session?.user || session.user.userType !== 'admin') {
-      return apiHandler.unauthorized('Admin authentication required');
-    }
+   
 
-    const admin = await Admin.findById(session.user.id);
+    const admin = await Admin.findById(authResult.userId);
     if (!admin) {
       return apiHandler.notFound('Admin not found');
     }

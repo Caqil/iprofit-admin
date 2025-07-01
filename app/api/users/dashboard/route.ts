@@ -12,6 +12,7 @@ import { TaskSubmission } from '@/models/TaskSubmission';
 import { Notification } from '@/models/Notification';
 import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler } from '@/lib/api-helpers';
+import { getUserFromRequest } from '@/lib/auth-helper';
 
 // GET /api/user/dashboard - Get user dashboard data
 async function getUserDashboardHandler(request: NextRequest): Promise<NextResponse> {
@@ -21,12 +22,12 @@ async function getUserDashboardHandler(request: NextRequest): Promise<NextRespon
     await connectToDatabase();
 
     // Check authentication
-    const session = await getServerSession(authConfig);
-    if (!session?.user || session.user.userType !== 'user') {
-      return apiHandler.unauthorized('User authentication required');
-    }
+    const authResult = await getUserFromRequest(request);
+       if (!authResult) {
+         return apiHandler.unauthorized('Authentication required');
+       }
 
-    const userId = session.user.id;
+    const userId = authResult.userId;
 
     // Get user with plan details
     const user = await User.findById(userId)

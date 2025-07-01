@@ -13,6 +13,7 @@ import { sendEmail } from '@/lib/email';
 import TransactionUtils from '@/utils/transaction-helpers';
 import { TRANSACTION_LIMITS } from '@/lib/constants';
 import mongoose from 'mongoose';
+import { getUserFromRequest } from '@/lib/auth-helper';
 
 // Mobile deposit validation schema
 const mobileDepositSchema = z.object({
@@ -199,12 +200,11 @@ async function createMobileDepositHandler(request: NextRequest): Promise<NextRes
     await connectToDatabase();
 
     // Check authentication
-    const session = await getServerSession(authConfig);
-    if (!session?.user || session.user.userType !== 'user') {
-      return apiHandler.unauthorized('User authentication required');
-    }
-
-    const userId = session.user.id;
+    const authResult = await getUserFromRequest(request);
+       if (!authResult) {
+         return apiHandler.unauthorized('Authentication required');
+       }
+    const userId = authResult.userId;
     const body = await request.json();
     const validationResult = mobileDepositSchema.safeParse(body);
 

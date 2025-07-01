@@ -13,6 +13,7 @@ import { sendEmail } from '@/lib/email';
 import TransactionUtils from '@/utils/transaction-helpers';
 import { TRANSACTION_LIMITS } from '@/lib/constants';
 import mongoose from 'mongoose';
+import { getUserFromRequest } from '@/lib/auth-helper';
 
 // Mobile withdrawal validation schema
 const mobileWithdrawalSchema = z.object({
@@ -296,12 +297,12 @@ async function createMobileWithdrawalHandler(request: NextRequest): Promise<Next
     await connectToDatabase();
 
     // Check authentication
-    const session = await getServerSession(authConfig);
-    if (!session?.user || session.user.userType !== 'user') {
-      return apiHandler.unauthorized('User authentication required');
-    }
+    const authResult = await getUserFromRequest(request);
+       if (!authResult) {
+         return apiHandler.unauthorized('Authentication required');
+       }
 
-    const userId = session.user.id;
+    const userId = authResult.userId;
     const body = await request.json();
     const validationResult = mobileWithdrawalSchema.safeParse(body);
 

@@ -8,6 +8,7 @@ import { User } from '@/models/User';
 import { AuditLog } from '@/models/AuditLog';
 import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler } from '@/lib/api-helpers';
+import { getUserFromRequest } from '@/lib/auth-helper';
 
 // User preferences validation schema
 const preferencesUpdateSchema = z.object({
@@ -95,13 +96,13 @@ async function getUserPreferencesHandler(request: NextRequest): Promise<NextResp
     await connectToDatabase();
 
     // Check authentication
-    const session = await getServerSession(authConfig);
-    if (!session?.user || session.user.userType !== 'user') {
-      return apiHandler.unauthorized('User authentication required');
-    }
+   const authResult = await getUserFromRequest(request);
+      if (!authResult) {
+        return apiHandler.unauthorized('Authentication required');
+      }
 
     // Get user with preferences
-    const user = await User.findById(session.user.id)
+    const user = await User.findById(authResult.userId)
       .select('preferences deviceId createdAt');
 
     if (!user) {
@@ -131,10 +132,10 @@ async function updateUserPreferencesHandler(request: NextRequest): Promise<NextR
     await connectToDatabase();
 
     // Check authentication
-    const session = await getServerSession(authConfig);
-    if (!session?.user || session.user.userType !== 'user') {
-      return apiHandler.unauthorized('User authentication required');
-    }
+    const authResult = await getUserFromRequest(request);
+       if (!authResult) {
+         return apiHandler.unauthorized('Authentication required');
+       }
 
     const body = await request.json();
     const validationResult = preferencesUpdateSchema.safeParse(body);
@@ -154,7 +155,7 @@ async function updateUserPreferencesHandler(request: NextRequest): Promise<NextR
     const userAgent = request.headers.get('user-agent') || 'Unknown';
 
     // Get current user
-    const currentUser = await User.findById(session.user.id);
+    const currentUser = await User.findById(authResult.userId);
     if (!currentUser) {
       return apiHandler.notFound('User not found');
     }

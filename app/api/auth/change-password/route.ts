@@ -11,6 +11,7 @@ import { sendEmail } from '@/lib/email';
 import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler } from '@/lib/api-helpers';
 import { passwordValidator } from '@/utils/validators';
+import { getUserFromRequest } from '@/lib/auth-helper';
 
 // Change password validation schema
 const changePasswordSchema = z.object({
@@ -33,10 +34,10 @@ async function changePasswordHandler(request: NextRequest): Promise<NextResponse
     await connectToDatabase();
 
     // Check authentication
-    const session = await getServerSession(authConfig);
-    if (!session?.user || session.user.userType !== 'user') {
-      return apiHandler.unauthorized('Authentication required');
-    }
+   const authResult = await getUserFromRequest(request);
+  if (!authResult) {
+    return apiHandler.unauthorized('Authentication required');
+  }
 
     const body = await request.json();
     const validationResult = changePasswordSchema.safeParse(body);
@@ -56,7 +57,7 @@ async function changePasswordHandler(request: NextRequest): Promise<NextResponse
     const userAgent = request.headers.get('user-agent') || 'Unknown';
 
     // Find user
-    const user = await User.findById(session.user.id);
+    const user = await User.findById(authResult.userId);
     if (!user) {
       return apiHandler.notFound('User not found');
     }

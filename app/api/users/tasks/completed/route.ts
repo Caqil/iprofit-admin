@@ -9,6 +9,7 @@ import { Task, TaskSubmission } from '@/models/Task';
 import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler } from '@/lib/api-helpers';
 import mongoose from 'mongoose';
+import { getUserFromRequest } from '@/lib/auth-helper';
 
 // Completed tasks query validation schema
 const completedTasksQuerySchema = z.object({
@@ -199,12 +200,12 @@ async function getCompletedTasksHandler(request: NextRequest): Promise<NextRespo
     await connectToDatabase();
 
     // Check authentication
-    const session = await getServerSession(authConfig);
-    if (!session?.user || session.user.userType !== 'user') {
-      return apiHandler.unauthorized('User authentication required');
-    }
+   const authResult = await getUserFromRequest(request);
+      if (!authResult) {
+        return apiHandler.unauthorized('Authentication required');
+      }
 
-    const userId = session.user.id;
+    const userId = authResult.userId;
     const { searchParams } = new URL(request.url);
 
     // Validate query parameters

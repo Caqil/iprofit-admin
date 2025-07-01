@@ -11,6 +11,7 @@ import { writeFile, unlink } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { getUserFromRequest } from '@/lib/auth-helper';
 
 // Configuration
 const UPLOAD_CONFIG = {
@@ -28,13 +29,13 @@ async function uploadAvatarHandler(request: NextRequest): Promise<NextResponse> 
     await connectToDatabase();
 
     // Check authentication
-    const session = await getServerSession(authConfig);
-    if (!session?.user || session.user.userType !== 'user') {
-      return apiHandler.unauthorized('User authentication required');
-    }
+   const authResult = await getUserFromRequest(request);
+      if (!authResult) {
+        return apiHandler.unauthorized('Authentication required');
+      }
 
     // Get current user
-    const currentUser = await User.findById(session.user.id);
+    const currentUser = await User.findById(authResult.userId);
     if (!currentUser) {
       return apiHandler.notFound('User not found');
     }
@@ -67,7 +68,7 @@ async function uploadAvatarHandler(request: NextRequest): Promise<NextResponse> 
 
     // Generate unique filename
     const fileExtension = getFileExtension(file.name);
-    const uniqueFilename = `${session.user.id}_${Date.now()}_${crypto.randomBytes(8).toString('hex')}.${fileExtension}`;
+    const uniqueFilename = `${authResult.userId}_${Date.now()}_${crypto.randomBytes(8).toString('hex')}.${fileExtension}`;
     const filePath = path.join(UPLOAD_CONFIG.uploadDir, uniqueFilename);
     const publicUrl = `${UPLOAD_CONFIG.urlPath}/${uniqueFilename}`;
 
@@ -155,10 +156,10 @@ async function removeAvatarHandler(request: NextRequest): Promise<NextResponse> 
     await connectToDatabase();
 
     // Check authentication
-    const session = await getServerSession(authConfig);
-    if (!session?.user || session.user.userType !== 'user') {
-      return apiHandler.unauthorized('User authentication required');
-    }
+    const authResult = await getUserFromRequest(request);
+       if (!authResult) {
+         return apiHandler.unauthorized('Authentication required');
+       }
 
     // Get device ID from query params
     const { searchParams } = new URL(request.url);
@@ -169,7 +170,7 @@ async function removeAvatarHandler(request: NextRequest): Promise<NextResponse> 
     }
 
     // Get current user
-    const currentUser = await User.findById(session.user.id);
+    const currentUser = await User.findById(authResult.userId);
     if (!currentUser) {
       return apiHandler.notFound('User not found');
     }

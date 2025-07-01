@@ -9,6 +9,7 @@ import { Plan } from '@/models/Plan';
 import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler } from '@/lib/api-helpers';
 import mongoose from 'mongoose';
+import { getUserFromRequest } from '@/lib/auth-helper';
 
 export interface BalanceResponse {
   balance: number;
@@ -61,12 +62,12 @@ async function getUserBalanceHandler(request: NextRequest): Promise<NextResponse
     await connectToDatabase();
 
     // Check authentication
-    const session = await getServerSession(authConfig);
-    if (!session?.user || session.user.userType !== 'user') {
-      return apiHandler.unauthorized('User authentication required');
-    }
+    const authResult = await getUserFromRequest(request);
+       if (!authResult) {
+         return apiHandler.unauthorized('Authentication required');
+       }
 
-    const userId = session.user.id;
+    const userId = authResult.userId;
 
     // Get user with plan details
     const user = await User.findById(userId)

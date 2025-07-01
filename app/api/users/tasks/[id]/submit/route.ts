@@ -12,6 +12,7 @@ import { ApiHandler } from '@/lib/api-helpers';
 import { objectIdValidator } from '@/utils/validators';
 import { sendEmail } from '@/lib/email';
 import mongoose from 'mongoose';
+import { getUserFromRequest } from '@/lib/auth-helper';
 
 // Next.js 15 Route Handler with proper params typing
 interface RouteContext {
@@ -73,12 +74,11 @@ async function submitTaskHandler(
     await connectToDatabase();
 
     // Check authentication
-    const session = await getServerSession(authConfig);
-    if (!session?.user || session.user.userType !== 'user') {
-      return apiHandler.unauthorized('User authentication required');
-    }
-
-    const userId = session.user.id;
+  const authResult = await getUserFromRequest(request);
+     if (!authResult) {
+       return apiHandler.unauthorized('Authentication required');
+     }
+    const userId = authResult.userId;
     
     // Await the params Promise (Next.js 15 requirement)
     const { id } = await context.params;
