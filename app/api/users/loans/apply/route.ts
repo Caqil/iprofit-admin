@@ -220,52 +220,48 @@ async function applyForLoanHandler(request: NextRequest) {
       }
     });
 
-    // Send application confirmation email
+    // Send application confirmation email using existing template system
     try {
       await sendEmail({
         to: user.email,
         subject: 'Loan Application Received',
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #2563eb;">Loan Application Received</h2>
-            <p>Dear ${user.name},</p>
-            <p>We have successfully received your loan application.</p>
-            <div style="background: #f0f9ff; border: 1px solid #2563eb; padding: 16px; margin: 20px 0; border-radius: 6px;">
-              <strong>Application Details:</strong><br>
-              <strong>Application ID:</strong> ${newLoan._id}<br>
-              <strong>Loan Amount:</strong> ${loanData.amount} BDT<br>
-              <strong>Tenure:</strong> ${loanData.tenure} months<br>
-              <strong>EMI Amount:</strong> ${emiAmount.toFixed(2)} BDT<br>
-              <strong>Credit Score:</strong> ${creditScore}<br>
-              <strong>Expected Processing Time:</strong> 3-5 business days
-            </div>
-            <p>Our team will review your application and notify you via email once processed.</p>
-            <a href="${process.env.NEXTAUTH_URL}/user/loans/${newLoan._id}" 
-               style="background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
-              Track Application
-            </a>
-          </div>
-        `
+        templateId: 'loan_application_received',
+        variables: {
+          userName: user.name,
+          loanAmount: loanData.amount,
+          applicationId: newLoan._id.toString(),
+          expectedProcessingTime: '3-5 business days',
+          emiAmount: emiAmount.toFixed(2),
+          interestRate: interestRate,
+          tenure: loanData.tenure,
+          creditScore: creditScore,
+          trackingUrl: `${process.env.NEXTAUTH_URL}/user/loans/${newLoan._id}`
+        }
       });
     } catch (emailError) {
       console.error('Failed to send application confirmation email:', emailError);
     }
 
-    // Send admin notification
+    // Send admin notification using existing template system
     try {
       await sendEmail({
         to: process.env.ADMIN_EMAIL || 'admin@platform.com',
-        subject: `New Loan Application - ${newLoan._id}`,
-        html: `
-          <div style="font-family: Arial, sans-serif;">
-            <h3>New Loan Application Received</h3>
-            <p><strong>Applicant:</strong> ${user.name} (${user.email})</p>
-            <p><strong>Amount:</strong> ${loanData.amount} BDT</p>
-            <p><strong>Credit Score:</strong> ${creditScore}</p>
-            <p><strong>Risk Level:</strong> ${creditScore >= 700 ? 'Low' : creditScore >= 600 ? 'Medium' : 'High'}</p>
-            <a href="${process.env.NEXTAUTH_URL}/admin/loans/${newLoan._id}">Review Application</a>
-          </div>
-        `
+        subject: 'New Loan Application Received',
+        templateId: 'admin_loan_application_notification',
+        variables: {
+          adminName: 'Admin',
+          userName: user.name,
+          userEmail: user.email,
+          loanAmount: loanData.amount,
+          applicationId: newLoan._id.toString(),
+          creditScore: creditScore,
+          riskLevel: creditScore >= 700 ? 'Low' : creditScore >= 600 ? 'Medium' : 'High',
+          recommendation: creditScore >= 650 ? 'Approve' : creditScore >= 550 ? 'Review' : 'Reject',
+          debtToIncomeRatio: debtToIncomeRatio.toFixed(1),
+          interestRate: interestRate,
+          emiAmount: emiAmount.toFixed(2),
+          reviewUrl: `${process.env.NEXTAUTH_URL}/admin/loans/${newLoan._id}`
+        }
       });
     } catch (emailError) {
       console.error('Failed to send admin notification:', emailError);
@@ -317,5 +313,6 @@ async function applyForLoanHandler(request: NextRequest) {
     return apiHandler.internalError('Failed to submit loan application');
   }
 }
+
 
 export const POST = withErrorHandler(applyForLoanHandler);

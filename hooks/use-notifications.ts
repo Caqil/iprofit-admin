@@ -21,13 +21,21 @@ interface NotificationsHookReturn {
   refreshNotifications: () => void;
 }
 
+// FIXED: API Response wrapper type to match actual response structure
+interface ApiResponseWrapper<T> {
+  success: boolean;
+  data: T;
+  message?: string;
+  timestamp: string;
+}
+
 export function useNotifications(
   filters?: NotificationFilter,
   pagination?: PaginationParams
 ): NotificationsHookReturn {
   const queryClient = useQueryClient();
 
-  // Notifications list query
+  // FIXED: Notifications list query to handle actual API response structure
   const notificationsQuery = useQuery({
     queryKey: ['notifications', filters, pagination],
     queryFn: async (): Promise<ListResponse<Notification>> => {
@@ -48,108 +56,195 @@ export function useNotifications(
         if (pagination.sortOrder) params.append('sortOrder', pagination.sortOrder);
       }
 
+      console.log('🔍 Notifications Hook - Fetching with params:', params.toString());
+
       const response = await fetch(`/api/notifications?${params}`);
+      
       if (!response.ok) {
-        throw new Error('Failed to fetch notifications');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to fetch notifications');
       }
 
-      return response.json();
+      const result: ApiResponseWrapper<ListResponse<Notification>> = await response.json();
+      
+      console.log('📊 Notifications Hook - Raw API response:', result);
+      
+      // FIXED: Handle the actual API response structure
+      if (!result.success) {
+        throw new Error(result.message || 'API request failed');
+      }
+
+      return result.data;
     },
     staleTime: 60 * 1000 // 1 minute
   });
 
-  // Templates query
+  // FIXED: Templates query - handle missing endpoint gracefully
   const templatesQuery = useQuery({
     queryKey: ['notifications', 'templates'],
     queryFn: async (): Promise<NotificationTemplate[]> => {
-      const response = await fetch('/api/notifications/templates');
-      if (!response.ok) {
-        throw new Error('Failed to fetch notification templates');
-      }
+      try {
+        const response = await fetch('/api/notifications/templates');
+        
+        // If endpoint doesn't exist (404), return empty array instead of throwing
+        if (response.status === 404) {
+          console.warn('Templates endpoint not implemented yet');
+          return [];
+        }
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch templates');
+        }
 
-      const data = await response.json();
-      return data.data || [];
+        const result: ApiResponseWrapper<NotificationTemplate[]> = await response.json();
+        
+        if (!result.success) {
+          throw new Error(result.message || 'Failed to fetch templates');
+        }
+
+        return result.data;
+      } catch (error) {
+        console.warn('Templates endpoint error:', error);
+        // Return empty array if templates endpoint is not available
+        return [];
+      }
     },
-    staleTime: 10 * 60 * 1000 // 10 minutes
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    retry: false // Don't retry on 404
   });
 
   // Send notification mutation
   const sendNotificationMutation = useMutation({
     mutationFn: async (data: BulkNotificationRequest) => {
-      const response = await fetch('/api/notifications/send', {
+      const response = await fetch('/api/notifications', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to send notification');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to send notification');
       }
 
-      return response.json();
+      const result: ApiResponseWrapper<any> = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to send notification');
+      }
+
+      return result.data;
     },
-    onSuccess: (data) => {
-      toast.success(`Notification sent to ${data.sent} recipients`);
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      toast.success('Notification sent successfully');
     },
-    onError: (error) => {
-      toast.error(`Failed to send notification: ${error.message}`);
-    }
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to send notification');
+    },
   });
 
   // Mark as read mutation
   const markAsReadMutation = useMutation({
     mutationFn: async (notificationId: string) => {
       const response = await fetch(`/api/notifications/${notificationId}/read`, {
-        method: 'PATCH'
+        method: 'PATCH',
       });
 
       if (!response.ok) {
-        throw new Error('Failed to mark notification as read');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to mark notification as read');
       }
 
-      return response.json();
+      const result: ApiResponseWrapper<any> = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to mark notification as read');
+      }
+
+      return result.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      toast.success('Notification marked as read');
     },
-    onError: (error) => {
-      toast.error(`Failed to mark as read: ${error.message}`);
-    }
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to mark notification as read');
+    },
   });
 
   // Delete notification mutation
   const deleteNotificationMutation = useMutation({
     mutationFn: async (notificationId: string) => {
       const response = await fetch(`/api/notifications/${notificationId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
       });
 
       if (!response.ok) {
-        throw new Error('Failed to delete notification');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to delete notification');
       }
 
-      return response.json();
+      const result: ApiResponseWrapper<any> = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to delete notification');
+      }
+
+      return result.data;
     },
     onSuccess: () => {
-      toast.success('Notification deleted successfully');
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      toast.success('Notification deleted successfully');
     },
-    onError: (error) => {
-      toast.error(`Failed to delete notification: ${error.message}`);
-    }
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to delete notification');
+    },
   });
 
+  // Helper function to extract data safely
+  const extractNotificationsData = (response: any) => {
+    console.log('🔍 extractNotificationsData - Raw response:', response);
+    
+    // Handle different response structures
+    if (response?.data && Array.isArray(response.data)) {
+      // Direct structure: { data: [...], pagination: {...} }
+      console.log('✅ extractNotificationsData - Using direct data structure');
+      return {
+        notifications: response.data,
+        totalNotifications: response.pagination?.total || 0
+      };
+    } else if (Array.isArray(response)) {
+      // Raw array: [...]
+      console.log('✅ extractNotificationsData - Using raw array');
+      return {
+        notifications: response,
+        totalNotifications: response.length
+      };
+    } else {
+      console.log('❌ extractNotificationsData - Unknown structure, using empty array');
+      return {
+        notifications: [],
+        totalNotifications: 0
+      };
+    }
+  };
+
+  const notificationsData = extractNotificationsData(notificationsQuery.data);
+
   return {
-    notifications: notificationsQuery.data?.data || [],
-    totalNotifications: notificationsQuery.data?.pagination.total || 0,
+    notifications: notificationsData.notifications,
+    totalNotifications: notificationsData.totalNotifications,
     templates: templatesQuery.data || [],
     isLoading: notificationsQuery.isLoading || templatesQuery.isLoading,
     error: notificationsQuery.error?.message || templatesQuery.error?.message || null,
     sendNotification: sendNotificationMutation.mutateAsync,
     markAsRead: markAsReadMutation.mutateAsync,
     deleteNotification: deleteNotificationMutation.mutateAsync,
-    refreshNotifications: () => queryClient.invalidateQueries({ queryKey: ['notifications'] })
+    refreshNotifications: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
   };
 }

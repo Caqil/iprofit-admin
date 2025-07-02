@@ -292,24 +292,83 @@ export class BusinessRules {
     };
   }
 
-  /**
-   * Get email configuration
-   */
-  static async getEmailConfig(): Promise<{
-    smtpHost: string;
-    smtpPort: number;
-  }> {
-    const settings = await getSettings([
-      'smtp_host',
-      'smtp_port'
-    ]);
+  
+/**
+ * Get complete email configuration
+ */
+static async getEmailConfig(): Promise<{
+  smtpHost: string;
+  smtpPort: number;
+  smtpUser: string;
+  smtpPass: string;
+  emailFromName: string;
+  emailFromAddress?: string;
+  smtpSecure: boolean;
+  smtpMaxConnections: number;
+  smtpMaxMessages: number;
+  emailMaxRetries: number;
+  emailRetryDelay: number;
+}> {
+  const settings = await getSettings([
+    'smtp_host',
+    'smtp_port',
+    'smtp_user',
+    'smtp_pass',
+    'email_from_name',
+    'email_from_address',
+    'smtp_secure',
+    'smtp_max_connections',
+    'smtp_max_messages',
+    'email_max_retries',
+    'email_retry_delay'
+  ]);
 
-    return {
-      smtpHost: settings.smtp_host || 'smtp.gmail.com',
-      smtpPort: settings.smtp_port || 587
-    };
-  }
+  return {
+    smtpHost: settings.smtp_host || process.env.SMTP_HOST || 'smtp.gmail.com',
+    smtpPort: settings.smtp_port || parseInt(process.env.SMTP_PORT || '587'),
+    smtpUser: settings.smtp_user || process.env.SMTP_USER || '',
+    smtpPass: settings.smtp_pass || process.env.SMTP_PASS || '',
+    emailFromName: settings.email_from_name || process.env.EMAIL_FROM_NAME || 'IProfit Platform',
+    emailFromAddress: settings.email_from_address || process.env.EMAIL_FROM_ADDRESS,
+    smtpSecure: settings.smtp_secure !== undefined ? Boolean(settings.smtp_secure) : (process.env.SMTP_SECURE === 'true'),
+    smtpMaxConnections: settings.smtp_max_connections || parseInt(process.env.SMTP_MAX_CONNECTIONS || '5'),
+    smtpMaxMessages: settings.smtp_max_messages || parseInt(process.env.SMTP_MAX_MESSAGES || '100'),
+    emailMaxRetries: settings.email_max_retries || parseInt(process.env.EMAIL_MAX_RETRIES || '3'),
+    emailRetryDelay: settings.email_retry_delay || parseInt(process.env.EMAIL_RETRY_DELAY || '5000')
+  };
+}
 
+/**
+ * Update email configuration
+ */
+static async updateEmailConfig(config: {
+  smtpHost?: string;
+  smtpPort?: number;
+  smtpUser?: string;
+  smtpPass?: string;
+  emailFromName?: string;
+  emailFromAddress?: string;
+  smtpSecure?: boolean;
+  smtpMaxConnections?: number;
+  smtpMaxMessages?: number;
+  emailMaxRetries?: number;
+  emailRetryDelay?: number;
+}): Promise<void> {
+  const updates: { [key: string]: any } = {};
+
+  if (config.smtpHost !== undefined) updates.smtp_host = config.smtpHost;
+  if (config.smtpPort !== undefined) updates.smtp_port = config.smtpPort;
+  if (config.smtpUser !== undefined) updates.smtp_user = config.smtpUser;
+  if (config.smtpPass !== undefined) updates.smtp_pass = config.smtpPass;
+  if (config.emailFromName !== undefined) updates.email_from_name = config.emailFromName;
+  if (config.emailFromAddress !== undefined) updates.email_from_address = config.emailFromAddress;
+  if (config.smtpSecure !== undefined) updates.smtp_secure = config.smtpSecure;
+  if (config.smtpMaxConnections !== undefined) updates.smtp_max_connections = config.smtpMaxConnections;
+  if (config.smtpMaxMessages !== undefined) updates.smtp_max_messages = config.smtpMaxMessages;
+  if (config.emailMaxRetries !== undefined) updates.email_max_retries = config.emailMaxRetries;
+  if (config.emailRetryDelay !== undefined) updates.email_retry_delay = config.emailRetryDelay;
+
+}
   /**
    * Get business configuration
    */
@@ -407,7 +466,95 @@ export class BusinessRules {
   static async isMaintenanceMode(): Promise<boolean> {
     return await getSetting('maintenance_mode', false);
   }
+/**
+ * Get bonus auto approval configuration
+ */
+static async getBonusAutoApprovalConfig(): Promise<{
+  autoBonusApproval: boolean;
+  maxAutoApprovalAmount: number;
+  minAccountAgeDays: number;
+  minTotalDeposits: number;
+}> {
+  const settings = await getSettings([
+    'auto_bonus_approval',
+    'auto_bonus_max_amount',
+    'auto_bonus_min_account_age_days',
+    'auto_bonus_min_total_deposits'
+  ]);
 
+  return {
+    autoBonusApproval: settings.auto_bonus_approval || false,
+    maxAutoApprovalAmount: settings.auto_bonus_max_amount || 1000,
+    minAccountAgeDays: settings.auto_bonus_min_account_age_days || 30,
+    minTotalDeposits: settings.auto_bonus_min_total_deposits || 1000
+  };
+}
+
+/**
+ * Check if user is eligible for auto bonus approval
+ */
+static async isUserEligibleForAutoBonusApproval(
+  user: any,
+  bonusAmount: number
+): Promise<{
+  eligible: boolean;
+  reasons: string[];
+}> {
+  const config = await this.getBonusAutoApprovalConfig();
+  
+  if (!config.autoBonusApproval) {
+    return {
+      eligible: false,
+      reasons: ['Auto bonus approval is disabled']
+    };
+  }
+
+  const reasons: string[] = [];
+
+  // Check bonus amount limit
+  if (bonusAmount > config.maxAutoApprovalAmount) {
+    reasons.push(`Bonus amount ${bonusAmount} BDT exceeds maximum auto approval limit of ${config.maxAutoApprovalAmount} BDT`);
+  }
+
+  // Check user account status
+  if (user.status !== 'Active') {
+    reasons.push('User account is not active');
+  }
+
+  // Check KYC status
+  if (user.kycStatus !== 'Approved') {
+    reasons.push('User KYC verification is not approved');
+  }
+
+  // Check email verification
+  if (!user.emailVerified) {
+    reasons.push('User email is not verified');
+  }
+
+  // Check phone verification
+  if (!user.phoneVerified) {
+    reasons.push('User phone is not verified');
+  }
+
+  // Check account age
+  const accountAgeDays = Math.floor(
+    (Date.now() - new Date(user.createdAt).getTime()) / (1000 * 60 * 60 * 24)
+  );
+  if (accountAgeDays < config.minAccountAgeDays) {
+    reasons.push(`Account age ${accountAgeDays} days is below minimum ${config.minAccountAgeDays} days`);
+  }
+
+  // Check total deposits (user should have totalDeposits field)
+  const userTotalDeposits = user.totalDeposits || 0;
+  if (userTotalDeposits < config.minTotalDeposits) {
+    reasons.push(`Total deposits ${userTotalDeposits} BDT below minimum ${config.minTotalDeposits} BDT`);
+  }
+
+  return {
+    eligible: reasons.length === 0,
+    reasons
+  };
+}
   /**
    * Validate deposit amount against minimum
    */

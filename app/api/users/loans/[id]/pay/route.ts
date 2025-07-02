@@ -8,7 +8,7 @@ import { AuditLog } from '@/models/AuditLog';
 import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler } from '@/lib/api-helpers';
 import { getUserFromRequest } from '@/lib/auth-helper';
-import { sendEmail } from '@/lib/email';
+import { sendEmail, sendLoanCompletedEmail, sendLoanRepaymentConfirmationEmail } from '@/lib/email';
 import mongoose from 'mongoose';
 
 // Validation schema for loan payment
@@ -139,6 +139,7 @@ async function makeLoanPaymentHandler(
 
     // Start database transaction
     const session = await mongoose.startSession();
+    let transactionId: string = '';
     
     try {
       await session.withTransaction(async () => {
@@ -175,6 +176,7 @@ async function makeLoanPaymentHandler(
         await loan.save({ session });
 
         // Create transaction record
+        transactionId = `LOAN_PAY_${Date.now()}_${userId.toString().slice(-6)}`;
         const transaction = await Transaction.create([{
           userId: userId,
           type: 'loan_payment',
@@ -183,7 +185,7 @@ async function makeLoanPaymentHandler(
           gateway: paymentData.paymentMethod,
           status: 'Approved',
           description: `Loan payment for loan ${loanId}`,
-          transactionId: `LOAN_PAY_${Date.now()}_${userId.toString().slice(-6)}`,
+          transactionId: transactionId,
           balanceBefore: user.balance,
           balanceAfter: paymentData.paymentMethod === 'balance' ? user.balance - paymentData.amount : user.balance,
           metadata: {
@@ -209,35 +211,33 @@ async function makeLoanPaymentHandler(
         }
       });
 
-      // Send payment confirmation email
+      // Send payment confirmation email using the existing email system
       try {
-        const nextPayment = loan.repaymentSchedule.find(p => p.status === 'Pending');
-        
-        await sendEmail({
-          to: user.email,
-          subject: 'Loan Payment Confirmed',
-          E: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-              <h2 style="color: #22c55e;">Payment Confirmed</h2>
-              <p>Dear ${user.name},</p>
-              <p>Your loan payment has been successfully processed.</p>
-              <div style="background: #f0fdf4; border: 1px solid #22c55e; padding: 16px; margin: 20px 0; border-radius: 6px;">
-                <strong>Payment Details:</strong><br>
-                <strong>Amount Paid:</strong> ${paymentData.amount} ${loan.currency}<br>
-                <strong>Loan ID:</strong> ${loanId}<br>
-                <strong>Payment Date:</strong> ${new Date().toLocaleDateString()}<br>
-                <strong>Remaining Balance:</strong> ${loan.remainingAmount} ${loan.currency}<br>
-                ${nextPayment ? `<strong>Next Payment Due:</strong> ${nextPayment.dueDate.toLocaleDateString()} (${nextPayment.amount} ${loan.currency})` : '<strong>Status:</strong> Loan Completed! 🎉'}
-              </div>
-              ${loan.status === 'Completed' ? 
-                '<p style="color: #22c55e; font-weight: bold;">Congratulations! You have successfully completed your loan repayment.</p>' :
-                '<p>Thank you for your payment. Keep up the good work!</p>'
-              }
-            </div>
-          `
-        });
+        if (loan.status === 'Completed') {
+          // Send loan completion email
+          await sendLoanCompletedEmail(
+            user.email,
+            user.name,
+            loan.amount,
+            loanId
+          );
+        } else {
+          const primaryPayment = paymentsToUpdate[0];
+          await sendLoanRepaymentConfirmationEmail(
+            user.email,
+            user.name,
+            loanId,
+            primaryPayment?.installmentNumber || 1,
+            paymentData.amount,
+            loan.remainingAmount,
+            transactionId,
+            new Date().toLocaleDateString(),
+            loan.status === 'Completed'
+          );
+        }
       } catch (emailError) {
         console.error('Failed to send payment confirmation email:', emailError);
+        // Don't fail the entire transaction for email errors
       }
 
       // Log audit
@@ -272,7 +272,8 @@ async function makeLoanPaymentHandler(
           currency: loan.currency,
           processedAt: new Date(),
           installmentsPaid: paymentsToUpdate.length,
-          penaltyPaid: penaltyPaid
+          penaltyPaid: penaltyPaid,
+          transactionId: transactionId
         },
         loan: {
           id: loan._id,
@@ -299,5 +300,4 @@ async function makeLoanPaymentHandler(
     return apiHandler.internalError('Failed to process loan payment');
   }
 }
-
 export const POST = withErrorHandler(makeLoanPaymentHandler);

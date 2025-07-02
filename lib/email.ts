@@ -234,6 +234,30 @@ export async function sendLoanDisbursedEmail(
     }
   });
 }
+export async function sendReferralInviteEmail(
+  recipientEmail: string,
+  inviterName: string,
+  inviterEmail: string,
+  referralUrl: string,
+  personalMessage?: string
+): Promise<boolean> {
+  return sendEmail({
+    to: recipientEmail,
+    subject: `${inviterName} invited you to join ${process.env.APP_NAME || 'our platform'}`,
+    templateId: 'referral_invite',
+    variables: {
+      recipientEmail,
+      inviterName,
+      inviterEmail,
+      personalMessage: personalMessage || '',
+      referralUrl,
+      bonusAmount: '50 BDT',
+      appName: process.env.APP_NAME || 'Financial Platform',
+      supportEmail: process.env.SUPPORT_EMAIL || 'support@platform.com',
+      hasPersonalMessage: !!personalMessage
+    }
+  });
+}
 
 export async function sendLoanCompletedEmail(
   userEmail: string,
@@ -327,7 +351,86 @@ export async function sendLoanPaymentOverdueEmail(
     }
   });
 }
+export async function sendDeviceRemovedEmail(
+  userEmail: string,
+  userName: string,
+  deviceName: string,
+  devicePlatform: string,
+  deviceType: string,
+  wasPrimary: boolean,
+  remainingDevices: number,
+  clientIP?: string
+): Promise<boolean> {
+  return sendEmail({
+    to: userEmail,
+    subject: 'Device Removed from Account',
+    templateId: 'device_removed',
+    variables: {
+      userName,
+      deviceName,
+      devicePlatform,
+      deviceType: deviceType || 'Unknown',
+      removalTime: new Date().toLocaleString(),
+      removalDate: new Date().toLocaleDateString(),
+      wasPrimary: wasPrimary ? 'Yes' : 'No',
+      remainingDevices,
+      securityUrl: `${process.env.NEXTAUTH_URL}/user/security`,
+      supportEmail: process.env.SUPPORT_EMAIL || 'support@platform.com',
+      clientIP: clientIP || 'Unknown'
+    }
+  });
+}
 
+export async function sendDeviceRegisteredEmail(
+  userEmail: string,
+  userName: string,
+  deviceName: string,
+  devicePlatform: string,
+  appVersion: string,
+  clientIP: string,
+  isPrimary: boolean = false
+): Promise<boolean> {
+  return sendEmail({
+    to: userEmail,
+    subject: 'New Device Registered',
+    templateId: 'device_registered',
+    variables: {
+      userName,
+      deviceName,
+      devicePlatform,
+      appVersion,
+      registrationTime: new Date().toLocaleString(),
+      registrationDate: new Date().toLocaleDateString(),
+      clientIP,
+      isPrimary: isPrimary ? 'Yes' : 'No',
+      securityUrl: `${process.env.NEXTAUTH_URL}/user/security`,
+      supportEmail: process.env.SUPPORT_EMAIL || 'support@platform.com'
+    }
+  });
+}
+
+export async function sendSuspiciousDeviceActivityEmail(
+  userEmail: string,
+  userName: string,
+  activityType: string,
+  deviceName: string,
+  location: string
+): Promise<boolean> {
+  return sendEmail({
+    to: userEmail,
+    subject: 'Suspicious Device Activity Detected',
+    templateId: 'device_suspicious_activity',
+    variables: {
+      userName,
+      activityType,
+      deviceName,
+      location,
+      detectionTime: new Date().toLocaleString(),
+      securityUrl: `${process.env.NEXTAUTH_URL}/user/security`,
+      supportEmail: process.env.SUPPORT_EMAIL || 'support@platform.com'
+    }
+  });
+}
 async function getEmailTemplate(templateId: string) {
   // In a real implementation, this would fetch from database
   const templates: Record<string, { subject: string; content: string }> = {
@@ -387,6 +490,297 @@ async function getEmailTemplate(templateId: string) {
         </div>
       `
     },
+    admin_loan_application_notification: {
+  subject: '🔔 New Loan Application - {{userName}} ({{loanAmount}} BDT)',
+  content: `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #dc2626;">New Loan Application Received</h2>
+      <p>Dear {{adminName}},</p>
+      <p>A new loan application has been submitted and requires your review.</p>
+      
+      <!-- Applicant Details -->
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; margin: 20px 0; border-radius: 8px;">
+        <h3 style="margin: 0 0 15px 0; color: #1e293b;">📋 Application Details</h3>
+        <strong>Applicant Name:</strong> {{userName}}<br>
+        <strong>Email:</strong> {{userEmail}}<br>
+        <strong>Application ID:</strong> {{applicationId}}<br>
+        <strong>Loan Amount:</strong> {{loanAmount}} BDT<br>
+        <strong>Interest Rate:</strong> {{interestRate}}% per annum<br>
+        <strong>Monthly EMI:</strong> {{emiAmount}} BDT
+      </div>
+      
+      <!-- Risk Assessment -->
+      <div style="background: {{riskColor}}; border: 1px solid {{riskBorderColor}}; padding: 20px; margin: 20px 0; border-radius: 8px;">
+        <h3 style="margin: 0 0 15px 0; color: #1e293b;">📊 Risk Assessment</h3>
+        <strong>Credit Score:</strong> {{creditScore}}/850<br>
+        <strong>Risk Level:</strong> <span style="color: {{riskTextColor}}; font-weight: bold;">{{riskLevel}}</span><br>
+        <strong>Debt-to-Income Ratio:</strong> {{debtToIncomeRatio}}%<br>
+        <strong>AI Recommendation:</strong> <span style="font-weight: bold;">{{recommendation}}</span>
+      </div>
+      
+      <!-- Action Buttons -->
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="{{reviewUrl}}" 
+           style="background: #2563eb; 
+                  color: #ffffff; 
+                  padding: 12px 30px; 
+                  text-decoration: none; 
+                  border-radius: 6px; 
+                  display: inline-block; 
+                  font-weight: bold; 
+                  margin-right: 10px;">
+          📝 Review Application
+        </a>
+        <a href="{{reviewUrl}}/approve" 
+           style="background: #059669; 
+                  color: #ffffff; 
+                  padding: 12px 30px; 
+                  text-decoration: none; 
+                  border-radius: 6px; 
+                  display: inline-block; 
+                  font-weight: bold; 
+                  margin-left: 10px;">
+          ✅ Quick Approve
+        </a>
+      </div>
+      
+      <!-- Footer -->
+      <div style="border-top: 1px solid #e2e8f0; padding-top: 20px; text-align: center; color: #6b7280; font-size: 14px;">
+        <p>This application was submitted on {{applicationDate}} via the user portal.</p>
+        <p>Please review and process within 3-5 business days as per our SLA.</p>
+      </div>
+    </div>
+  `
+},
+device_registered: {
+  subject: '📱 New Device Registered to Your Account',
+  content: `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff;">
+      <!-- Header -->
+      <div style="text-align: center; margin-bottom: 30px; padding: 20px; background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%); border-radius: 12px;">
+        <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: bold;">📱 Device Registered</h1>
+        <p style="color: #bfdbfe; margin: 10px 0 0 0; font-size: 14px;">Security Notification for Your Account</p>
+      </div>
+      
+      <!-- Main Content -->
+      <div style="background: #eff6ff; border-radius: 12px; padding: 25px; margin-bottom: 25px; border-left: 4px solid #2563eb;">
+        <p style="font-size: 16px; color: #1e293b; margin-bottom: 15px;">Dear {{userName}},</p>
+        
+        <p style="font-size: 16px; color: #475569; line-height: 1.6; margin-bottom: 20px;">
+          A new device has been <strong>successfully registered</strong> to your account.
+        </p>
+        
+        <!-- Device Details -->
+        <div style="background: #ffffff; border: 1px solid #60a5fa; padding: 20px; margin: 20px 0; border-radius: 8px;">
+          <h3 style="margin: 0 0 15px 0; color: #2563eb; font-size: 18px;">📋 Device Details</h3>
+          <div style="color: #374151; line-height: 1.8;">
+            <strong>Device Name:</strong> {{deviceName}}<br>
+            <strong>Platform:</strong> {{devicePlatform}}<br>
+            <strong>App Version:</strong> {{appVersion}}<br>
+            <strong>Primary Device:</strong> {{isPrimary}}<br>
+            <strong>Registered On:</strong> {{registrationTime}}<br>
+            <strong>IP Address:</strong> {{clientIP}}
+          </div>
+        </div>
+        
+        <!-- Status Information -->
+        <div style="background: #f0fdf4; border: 1px solid #22c55e; padding: 20px; margin: 20px 0; border-radius: 8px;">
+          <h3 style="margin: 0 0 15px 0; color: #059669; font-size: 16px;">✅ Registration Successful</h3>
+          <p style="margin: 0; color: #166534;">
+            Your device is now active and ready to use. You can access your account securely from this device.
+          </p>
+        </div>
+      </div>
+      
+      <!-- Security Notice -->
+      <div style="background: #fefce8; border: 2px solid #fde047; border-radius: 12px; padding: 25px; margin-bottom: 25px;">
+        <h3 style="margin: 0 0 15px 0; color: #ca8a04; font-size: 18px;">🛡️ Security Information</h3>
+        <div style="color: #713f12; line-height: 1.6;">
+          <p style="margin: 0 0 15px 0;">
+            <strong>If you registered this device:</strong> Great! Your account security is up to date and this device is now trusted.
+          </p>
+          <p style="margin: 0;">
+            <strong>If you did NOT register this device:</strong> Please take immediate action to secure your account.
+          </p>
+        </div>
+      </div>
+      
+      <!-- Action Buttons -->
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="{{securityUrl}}" 
+           style="background: #2563eb; 
+                  color: #ffffff; 
+                  padding: 15px 30px; 
+                  text-decoration: none; 
+                  border-radius: 8px; 
+                  display: inline-block; 
+                  font-weight: bold; 
+                  font-size: 16px; 
+                  margin-right: 10px;
+                  box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3);">
+          🔧 Manage Devices
+        </a>
+        <a href="mailto:{{supportEmail}}" 
+           style="background: #6b7280; 
+                  color: #ffffff; 
+                  padding: 15px 30px; 
+                  text-decoration: none; 
+                  border-radius: 8px; 
+                  display: inline-block; 
+                  font-weight: bold; 
+                  font-size: 16px; 
+                  margin-left: 10px;">
+          📧 Contact Support
+        </a>
+      </div>
+      
+      <!-- Device Management Tips -->
+      <div style="background: #f8fafc; border-radius: 12px; padding: 25px; margin-bottom: 25px;">
+        <h4 style="margin: 0 0 20px 0; color: #1e293b; font-size: 16px;">💡 Device Management Tips:</h4>
+        <ul style="color: #475569; line-height: 1.8; margin: 0; padding-left: 20px;">
+          <li>Set a strong device passcode or biometric authentication</li>
+          <li>Keep your app updated to the latest version</li>
+          <li>Review your connected devices regularly</li>
+          <li>Remove devices you no longer use or recognize</li>
+          <li>Contact support if you notice any suspicious activity</li>
+        </ul>
+      </div>
+      
+      <!-- Quick Actions -->
+      <div style="background: #f1f5f9; border-radius: 12px; padding: 20px; margin-bottom: 25px;">
+        <h4 style="margin: 0 0 15px 0; color: #1e293b; font-size: 16px;">🚀 Quick Actions:</h4>
+        <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+          <a href="{{securityUrl}}" style="background: #e2e8f0; color: #475569; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-size: 14px; flex: 1; min-width: 120px; text-align: center;">View All Devices</a>
+          <a href="{{securityUrl}}/settings" style="background: #e2e8f0; color: #475569; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-size: 14px; flex: 1; min-width: 120px; text-align: center;">Security Settings</a>
+          <a href="{{securityUrl}}/two-factor" style="background: #e2e8f0; color: #475569; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-size: 14px; flex: 1; min-width: 120px; text-align: center;">Enable 2FA</a>
+        </div>
+      </div>
+      
+      <!-- Footer -->
+      <div style="border-top: 1px solid #e2e8f0; padding-top: 25px; text-align: center;">
+        <p style="margin: 0 0 10px 0; font-size: 14px; color: #64748b;">
+          This security notification was sent automatically when a new device was registered.
+        </p>
+        <p style="margin: 0 0 10px 0; font-size: 14px; color: #64748b;">
+          For security questions, contact us at 
+          <a href="mailto:{{supportEmail}}" style="color: #2563eb;">{{supportEmail}}</a>
+        </p>
+        <p style="margin: 15px 0 0 0; font-size: 11px; color: #cbd5e1;">
+          Device registered on {{registrationDate}} | Your security is our priority
+        </p>
+      </div>
+    </div>
+  `
+},
+device_removed: {
+  subject: '🚨 Device Removed from Your Account',
+  content: `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff;">
+      <!-- Header -->
+      <div style="text-align: center; margin-bottom: 30px; padding: 20px; background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); border-radius: 12px;">
+        <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: bold;">🚨 Device Removed</h1>
+        <p style="color: #fecaca; margin: 10px 0 0 0; font-size: 14px;">Security Alert for Your Account</p>
+      </div>
+      
+      <!-- Main Content -->
+      <div style="background: #fef2f2; border-radius: 12px; padding: 25px; margin-bottom: 25px; border-left: 4px solid #dc2626;">
+        <p style="font-size: 16px; color: #1e293b; margin-bottom: 15px;">Dear {{userName}},</p>
+        
+        <p style="font-size: 16px; color: #475569; line-height: 1.6; margin-bottom: 20px;">
+          A device has been <strong>removed</strong> from your account. This is an important security notification.
+        </p>
+        
+        <!-- Device Details -->
+        <div style="background: #ffffff; border: 1px solid #f87171; padding: 20px; margin: 20px 0; border-radius: 8px;">
+          <h3 style="margin: 0 0 15px 0; color: #dc2626; font-size: 18px;">📱 Removed Device Details</h3>
+          <div style="color: #374151; line-height: 1.8;">
+            <strong>Device Name:</strong> {{deviceName}}<br>
+            <strong>Platform:</strong> {{devicePlatform}}<br>
+            <strong>Device Type:</strong> {{deviceType}}<br>
+            <strong>Was Primary:</strong> {{wasPrimary}}<br>
+            <strong>Removed On:</strong> {{removalTime}}<br>
+            <strong>IP Address:</strong> {{clientIP}}
+          </div>
+        </div>
+        
+        <!-- Account Status -->
+        <div style="background: #fffbeb; border: 1px solid #f59e0b; padding: 20px; margin: 20px 0; border-radius: 8px;">
+          <h3 style="margin: 0 0 15px 0; color: #d97706; font-size: 16px;">📊 Account Status</h3>
+          <p style="margin: 0; color: #92400e;">
+            <strong>Remaining Devices:</strong> {{remainingDevices}} device(s) still connected to your account
+          </p>
+        </div>
+      </div>
+      
+      <!-- Security Notice -->
+      <div style="background: #fee2e2; border: 2px solid #fca5a5; border-radius: 12px; padding: 25px; margin-bottom: 25px;">
+        <h3 style="margin: 0 0 15px 0; color: #dc2626; font-size: 18px;">⚠️ Important Security Notice</h3>
+        <div style="color: #7f1d1d; line-height: 1.6;">
+          <p style="margin: 0 0 15px 0;">
+            <strong>If you removed this device:</strong> No further action is required. Your account remains secure.
+          </p>
+          <p style="margin: 0;">
+            <strong>If you did NOT remove this device:</strong> Someone may have unauthorized access to your account. Please take immediate action.
+          </p>
+        </div>
+      </div>
+      
+      <!-- Action Buttons -->
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="{{securityUrl}}" 
+           style="background: #dc2626; 
+                  color: #ffffff; 
+                  padding: 15px 30px; 
+                  text-decoration: none; 
+                  border-radius: 8px; 
+                  display: inline-block; 
+                  font-weight: bold; 
+                  font-size: 16px; 
+                  margin-right: 10px;
+                  box-shadow: 0 4px 15px rgba(220, 38, 38, 0.3);">
+          🔒 Review Security Settings
+        </a>
+        <a href="mailto:{{supportEmail}}" 
+           style="background: #6b7280; 
+                  color: #ffffff; 
+                  padding: 15px 30px; 
+                  text-decoration: none; 
+                  border-radius: 8px; 
+                  display: inline-block; 
+                  font-weight: bold; 
+                  font-size: 16px; 
+                  margin-left: 10px;">
+          📧 Contact Support
+        </a>
+      </div>
+      
+      <!-- Security Tips -->
+      <div style="background: #f8fafc; border-radius: 12px; padding: 25px; margin-bottom: 25px;">
+        <h4 style="margin: 0 0 20px 0; color: #1e293b; font-size: 16px;">🛡️ Security Recommendations:</h4>
+        <ul style="color: #475569; line-height: 1.8; margin: 0; padding-left: 20px;">
+          <li>Regularly review your connected devices</li>
+          <li>Use strong, unique passwords for your accounts</li>
+          <li>Enable two-factor authentication if available</li>
+          <li>Contact support immediately if you notice suspicious activity</li>
+        </ul>
+      </div>
+      
+      <!-- Footer -->
+      <div style="border-top: 1px solid #e2e8f0; padding-top: 25px; text-align: center;">
+        <p style="margin: 0 0 10px 0; font-size: 14px; color: #64748b;">
+          This security alert was sent automatically to protect your account.
+        </p>
+        <p style="margin: 0 0 10px 0; font-size: 14px; color: #64748b;">
+          If you have any concerns, please contact us at 
+          <a href="mailto:{{supportEmail}}" style="color: #dc2626;">{{supportEmail}}</a>
+        </p>
+        <p style="margin: 15px 0 0 0; font-size: 11px; color: #cbd5e1;">
+          Device removed on {{removalDate}} | Security is our priority
+        </p>
+      </div>
+    </div>
+  `
+},
     loan_approved: {
       subject: '🎉 Loan Application Approved - {{loanAmount}}',
       content: `
@@ -559,6 +953,105 @@ async function getEmailTemplate(templateId: string) {
           <p>Need help? Contact us at {{supportEmail}}</p>
         </div>
       `
+    },
+    referral_invite: {
+    subject: '🎉 {{inviterName}} invited you to join {{appName}}',
+    content: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff;">
+        <!-- Header -->
+        <div style="text-align: center; margin-bottom: 30px; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px;">
+          <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: bold;">🎉 You're Invited!</h1>
+          <p style="color: #f1f5f9; margin: 10px 0 0 0; font-size: 16px;">Join {{appName}} and start earning</p>
+        </div>
+        
+        <!-- Main Content -->
+        <div style="background: #f8fafc; border-radius: 12px; padding: 30px; margin-bottom: 25px;">
+          <p style="font-size: 18px; color: #1e293b; margin-bottom: 20px;">Hi there! 👋</p>
+          
+          <p style="font-size: 16px; color: #475569; line-height: 1.6; margin-bottom: 20px;">
+            <strong>{{inviterName}}</strong> ({{inviterEmail}}) has invited you to join our financial platform and thought you'd love what we have to offer!
+          </p>
+          
+          {{#if hasPersonalMessage}}
+          <div style="background: #dbeafe; border-left: 4px solid #3b82f6; padding: 20px; margin: 25px 0; border-radius: 8px;">
+            <p style="margin: 0; font-style: italic; color: #1e40af; font-size: 16px;">
+              💬 "{{personalMessage}}"
+            </p>
+            <p style="margin: 10px 0 0 0; font-size: 14px; color: #64748b;">
+              - {{inviterName}}
+            </p>
+          </div>
+          {{/if}}
+        </div>
+        
+        <!-- Bonus Section -->
+        <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 12px; padding: 25px; margin-bottom: 30px; text-align: center;">
+          <h3 style="margin: 0 0 15px 0; color: #ffffff; font-size: 22px;">🎁 Welcome Bonus</h3>
+          <p style="margin: 0; color: #d1fae5; font-size: 16px; line-height: 1.5;">
+            Sign up now and get <strong style="color: #ffffff; font-size: 20px;">{{bonusAmount}}</strong> as a welcome bonus when you complete your registration!
+          </p>
+        </div>
+        
+        <!-- CTA Button -->
+        <div style="text-align: center; margin: 35px 0;">
+          <a href="{{referralUrl}}" 
+             style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); 
+                    color: #ffffff; 
+                    padding: 18px 40px; 
+                    text-decoration: none; 
+                    border-radius: 50px; 
+                    display: inline-block; 
+                    font-weight: bold; 
+                    font-size: 18px; 
+                    box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);">
+            🚀 Join Now & Claim Bonus
+          </a>
+        </div>
+        
+        <!-- Features Section -->
+        <div style="background: #f1f5f9; border-radius: 12px; padding: 25px; margin-bottom: 25px;">
+          <h4 style="margin: 0 0 20px 0; color: #1e293b; font-size: 18px; text-align: center;">✨ What you'll get:</h4>
+          <div style="text-align: center;">
+            <div style="display: inline-block; margin: 0 20px; text-align: center;">
+              <div style="font-size: 24px; margin-bottom: 8px;">💰</div>
+              <p style="margin: 0; color: #475569; font-size: 14px;">Instant Bonus</p>
+            </div>
+            <div style="display: inline-block; margin: 0 20px; text-align: center;">
+              <div style="font-size: 24px; margin-bottom: 8px;">📈</div>
+              <p style="margin: 0; color: #475569; font-size: 14px;">Smart Investing</p>
+            </div>
+            <div style="display: inline-block; margin: 0 20px; text-align: center;">
+              <div style="font-size: 24px; margin-bottom: 8px;">🔒</div>
+              <p style="margin: 0; color: #475569; font-size: 14px;">Secure Platform</p>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Alternative Link -->
+        <div style="background: #ffffff; border: 2px dashed #cbd5e1; border-radius: 8px; padding: 20px; margin-bottom: 30px;">
+          <p style="margin: 0 0 10px 0; font-size: 14px; color: #64748b; text-align: center;">
+            Button not working? Copy and paste this link:
+          </p>
+          <p style="margin: 0; text-align: center; word-break: break-all;">
+            <a href="{{referralUrl}}" style="color: #3b82f6; font-size: 14px;">{{referralUrl}}</a>
+          </p>
+        </div>
+        
+        <!-- Footer -->
+        <div style="border-top: 1px solid #e2e8f0; padding-top: 25px; text-align: center;">
+          <p style="margin: 0 0 10px 0; font-size: 14px; color: #64748b;">
+            This invitation was sent by {{inviterName}}
+          </p>
+          <p style="margin: 0; font-size: 12px; color: #94a3b8;">
+            Questions? Contact us at 
+            <a href="mailto:{{supportEmail}}" style="color: #3b82f6;">{{supportEmail}}</a>
+          </p>
+          <p style="margin: 15px 0 0 0; font-size: 11px; color: #cbd5e1;">
+            {{appName}} - Secure Financial Platform
+          </p>
+        </div>
+      </div>
+    `
     }
   };
 

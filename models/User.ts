@@ -38,6 +38,7 @@ const DeviceSchema = new Schema({
     required: true
     // REMOVED: index: true (will be handled by parent schema)
   },
+  
   fcmToken: { 
     type: String, 
     default: null
@@ -526,7 +527,65 @@ UserSchema.statics.getDefaultDeviceSettings = function() {
     loginAttempts: 0
   };
 };
-
+UserSchema.statics.getDefaultPreferences = function () {
+  return {
+    notifications: {
+      email: {
+        kyc: true,
+        transactions: true,
+        loans: true,
+        referrals: true,
+        tasks: true,
+        system: true,
+        marketing: true,
+        security: true
+      },
+      push: {
+        kyc: true,
+        transactions: true,
+        loans: true,
+        referrals: true,
+        tasks: true,
+        system: true,
+        marketing: true,
+        security: true
+      },
+      sms: {
+        kyc: false,
+        transactions: false,
+        loans: false,
+        referrals: false,
+        tasks: false,
+        system: false,
+        marketing: false,
+        security: false
+      },
+      inApp: {
+        kyc: true,
+        transactions: true,
+        loans: true,
+        referrals: true,
+        tasks: true,
+        system: true,
+        marketing: true,
+        security: true
+      }
+    },
+    marketing: {
+      emailMarketing: true,
+      smsMarketing: false,
+      pushMarketing: true,
+      personalizedOffers: true,
+      referralNotifications: true
+    },
+    security: {
+      loginNotifications: true,
+      suspiciousActivityAlerts: true,
+      deviceRegistrationNotifications: true,
+      sessionTimeout: 30
+    }
+  };
+};
 // Pre-save middleware to generate referral code if not exists
 UserSchema.pre('save', async function(next) {
   if (this.isNew && !this.referralCode) {

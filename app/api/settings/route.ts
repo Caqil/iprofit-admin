@@ -11,6 +11,7 @@ import { createSettingSchema, settingsListQuerySchema } from '@/lib/validation';
 import { SettingsGroupedByCategory } from '@/types/settings';
 import mongoose from 'mongoose';
 import { encrypt, decrypt } from '@/lib/encryption';
+import z from 'zod';
 
 // Helper function to build settings filter
 function buildSettingsFilter(params: any): any {

@@ -63,29 +63,25 @@ async function removeDeviceHandler(
 
     await user.save();
 
-    // Send device removal notification email
+    // Send device removal notification email using existing template system
     try {
       await sendEmail({
         to: user.email,
         subject: 'Device Removed from Account',
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #dc2626;">Device Removed</h2>
-            <p>Dear ${user.name},</p>
-            <p>A device has been removed from your account.</p>
-            <div style="background: #fef2f2; border: 1px solid #dc2626; padding: 16px; margin: 20px 0; border-radius: 6px;">
-              <strong>Removed Device:</strong><br>
-              <strong>Device Name:</strong> ${deviceToRemove.deviceName}<br>
-              <strong>Platform:</strong> ${deviceToRemove.platform}<br>
-              <strong>Removed:</strong> ${new Date().toLocaleString()}
-            </div>
-            <p>If you did not remove this device, please contact support immediately.</p>
-            <a href="${process.env.NEXTAUTH_URL}/user/security" 
-               style="background: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
-              Review Security
-            </a>
-          </div>
-        `
+        templateId: 'device_removed',
+        variables: {
+          userName: user.name,
+          deviceName: deviceToRemove.deviceName,
+          devicePlatform: deviceToRemove.platform,
+          deviceType: deviceToRemove.deviceType || 'Unknown',
+          removalTime: new Date().toLocaleString(),
+          removalDate: new Date().toLocaleDateString(),
+          wasPrimary: deviceToRemove.isPrimary,
+          remainingDevices: user.devices.length,
+          securityUrl: `${process.env.NEXTAUTH_URL}/user/security`,
+          supportEmail: process.env.SUPPORT_EMAIL || 'support@platform.com',
+          clientIP: request.headers.get('x-forwarded-for') || 'Unknown'
+        }
       });
     } catch (emailError) {
       console.error('Failed to send device removal email:', emailError);
@@ -128,5 +124,6 @@ async function removeDeviceHandler(
     return apiHandler.internalError('Failed to remove device');
   }
 }
+
 
 export const DELETE = withErrorHandler(removeDeviceHandler);

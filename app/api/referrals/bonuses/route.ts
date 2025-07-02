@@ -14,7 +14,196 @@ import { sendEmail } from '@/lib/email';
 import { z } from 'zod';
 import mongoose from 'mongoose';
 import { bonusApprovalSchema, bonusRecalculationSchema } from '@/lib/validation';
+import { BusinessRules } from '@/lib/settings-helper';
 
+/**
+ * Process bonus with auto-approval if eligible
+ */
+async function processBonusWithAutoApproval(
+  referral: any,
+  session: any
+): Promise<{
+  processed: boolean;
+  status: 'Approved' | 'Pending';
+  reason?: string;
+}> {
+  try {
+    // Get referrer user data with necessary fields
+    const referrer = await User.findById(referral.referrerId)
+      .select('name email balance status kycStatus emailVerified phoneVerified createdAt totalDeposits')
+      .session(session);
+    
+    if (!referrer) {
+      return { processed: false, status: 'Pending', reason: 'Referrer not found' };
+    }
+
+    // Calculate total bonus amount
+    const totalBonusAmount = (referral.bonusAmount || 0) + (referral.profitBonus || 0);
+
+    // Check eligibility for auto approval
+    const eligibilityCheck = await BusinessRules.isUserEligibleForAutoBonusApproval(
+      referrer,
+      totalBonusAmount
+    );
+
+    if (!eligibilityCheck.eligible) {
+      // Log why auto approval was not eligible
+      console.log(`Auto approval not eligible for referral ${referral._id}:`, eligibilityCheck.reasons);
+      return { 
+        processed: false, 
+        status: 'Pending', 
+        reason: eligibilityCheck.reasons.join('; ') 
+      };
+    }
+
+    // Auto approve the bonus
+    await autoApproveBonusTransaction(referral, session, totalBonusAmount);
+    
+    return { processed: true, status: 'Approved' };
+
+  } catch (error) {
+    console.error('Error in auto bonus processing:', error);
+    return { 
+      processed: false, 
+      status: 'Pending', 
+      reason: 'Auto processing failed - requires manual review' 
+    };
+  }
+}
+
+/**
+ * Auto approve bonus and create transaction
+ */
+async function autoApproveBonusTransaction(
+  referral: any,
+  session: any,
+  totalBonusAmount: number
+): Promise<void> {
+  // Update referral status to approved
+  await Referral.findByIdAndUpdate(
+    referral._id,
+    {
+      status: 'Paid', // Change from Pending to Paid
+      paidAt: new Date(),
+      updatedAt: new Date(),
+      approvedBy: 'system', // Mark as system approved
+      approvalMethod: 'automatic',
+      metadata: {
+        ...referral.metadata,
+        autoApproved: true,
+        autoApprovalTimestamp: new Date()
+      }
+    },
+    { session }
+  );
+
+  // Create bonus transaction
+  const transactionId = `AUTO-BONUS-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+  
+  const bonusTransaction = await Transaction.create([{
+    userId: referral.referrerId,
+    type: 'bonus',
+    amount: totalBonusAmount,
+    currency: 'BDT',
+    gateway: 'System',
+    status: 'Approved',
+    description: `Auto-approved ${referral.bonusType} bonus - ${totalBonusAmount} BDT`,
+    transactionId,
+    fees: 0,
+    netAmount: totalBonusAmount,
+    metadata: {
+      referralId: referral._id,
+      bonusType: referral.bonusType,
+      source: 'auto_approval',
+      autoProcessed: true,
+      processedAt: new Date()
+    },
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    processedAt: new Date()
+  }], { session });
+
+  // Update referrer balance
+  await User.findByIdAndUpdate(
+    referral.referrerId,
+    { 
+      $inc: { balance: totalBonusAmount },
+      $set: { updatedAt: new Date() }
+    },
+    { session }
+  );
+
+  // Create audit log for auto approval
+  const AuditLog = mongoose.model('AuditLog');
+  await AuditLog.create([{
+    userId: 'system',
+    userType: 'system',
+    action: 'bonus.auto_approve',
+    resource: 'Referral',
+    resourceId: referral._id,
+    details: {
+      referralId: referral._id,
+      referrerId: referral.referrerId,
+      bonusAmount: totalBonusAmount,
+      bonusType: referral.bonusType,
+      transactionId: bonusTransaction[0]._id,
+      autoApprovalReason: 'User met all auto approval criteria'
+    },
+    status: 'Success',
+    severity: 'Low',
+    ipAddress: '127.0.0.1',
+    userAgent: 'System',
+    createdAt: new Date()
+  }], { session });
+
+  console.log(`✅ Auto-approved bonus: ${totalBonusAmount} BDT for referral ${referral._id}`);
+}
+
+/**
+ * Create referral bonus with auto-processing attempt
+ * This function should be called when creating new referral bonuses
+ */
+export async function createReferralBonusWithAutoProcess(
+  bonusData: any,
+  session?: any
+): Promise<any> {
+  const useSession = session || await mongoose.startSession();
+  let shouldEndSession = !session;
+
+  try {
+    if (shouldEndSession) {
+      await useSession.startTransaction();
+    }
+
+    // Create the referral record
+    const referral = await Referral.create([bonusData], { session: useSession });
+    
+    // Try to auto-process if settings allow
+    const autoProcessResult = await processBonusWithAutoApproval(referral[0], useSession);
+    
+    if (autoProcessResult.processed) {
+      console.log(`✅ Auto-approved bonus for referral ${referral[0]._id}`);
+    } else {
+      console.log(`⏳ Bonus requires manual approval: ${autoProcessResult.reason}`);
+    }
+
+    if (shouldEndSession) {
+      await useSession.commitTransaction();
+    }
+    
+    return referral[0];
+
+  } catch (error) {
+    if (shouldEndSession) {
+      await useSession.abortTransaction();
+    }
+    throw error;
+  } finally {
+    if (shouldEndSession) {
+      await useSession.endSession();
+    }
+  }
+}
 // GET /api/referrals/bonuses - Get bonus overview and pending approvals
 async function getBonusesHandler(request: NextRequest): Promise<NextResponse> {
   const apiHandler = ApiHandler.create(request);

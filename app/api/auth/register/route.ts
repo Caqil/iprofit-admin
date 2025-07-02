@@ -38,23 +38,66 @@ const registrationSchema = z.object({
 });
 
 async function registerHandler(request: NextRequest): Promise<NextResponse> {
-  const apiHandler = ApiHandler.create(request);
+  console.log('🚀 Registration handler started');
+  console.log('📝 Request method:', request.method);
+  console.log('🔗 Request URL:', request.url);
+  
+  // Create a fallback response function to ensure we always return JSON
+  const createErrorResponse = (message: string, status: number = 500) => {
+    console.error('❌ Creating error response:', message, 'Status:', status);
+    return NextResponse.json(
+      { 
+        success: false, 
+        error: message,
+        timestamp: new Date().toISOString()
+      },
+      { status }
+    );
+  };
 
   try {
-    await connectToDatabase();
+    console.log('🔧 Creating API handler...');
+    const apiHandler = ApiHandler.create(request);
+    console.log('✅ API handler created successfully');
 
-    const body = await request.json();
+    console.log('🔌 Connecting to database...');
+    await connectToDatabase();
+    console.log('✅ Database connected successfully');
+
+    console.log('📋 Parsing request body...');
+    let body;
+    try {
+      body = await request.json();
+      console.log('✅ Request body parsed successfully');
+      console.log('📊 Body keys:', Object.keys(body));
+    } catch (jsonError) {
+      console.error('❌ JSON parsing failed:', jsonError);
+      return createErrorResponse('Invalid JSON in request body', 400);
+    }
+
+    console.log('🔍 Validating request data...');
     const validationResult = registrationSchema.safeParse(body);
 
     if (!validationResult.success) {
-      return apiHandler.validationError(
-        validationResult.error.errors.map(err => ({
-          field: err.path.join('.'),
-          message: err.message,
-          code: err.code
-        }))
+      console.error('❌ Validation failed:', validationResult.error.errors);
+      const errors = validationResult.error.errors.map(err => ({
+        field: err.path.join('.'),
+        message: err.message,
+        code: err.code
+      }));
+      
+      // Use direct NextResponse instead of apiHandler for validation errors
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Validation failed',
+          errors
+        },
+        { status: 400 }
       );
     }
+
+    console.log('✅ Validation passed');
 
     const {
       name,
@@ -71,36 +114,44 @@ async function registerHandler(request: NextRequest): Promise<NextResponse> {
     const clientIP = request.headers.get('x-forwarded-for')?.split(',')[0] || '127.0.0.1';
     const userAgent = request.headers.get('user-agent') || 'Unknown';
 
+    console.log('🔍 Checking for existing email:', email);
     // Check if email already exists
     const existingEmailUser = await User.findOne({
       email: email.toLowerCase()
     });
 
     if (existingEmailUser) {
+      console.log('❌ Email already exists');
       await logRegistrationAttempt(email, false, 'Email already registered', clientIP, userAgent);
-      return apiHandler.conflict('Email address is already registered');
+      return createErrorResponse('Email address is already registered', 409);
     }
 
+    console.log('🔍 Checking for existing phone:', phone);
     // Check if phone already exists
     const existingPhoneUser = await User.findOne({ phone });
     if (existingPhoneUser) {
+      console.log('❌ Phone already exists');
       await logRegistrationAttempt(email, false, 'Phone already registered', clientIP, userAgent);
-      return apiHandler.conflict('Phone number is already registered');
+      return createErrorResponse('Phone number is already registered', 409);
     }
 
+    console.log('🔍 Checking for existing device:', deviceId);
     // Check if device ID already exists
     const existingDeviceUser = await User.findOne({ deviceId });
     if (existingDeviceUser) {
+      console.log('❌ Device already exists');
       await logRegistrationAttempt(email, false, 'Device already registered', clientIP, userAgent);
-      return apiHandler.conflict('This device is already registered. Contact support if you need assistance.');
+      return createErrorResponse('This device is already registered. Contact support if you need assistance.', 409);
     }
 
+    console.log('📋 Finding user plan...');
     // Get plan (use provided planId or find default free plan)
     let userPlan;
     if (planId) {
       userPlan = await Plan.findById(planId);
       if (!userPlan) {
-        return apiHandler.notFound('Plan not found');
+        console.log('❌ Plan not found');
+        return createErrorResponse('Plan not found', 404);
       }
     } else {
       userPlan = await Plan.findOne({
@@ -109,10 +160,13 @@ async function registerHandler(request: NextRequest): Promise<NextResponse> {
       });
       
       if (!userPlan) {
-        return apiHandler.internalError('Default plan not found');
+        console.log('❌ Default plan not found');
+        return createErrorResponse('Default plan not found', 500);
       }
     }
+    console.log('✅ Plan found:', userPlan.name);
 
+    console.log('🔍 Checking referral code...');
     // Handle referral if provided
     let referrerUser: typeof User.prototype | null = null;
     if (referralCode) {
@@ -121,19 +175,28 @@ async function registerHandler(request: NextRequest): Promise<NextResponse> {
       });
 
       if (!referrerUser) {
-        return apiHandler.badRequest('Invalid referral code');
+        console.log('❌ Invalid referral code');
+        return createErrorResponse('Invalid referral code', 400);
       }
+      console.log('✅ Valid referral code');
     }
 
+    console.log('🔐 Hashing password...');
     // Hash password
     const passwordHash = await hashPassword(password);
+    console.log('✅ Password hashed');
 
+    console.log('🎲 Generating referral code...');
     // Generate unique referral code
     const userReferralCode = await generateUniqueReferralCode();
+    console.log('✅ Referral code generated:', userReferralCode);
 
+    console.log('🔑 Generating email verification token...');
     // Generate email verification token
     const emailVerificationToken = generateSecureToken(32);
+    console.log('✅ Email verification token generated');
 
+    console.log('👤 Creating new user...');
     // Create new user
     const newUser = new User({
       name: name.trim(),
@@ -157,21 +220,30 @@ async function registerHandler(request: NextRequest): Promise<NextResponse> {
     });
 
     await newUser.save();
+    console.log('✅ User saved to database');
 
+    console.log('🎁 Processing referral bonus...');
     // Create referral bonus if referred
     if (referrerUser) {
-      const { Referral } = await import('@/models/Referral');
-      await Referral.create({
-        referrerId: referrerUser._id,
-        refereeId: newUser._id,
-        bonusAmount: 50, // Default signup bonus
-        bonusType: 'signup',
-        status: 'Pending'
-      });
+      try {
+        const { Referral } = await import('@/models/Referral');
+        await Referral.create({
+          referrerId: referrerUser._id,
+          refereeId: newUser._id,
+          bonusAmount: 50, // Default signup bonus
+          bonusType: 'signup',
+          status: 'Pending'
+        });
+        console.log('✅ Referral bonus created');
+      } catch (referralError) {
+        console.error('❌ Failed to create referral bonus:', referralError);
+        // Don't fail registration for referral errors
+      }
     }
 
     await logRegistrationAttempt(email, true, 'User registered successfully', clientIP, userAgent);
 
+    console.log('📧 Sending verification email...');
     // Send verification email
     try {
       const verificationUrl = `${process.env.NEXTAUTH_URL}/verify-email?token=${emailVerificationToken}&email=${encodeURIComponent(email)}`;
@@ -187,11 +259,13 @@ async function registerHandler(request: NextRequest): Promise<NextResponse> {
           supportEmail: process.env.SUPPORT_EMAIL || 'support@iprofit.com'
         }
       });
+      console.log('✅ Verification email sent');
     } catch (emailError) {
-      console.error('Failed to send verification email:', emailError);
+      console.error('❌ Failed to send verification email:', emailError);
       // Don't fail registration if email fails
     }
 
+    console.log('📧 Sending welcome email...');
     // Send welcome email
     try {
       await sendEmail({
@@ -206,28 +280,47 @@ async function registerHandler(request: NextRequest): Promise<NextResponse> {
           supportEmail: process.env.SUPPORT_EMAIL || 'support@iprofit.com'
         }
       });
+      console.log('✅ Welcome email sent');
     } catch (emailError) {
-      console.error('Failed to send welcome email:', emailError);
+      console.error('❌ Failed to send welcome email:', emailError);
     }
 
-    return apiHandler.created({
-      user: {
-        id: newUser._id.toString(),
-        name: newUser.name,
-        email: newUser.email,
-        phone: newUser.phone,
-        emailVerified: newUser.emailVerified,
-        phoneVerified: newUser.phoneVerified,
-        kycStatus: newUser.kycStatus,
-        referralCode: newUser.referralCode,
-        planId: userPlan._id.toString()
+    console.log('🎉 Registration completed successfully');
+
+    // Return success response directly with NextResponse
+    return NextResponse.json(
+      {
+        success: true,
+        user: {
+          id: newUser._id.toString(),
+          name: newUser.name,
+          email: newUser.email,
+          phone: newUser.phone,
+          emailVerified: newUser.emailVerified,
+          phoneVerified: newUser.phoneVerified,
+          kycStatus: newUser.kycStatus,
+          referralCode: newUser.referralCode,
+          planId: userPlan._id.toString()
+        },
+        message: 'Registration successful. Please check your email to verify your account.'
       },
-      message: 'Registration successful. Please check your email to verify your account.'
-    });
+      { status: 201 }
+    );
 
   } catch (error) {
-    console.error('Registration error:', error);
-    return apiHandler.internalError('Registration failed');
+    console.error('💥 Registration handler error:', error);
+    console.error('📍 Error stack:', error);
+    
+    // Always return a JSON response, even for unexpected errors
+    return NextResponse.json(
+      { 
+        success: false, 
+        error: 'Registration failed',
+        details: process.env.NODE_ENV === 'development' ? error : 'Internal server error',
+        timestamp: new Date().toISOString()
+      },
+      { status: 500 }
+    );
   }
 }
 
@@ -278,4 +371,7 @@ async function logRegistrationAttempt(
   }
 }
 
-export const POST = withErrorHandler(registerHandler);
+// Option 1: Export without withErrorHandler to test
+export const POST = registerHandler;
+
+//export const POST = withErrorHandler(registerHandler);

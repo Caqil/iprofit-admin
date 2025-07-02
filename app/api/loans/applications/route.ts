@@ -54,7 +54,7 @@ async function submitLoanApplicationHandler(request: NextRequest): Promise<NextR
     }
 
     // Check if user KYC is verified
-    if (user.kycStatus !== 'Verified') {
+    if (user.kycStatus !== 'Approved') {
       return apiHandler.badRequest('KYC verification required before loan application');
     }
 

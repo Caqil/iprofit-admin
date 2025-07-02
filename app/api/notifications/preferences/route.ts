@@ -212,12 +212,22 @@ async function updateNotificationPreferencesHandler(request: NextRequest) {
 
     // Update security preferences
     if (updates.security) {
-      Object.keys(updates.security).forEach(key => {
-        const newValue = updates.security![key as keyof typeof updates.security];
+      type SecurityPreferences = {
+        loginNotifications?: boolean;
+        suspiciousActivityAlerts?: boolean;
+        deviceRegistrationNotifications?: boolean;
+        sessionTimeout?: number;
+        [key: string]: boolean | number | undefined;
+      };
+      const userSecurity = user.preferences!.security as SecurityPreferences;
+      const updatesSecurity = updates.security as SecurityPreferences;
+
+      Object.keys(updatesSecurity).forEach(key => {
+        const newValue = updatesSecurity[key];
         if (newValue !== undefined) {
-          const oldValue = user.preferences!.security[key as keyof typeof user.preferences.security];
+          const oldValue = userSecurity[key];
           if (oldValue !== newValue) {
-            user.preferences!.security[key as keyof typeof user.preferences.security] = newValue;
+            userSecurity[key] = newValue;
             changes.push(`security.${key}: ${oldValue} → ${newValue}`);
           }
         }

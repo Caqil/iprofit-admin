@@ -215,7 +215,12 @@ async function getUserEarningsHandler(request: NextRequest): Promise<NextRespons
        if (!authResult) {
          return apiHandler.unauthorized('Authentication required');
        }
+    if (!mongoose.Types.ObjectId.isValid(authResult.userId)) {
+      return apiHandler.badRequest('Invalid user ID format');
+    }
 
+    // ✅ ADD THIS: Cache userObjectId for reuse
+    const userObjectId = new mongoose.Types.ObjectId(authResult.userId);
     const userId = authResult.userId;
     const { searchParams } = new URL(request.url);
 
@@ -269,7 +274,7 @@ async function getUserEarningsHandler(request: NextRequest): Promise<NextRespons
     const periodStart = periods[period];
 
     // Execute comprehensive earnings queries
-    const [
+        const [
       totalEarningsData,
       earningsBreakdown,
       dailyEarnings,
@@ -277,13 +282,15 @@ async function getUserEarningsHandler(request: NextRequest): Promise<NextRespons
       referralData,
       performanceMetrics
     ] = await Promise.all([
-      // Total earnings summary
+      // ✅ IMPROVED: Add date filter for better performance
       Transaction.aggregate([
         {
           $match: {
-            userId: new mongoose.Types.ObjectId(userId),
+            userId: userObjectId, // Use cached ObjectId
             type: { $in: ['profit', 'bonus'] },
-            status: 'Approved'
+            status: 'Approved',
+            // ADD: Performance filter for large datasets
+            createdAt: { $gte: new Date(Date.now() - 2 * 365 * 24 * 60 * 60 * 1000) } // Last 2 years
           }
         },
         {
@@ -297,13 +304,13 @@ async function getUserEarningsHandler(request: NextRequest): Promise<NextRespons
             lastEarningDate: { $max: '$createdAt' }
           }
         }
-      ]),
+      ]).exec(), 
 
       // Earnings breakdown by type
       Transaction.aggregate([
         {
           $match: {
-            userId: new mongoose.Types.ObjectId(userId),
+            userId: userObjectId,
             type: { $in: ['profit', 'bonus'] },
             status: 'Approved',
             createdAt: { $gte: periodStart }
@@ -317,7 +324,7 @@ async function getUserEarningsHandler(request: NextRequest): Promise<NextRespons
             avgAmount: { $avg: '$netAmount' }
           }
         }
-      ]),
+      ]).exec(),
 
       // Daily earnings for trend analysis
       Transaction.aggregate([

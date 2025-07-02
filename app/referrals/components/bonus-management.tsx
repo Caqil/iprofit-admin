@@ -20,11 +20,13 @@ import {
   DollarSign,
   Users,
   AlertCircle,
+  Settings,
 } from "lucide-react";
 import { ReferralOverview } from "@/types/referral";
 import { formatCurrency } from "@/lib/utils";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import { toast } from "sonner";
+import { Separator } from "@/components/ui/separator";
 
 interface BonusManagementProps {
   overview?: ReferralOverview;
@@ -120,24 +122,83 @@ export function BonusManagement({
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
-              <Calculator className="mr-2 h-5 w-5" />
-              Profit Bonus Recalculation
+              <AlertCircle className="mr-2 h-5 w-5" />
+              Bonus Configuration
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-muted-foreground mb-4">
-              Recalculate profit-share bonuses when a user's total profit
-              changes. This will update all related profit-share referral
-              bonuses.
-            </p>
-            <Button
-              onClick={() => setShowRecalculateDialog(true)}
-              disabled={isLoading}
-              className="w-full"
-            >
-              <Calculator className="mr-2 h-4 w-4" />
-              Recalculate Profit Bonuses
-            </Button>
+            <div className="space-y-4">
+              {/* Basic Configuration */}
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">
+                    Signup Bonus
+                  </span>
+                  <Badge variant="outline">100 BDT</Badge>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">
+                    Profit Share
+                  </span>
+                  <Badge variant="outline">10%</Badge>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Auto Approval Status */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium">Auto Approval Settings</h4>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">
+                    Auto Approval
+                  </span>
+                  <Badge variant="secondary">
+                    {/* You'll need to fetch this from settings API */}
+                    Manual
+                  </Badge>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">
+                    Max Auto Amount
+                  </span>
+                  <Badge variant="outline">1,000 BDT</Badge>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">
+                    Min Account Age
+                  </span>
+                  <Badge variant="outline">30 days</Badge>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">
+                    Min Total Deposits
+                  </span>
+                  <Badge variant="outline">1,000 BDT</Badge>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Configuration Actions */}
+              <div className="space-y-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => {
+                    // Navigate to settings page or open configuration dialog
+                    console.log("Configure auto approval settings");
+                  }}
+                >
+                  <Settings className="mr-2 h-4 w-4" />
+                  Configure Auto Approval
+                </Button>
+                <p className="text-xs text-muted-foreground text-center">
+                  Configure security requirements for automatic bonus approval
+                </p>
+              </div>
+            </div>
           </CardContent>
         </Card>
 

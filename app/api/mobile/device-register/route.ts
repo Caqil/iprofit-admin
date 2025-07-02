@@ -6,7 +6,7 @@ import { AuditLog } from '@/models/AuditLog';
 import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler } from '@/lib/api-helpers';
 import { getUserFromRequest } from '@/lib/auth-helper';
-import { sendEmail } from '@/lib/email';
+import { sendDeviceRegisteredEmail, sendEmail } from '@/lib/email';
 import mongoose from 'mongoose';
 
 // Device registration validation schema
@@ -145,35 +145,19 @@ async function registerDeviceHandler(request: NextRequest) {
 
     await user.save();
 
-    // Send device registration notification email
+    // Send device registration notification email using helper function
     try {
       const clientIP = request.headers.get('x-forwarded-for') || 'Unknown';
-      const userAgent = request.headers.get('user-agent') || 'Unknown';
       
-      await sendEmail({
-        to: user.email,
-        subject: 'New Device Registered',
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #2563eb;">New Device Registered</h2>
-            <p>Dear ${user.name},</p>
-            <p>A new device has been registered to your account.</p>
-            <div style="background: #f0f9ff; border: 1px solid #2563eb; padding: 16px; margin: 20px 0; border-radius: 6px;">
-              <strong>Device Details:</strong><br>
-              <strong>Device Name:</strong> ${deviceData.deviceName}<br>
-              <strong>Platform:</strong> ${deviceData.platform}<br>
-              <strong>App Version:</strong> ${deviceData.appVersion}<br>
-              <strong>Registration Time:</strong> ${new Date().toLocaleString()}<br>
-              <strong>IP Address:</strong> ${clientIP}
-            </div>
-            <p>If you did not register this device, please contact support immediately.</p>
-            <a href="${process.env.NEXTAUTH_URL}/user/security" 
-               style="background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
-              Manage Devices
-            </a>
-          </div>
-        `
-      });
+      await sendDeviceRegisteredEmail(
+        user.email,
+        user.name,
+        deviceData.deviceName,
+        deviceData.platform,
+        deviceData.appVersion,
+        clientIP,
+        newDevice.isPrimary
+      );
     } catch (emailError) {
       console.error('Failed to send device registration email:', emailError);
     }
@@ -224,5 +208,6 @@ async function registerDeviceHandler(request: NextRequest) {
     return apiHandler.internalError('Failed to register device');
   }
 }
+
 
 export const POST = withErrorHandler(registerDeviceHandler);

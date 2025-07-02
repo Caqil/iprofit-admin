@@ -6,7 +6,7 @@ import { AuditLog } from '@/models/AuditLog';
 import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler } from '@/lib/api-helpers';
 import { getUserFromRequest } from '@/lib/auth-helper';
-import { sendEmail } from '@/lib/email';
+import { sendEmail, sendReferralInviteEmail } from '@/lib/email';
 import mongoose from 'mongoose';
 
 // Validation schema for referral invite
@@ -87,77 +87,63 @@ async function sendReferralInviteHandler(request: NextRequest) {
     };
 
     if (inviteType === 'email') {
-      // Send email invites
+      // Send email invites using the helper function
       for (const email of newEmails) {
         try {
-          await sendEmail({
-            to: email,
-            subject: `${user.name} invited you to join our platform`,
-            subject: `${user.name} invited you to join our platform`,
-            html: `
-              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-                <div style="text-align: center; margin-bottom: 30px;">
-                  <h1 style="color: #2563eb;">You're Invited!</h1>
-                </div>
-                
-                <p>Hi there!</p>
-                
-                <p><strong>${user.name}</strong> (${user.email}) has invited you to join our financial platform.</p>
-                
-                ${personalMessage ? `
-                  <div style="background: #f0f9ff; border-left: 4px solid #2563eb; padding: 15px; margin: 20px 0;">
-                    <p style="margin: 0; font-style: italic;">"${personalMessage}"</p>
-                  </div>
-                ` : ''}
-                
-                <div style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; margin: 20px 0; border-radius: 8px;">
-                  <h3 style="margin-top: 0; color: #1e40af;">🎁 Special Welcome Bonus</h3>
-                  <p style="margin-bottom: 0;">Join now and get <strong>50 BDT</strong> welcome bonus when you complete registration!</p>
-                </div>
-                
-                <div style="text-align: center; margin: 30px 0;">
-                  <a href="${referralUrl}" 
-                     style="background: #2563eb; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: bold; font-size: 16px;">
-                    Join Now & Get Bonus
-                  </a>
-                </div>
-                
-                <p style="font-size: 14px; color: #6b7280;">
-                  If the button doesn't work, copy and paste this link: <br>
-                  <a href="${referralUrl}" style="color: #2563eb;">${referralUrl}</a>
-                </p>
-                
-                <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
-                
-                <p style="font-size: 12px; color: #9ca3af; text-align: center;">
-                  This invitation was sent by ${user.name}. If you have any questions, contact us at ${process.env.SUPPORT_EMAIL || 'support@platform.com'}
-                </p>
-              </div>
-            `
-          });
+          // Much cleaner using the helper function
+          const emailSent = await sendReferralInviteEmail(
+            email,
+            user.name,
+            user.email,
+            referralUrl,
+            personalMessage
+          );
+          
+          if (emailSent) {
+            results.sent.push(email);
 
-          results.sent.push(email);
+            // Log successful invite
+            await AuditLog.create({
+              adminId: userId,
+              action: 'REFERRAL_INVITE_SENT',
+              entity: 'User',
+              entityId: userId.toString(),
+              status: 'Success',
+              metadata: {
+                userSelfAction: true,
+                inviteType,
+                recipientEmail: email,
+                hasPersonalMessage: !!personalMessage,
+                templateUsed: 'referral_invite'
+              },
+              ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
+              userAgent: request.headers.get('user-agent') || 'unknown'
+            });
+          } else {
+            results.failed.push(email);
+          }
 
-          // Log successful invite
+        } catch (emailError) {
+          console.error('Failed to send invite email:', emailError);
+          results.failed.push(email);
+
+          // Log failed invite
           await AuditLog.create({
             adminId: userId,
             action: 'REFERRAL_INVITE_SENT',
             entity: 'User',
             entityId: userId.toString(),
-            status: 'Success',
+            status: 'Failed',
             metadata: {
               userSelfAction: true,
               inviteType,
               recipientEmail: email,
-              hasPersonalMessage: !!personalMessage
+              hasPersonalMessage: !!personalMessage,
+              errorMessage: emailError instanceof Error ? emailError.message : 'Unknown error'
             },
             ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
             userAgent: request.headers.get('user-agent') || 'unknown'
           });
-
-        } catch (emailError) {
-          console.error('Failed to send invite email:', emailError);
-          results.failed.push(email);
         }
       }
     } else if (inviteType === 'whatsapp') {
@@ -207,5 +193,6 @@ ${personalMessage ? `\nPersonal note: ${personalMessage}` : ''}`;
     return apiHandler.internalError('Failed to send referral invite');
   }
 }
+
 
 export const POST = withErrorHandler(sendReferralInviteHandler);

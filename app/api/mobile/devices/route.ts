@@ -91,7 +91,18 @@ async function getUserDevicesHandler(request: NextRequest) {
       };
     });
 
-    let stats = null;
+    let stats: {
+      totalDevices: number;
+      activeDevices: number;
+      inactiveDevices: number;
+      trustedDevices: number;
+      biometricDevices: number;
+      recentlyActiveDevices: number;
+      platformDistribution: Record<string, number>;
+      primaryDevice: string | null;
+      oldestDevice: number | null;
+      newestDevice: number | null;
+    } | null = null;
     if (includeStats) {
       // Calculate device statistics
       const totalDevices = devices.length;
@@ -124,7 +135,7 @@ async function getUserDevicesHandler(request: NextRequest) {
       };
     }
 
-    let history = null;
+    let history: any[] | null = null;
     if (includeHistory) {
       // Get recent device-related audit logs
       history = await AuditLog.find({

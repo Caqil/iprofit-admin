@@ -1,7 +1,5 @@
-// models/Device.ts - Complete Device Schema & Interface
-import mongoose, { Document, Schema } from 'mongoose';
+import { Schema } from "mongoose";
 
-// Device Interface for TypeScript
 export interface IDevice {
   _id?: string;
   deviceId: string;
@@ -302,36 +300,4 @@ DeviceSchema.statics.getDefaultDevice = function(deviceInfo: Partial<IDevice>) {
   };
 };
 
-// Export Device Schema for use in User model
 export default DeviceSchema;
-
-// If you need a standalone Device model (optional)
-export interface IDeviceDocument extends Document, IDevice {}
-
-const StandaloneDeviceSchema = new Schema<IDeviceDocument>({
-  // Add userId reference for standalone usage
-  userId: {
-    type: Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  ...DeviceSchema.obj // Copy all fields from DeviceSchema
-}, {
-  timestamps: true,
-  collection: 'devices'
-});
-
-// Add indexes for standalone device model
-StandaloneDeviceSchema.index({ userId: 1 });
-StandaloneDeviceSchema.index({ deviceId: 1 });
-StandaloneDeviceSchema.index({ fingerprint: 1 });
-StandaloneDeviceSchema.index({ isPrimary: 1 });
-StandaloneDeviceSchema.index({ isActive: 1 });
-StandaloneDeviceSchema.index({ platform: 1 });
-StandaloneDeviceSchema.index({ lastActiveAt: -1 });
-
-// Compound indexes
-StandaloneDeviceSchema.index({ userId: 1, isPrimary: 1 });
-StandaloneDeviceSchema.index({ userId: 1, isActive: 1 });
-
-export const Device = mongoose.models.Device || mongoose.model<IDeviceDocument>('Device', StandaloneDeviceSchema);

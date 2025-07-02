@@ -63,6 +63,7 @@ import {
   X,
   HelpCircle,
   Settings2,
+  PhoneCallIcon,
 } from "lucide-react";
 import { useSettings } from "@/hooks/use-settings";
 import { Setting, SettingCategory } from "@/types/settings";
@@ -105,6 +106,11 @@ const categoryConfig = {
     icon: Server,
     label: "API",
     description: "API configuration and external services",
+  },
+  communication: {
+    icon: PhoneCallIcon,
+    label: "Communication",
+    description: "Push Notification, SMS and other communication settings",
   },
   maintenance: {
     icon: Wrench,
