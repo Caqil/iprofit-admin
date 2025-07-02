@@ -89,9 +89,6 @@ async function getNotificationPreferencesHandler(request: NextRequest) {
       return apiHandler.notFound('User not found');
     }
 
-    // Get default preferences if not set
-    const defaultPreferences = User.getDefaultPreferences();
-    const currentPreferences = user.preferences || defaultPreferences;
 
     // Get device-specific notification settings
     const devices = user.devices?.map(device => ({
@@ -108,11 +105,6 @@ async function getNotificationPreferencesHandler(request: NextRequest) {
         id: user._id,
         name: user.name,
         email: user.email
-      },
-      preferences: {
-        notifications: currentPreferences.notifications,
-        marketing: currentPreferences.marketing,
-        security: currentPreferences.security
       },
       devices: devices,
       summary: {
@@ -170,12 +162,6 @@ async function updateNotificationPreferencesHandler(request: NextRequest) {
     // Store old preferences for audit log
     const oldPreferences = user.preferences ? JSON.parse(JSON.stringify(user.preferences)) : null;
 
-    // Initialize preferences if not set
-    if (!user.preferences) {
-      user.preferences = User.getDefaultPreferences();
-    }
-
-    // Track what was changed
     const changes: string[] = [];
 
     // Update notification preferences

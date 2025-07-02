@@ -688,7 +688,60 @@ static async isUserEligibleForAutoBonusApproval(
     
     return minDepositBDT;
   }
+/**
+ * Get bonus auto-approval configuration
+ */
+static async getBonusApprovalConfig(): Promise<{
+  autoApproval: boolean;
+  maxAutoAmount: number;
+  autoSignupBonus: boolean;
+  autoProfitBonus: boolean;
+  dailyLimit: number;
+}> {
+  const settings = await getSettings([
+    'auto_bonus_approval',
+    'max_auto_bonus_amount',
+    'auto_signup_bonus',
+    'auto_profit_bonus',
+    'bonus_daily_limit'
+  ]);
 
+  return {
+    autoApproval: settings.auto_bonus_approval || false,
+    maxAutoAmount: settings.max_auto_bonus_amount || 1000,
+    autoSignupBonus: settings.auto_signup_bonus || true,
+    autoProfitBonus: settings.auto_profit_bonus || true,
+    dailyLimit: settings.bonus_daily_limit || 5000
+  };
+}
+
+/**
+ * Check if bonus is eligible for auto-approval
+ */
+static async isBonusEligibleForAutoApproval(
+  bonusAmount: number,
+  bonusType: 'signup' | 'profit_share'
+): Promise<{ eligible: boolean; reason?: string }> {
+  const config = await this.getBonusApprovalConfig();
+  
+  if (!config.autoApproval) {
+    return { eligible: false, reason: 'Auto-approval disabled' };
+  }
+
+  if (bonusAmount > config.maxAutoAmount) {
+    return { eligible: false, reason: 'Amount exceeds auto-approval limit' };
+  }
+
+  if (bonusType === 'signup' && !config.autoSignupBonus) {
+    return { eligible: false, reason: 'Signup bonus auto-approval disabled' };
+  }
+  
+  if (bonusType === 'profit_share' && !config.autoProfitBonus) {
+    return { eligible: false, reason: 'Profit bonus auto-approval disabled' };
+  }
+
+  return { eligible: true };
+}
   /**
    * Get signup bonus in specific currency
    */
