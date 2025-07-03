@@ -57,6 +57,7 @@ import { hasPermission } from "@/lib/permissions";
 import { toast } from "sonner";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import { CurrencyDisplay } from "@/components/ui/currency-display";
+import { useDatabaseSettings } from "@/hooks/use-database-settings";
 
 interface UsersTableProps {
   users: User[];
@@ -84,7 +85,6 @@ export function UsersTable({
 
   // ✅ USE THE HOOK for KYC and user operations
   const { updateUser, approveKYC } = useUsers();
-
   // State for KYC rejection dialog
   const [kycDialog, setKycDialog] = useState<{
     isOpen: boolean;
@@ -109,12 +109,6 @@ export function UsersTable({
     currentUser?.role || "Moderator",
     "users.kyc.approve"
   );
-  const getTransactionCurrency = (transaction: any): "BDT" | "USD" => {
-    return transaction.originalCurrency || transaction.currency || "BDT";
-  };
-  const getDisplayAmount = (transaction: any): number => {
-    return transaction.originalAmount || transaction.amount;
-  };
 
   const getStatusBadge = (status: string) => {
     const variants = {
@@ -168,7 +162,9 @@ export function UsersTable({
       });
     }
   };
-
+  const getTransactionCurrency = (transaction: any): "BDT" | "USD" => {
+    return transaction.originalCurrency || transaction.currency || "BDT";
+  };
   const processKYCAction = async (
     userId: string,
     action: "approve" | "reject",
@@ -302,15 +298,17 @@ export function UsersTable({
       accessorKey: "balance",
       header: "Balance",
       cell: ({ row }) => {
-        const balance = row.getValue("balance") as number;
-        const currency = getTransactionCurrency(balance);
-        const displayAmount = getDisplayAmount(balance);
+        const user = row.original;
+        const balanceAmount = Number(user.balance) || 0;
+        const currency = getTransactionCurrency(balanceAmount);
         return (
-          <CurrencyDisplay
-            amount={displayAmount}
-            originalCurrency={currency}
-            showConverter={false}
-          />
+          <div className="font-medium">
+            <CurrencyDisplay
+              amount={balanceAmount}
+              originalCurrency={currency}
+              showConverter={true}
+            />
+          </div>
         );
       },
     },
