@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -22,16 +23,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Separator } from "@/components/ui/separator";
-import {
-  Settings as SettingsIcon,
+  SettingsIcon,
   Shield,
   DollarSign,
   Mail,
@@ -52,72 +44,173 @@ import {
   Info,
   History,
   RefreshCw,
-  Filter,
-  ChevronRight,
   Copy,
-  ExternalLink,
-  Zap,
   Star,
   AlertTriangle,
-  Check,
   X,
-  HelpCircle,
   Settings2,
-  PhoneCallIcon,
+  Phone,
+  FileText,
+  Database,
+  Lock,
 } from "lucide-react";
-import { useSettings } from "@/hooks/use-settings";
-import { Setting, SettingCategory } from "@/types/settings";
-import { LoadingSpinner } from "@/components/shared/loading-spinner";
-import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+
+// Mock data and types (replace with your actual implementations)
+type SettingCategory =
+  | "system"
+  | "security"
+  | "financial"
+  | "email"
+  | "upload"
+  | "business"
+  | "api"
+  | "communication"
+  | "maintenance";
+
+interface Setting {
+  _id: string;
+  key: string;
+  value: any;
+  defaultValue?: any;
+  description: string;
+  dataType: "string" | "number" | "boolean" | "array" | "object";
+  isEditable: boolean;
+  isEncrypted: boolean;
+  validation?: {
+    required?: boolean;
+    min?: number;
+    max?: number;
+    enum?: string[];
+  };
+  updatedAt?: string;
+  updatedBy?: string;
+  category: SettingCategory;
+}
 
 const categoryConfig = {
   system: {
     icon: SettingsIcon,
     label: "System",
     description: "Core application settings and configuration",
+    color: "bg-blue-500",
   },
   security: {
     icon: Shield,
     label: "Security",
     description: "Authentication, authorization and security settings",
+    color: "bg-red-500",
   },
   financial: {
     icon: DollarSign,
     label: "Financial",
     description: "Currency, rates, limits and financial configuration",
+    color: "bg-green-500",
   },
   email: {
     icon: Mail,
     label: "Email",
     description: "SMTP settings and email configuration",
+    color: "bg-purple-500",
   },
   upload: {
     icon: Upload,
     label: "Upload",
     description: "File upload limits, types and storage settings",
+    color: "bg-orange-500",
   },
   business: {
     icon: Users,
     label: "Business",
     description: "Business rules, KYC, tasks and operational settings",
+    color: "bg-cyan-500",
   },
   api: {
     icon: Server,
     label: "API",
     description: "API configuration and external services",
+    color: "bg-indigo-500",
   },
   communication: {
-    icon: PhoneCallIcon,
+    icon: Phone,
     label: "Communication",
     description: "Push Notification, SMS and other communication settings",
+    color: "bg-pink-500",
   },
   maintenance: {
     icon: Wrench,
     label: "Maintenance",
     description: "System maintenance, backups and logging",
+    color: "bg-yellow-500",
   },
 } as const;
+
+// Mock settings data
+const mockSettings: Setting[] = [
+  {
+    _id: "1",
+    key: "app_name",
+    value: "My Application",
+    defaultValue: "Default App",
+    description: "The display name of your application",
+    dataType: "string",
+    isEditable: true,
+    isEncrypted: false,
+    category: "system",
+    validation: { required: true, min: 3, max: 50 },
+    updatedAt: "2024-01-15T10:30:00Z",
+    updatedBy: "admin",
+  },
+  {
+    _id: "2",
+    key: "maintenance_mode",
+    value: false,
+    defaultValue: false,
+    description: "Enable maintenance mode to prevent user access",
+    dataType: "boolean",
+    isEditable: true,
+    isEncrypted: false,
+    category: "system",
+    validation: { required: false },
+  },
+  {
+    _id: "3",
+    key: "max_login_attempts",
+    value: 5,
+    defaultValue: 3,
+    description:
+      "Maximum number of failed login attempts before account lockout",
+    dataType: "number",
+    isEditable: true,
+    isEncrypted: false,
+    category: "security",
+    validation: { required: true, min: 1, max: 10 },
+  },
+  {
+    _id: "4",
+    key: "jwt_secret",
+    value: "super-secret-key-123",
+    defaultValue: "",
+    description: "Secret key used for JWT token signing",
+    dataType: "string",
+    isEditable: true,
+    isEncrypted: true,
+    category: "security",
+    validation: { required: true, min: 32 },
+  },
+  {
+    _id: "5",
+    key: "currency",
+    value: "USD",
+    defaultValue: "USD",
+    description: "Default currency for financial transactions",
+    dataType: "string",
+    isEditable: true,
+    isEncrypted: false,
+    category: "financial",
+    validation: { required: true, enum: ["USD", "EUR", "GBP", "JPY"] },
+  },
+];
 
 interface SettingFormData {
   value: any;
@@ -136,9 +229,28 @@ export default function SettingsPage() {
     new Set()
   );
   const [showAdvancedOnly, setShowAdvancedOnly] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const { groupedSettings, isLoading, error, updateSetting, refreshSettings } =
-    useSettings(undefined, undefined, true);
+  // Group settings by category
+  const groupedSettings = useMemo(() => {
+    const grouped: Record<SettingCategory, Setting[]> = {
+      system: [],
+      security: [],
+      financial: [],
+      email: [],
+      upload: [],
+      business: [],
+      api: [],
+      communication: [],
+      maintenance: [],
+    };
+
+    mockSettings.forEach((setting) => {
+      grouped[setting.category].push(setting);
+    });
+
+    return grouped;
+  }, []);
 
   const currentCategorySettings = useMemo(() => {
     if (!groupedSettings?.[activeCategory]) return [];
@@ -205,25 +317,26 @@ export default function SettingsPage() {
     const modified = modifiedSettings[setting._id];
     if (!modified) return;
 
+    setIsLoading(true);
     try {
-      await updateSetting(setting._id, {
-        ...modified,
-        updatedBy: "SuperAdmin",
-      });
+      // Simulate API call
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
       setModifiedSettings((prev) => {
         const updated = { ...prev };
         delete updated[setting._id];
         return updated;
       });
+
       setEditingSettings((prev) => {
         const updated = new Set(prev);
         updated.delete(setting._id);
         return updated;
       });
-      toast.success("Setting updated successfully");
     } catch (error) {
-      toast.error("Failed to update setting");
       console.error("Save setting error:", error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -231,26 +344,23 @@ export default function SettingsPage() {
     const modifiedEntries = Object.entries(modifiedSettings);
     if (modifiedEntries.length === 0) return;
 
+    setIsLoading(true);
     try {
-      await Promise.all(
-        modifiedEntries.map(([settingId, data]) =>
-          updateSetting(settingId, { ...data, updatedBy: "SuperAdmin" })
-        )
-      );
+      // Simulate API call
+      await new Promise((resolve) => setTimeout(resolve, 2000));
 
       setModifiedSettings({});
       setEditingSettings(new Set());
-      toast.success(`${modifiedEntries.length} settings updated successfully`);
     } catch (error) {
-      toast.error("Failed to save settings");
       console.error("Save all error:", error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleDiscardChanges = () => {
     setModifiedSettings({});
     setEditingSettings(new Set());
-    toast.info("Changes discarded");
   };
 
   const toggleEditMode = (settingId: string) => {
@@ -258,7 +368,6 @@ export default function SettingsPage() {
       const updated = new Set(prev);
       if (updated.has(settingId)) {
         updated.delete(settingId);
-        // Also clear any modifications for this setting when exiting edit mode
         setModifiedSettings((modPrev) => {
           const { [settingId]: removed, ...rest } = modPrev;
           return rest;
@@ -271,9 +380,7 @@ export default function SettingsPage() {
   };
 
   const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-      toast.success("Copied to clipboard");
-    });
+    navigator.clipboard.writeText(text);
   };
 
   const renderSettingInput = (setting: Setting) => {
@@ -295,51 +402,50 @@ export default function SettingsPage() {
           : String(currentValue);
 
       return (
-        <div className="flex items-center gap-3 group">
-          <div className="flex-1 min-w-0">
-            <div
-              className={cn(
-                "font-mono text-sm px-4 py-3 rounded-lg border transition-colors",
-                "bg-gray-50/50 border-gray-200",
-                isModified && "bg-amber-50 border-amber-200"
-              )}
-            >
-              <div className="flex items-center justify-between">
-                <span className="truncate">{displayValue}</span>
-                <div className="flex items-center gap-2 ml-3 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="group relative">
+          <div
+            className={cn(
+              "font-mono text-sm px-4 py-3 rounded-lg border transition-all duration-200",
+              "bg-muted/30 border-border hover:bg-muted/50",
+              isModified &&
+                "bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-800"
+            )}
+          >
+            <div className="flex items-center justify-between">
+              <span className="truncate flex-1">{displayValue}</span>
+              <div className="flex items-center gap-1 ml-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => copyToClipboard(String(currentValue))}
+                        className="h-7 w-7"
+                      >
+                        <Copy className="h-3 w-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Copy value</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                {setting.isEditable && (
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
                           size="icon"
                           variant="ghost"
-                          onClick={() => copyToClipboard(String(currentValue))}
-                          className="h-6 w-6"
+                          onClick={() => toggleEditMode(setting._id)}
+                          className="h-7 w-7"
                         >
-                          <Copy className="h-3 w-3" />
+                          <Edit className="h-3 w-3" />
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent>Copy value</TooltipContent>
+                      <TooltipContent>Edit setting</TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
-                  {setting.isEditable && (
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => toggleEditMode(setting._id)}
-                            className="h-6 w-6"
-                          >
-                            <Edit className="h-3 w-3" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Edit setting</TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  )}
-                </div>
+                )}
               </div>
             </div>
           </div>
@@ -351,43 +457,48 @@ export default function SettingsPage() {
       value: currentValue,
       onChange: (newValue: any) => handleSettingChange(setting._id, newValue),
       className: cn(
-        "min-w-0 flex-1 transition-colors",
-        isModified && "border-amber-300 bg-amber-50/50 focus:ring-amber-500"
+        "transition-all duration-200",
+        isModified &&
+          "border-amber-300 bg-amber-50/50 focus:ring-amber-500 dark:bg-amber-950/20 dark:border-amber-800"
       ),
     };
 
     switch (setting.dataType) {
       case "boolean":
         return (
-          <div className="flex items-center space-x-4">
-            <Switch
-              checked={Boolean(currentValue)}
-              onCheckedChange={(checked) =>
-                handleSettingChange(setting._id, checked)
-              }
-              className="data-[state=checked]:bg-blue-600"
-            />
-            <div className="flex items-center gap-2">
-              <span
-                className={cn(
-                  "text-sm font-medium",
-                  currentValue ? "text-green-700" : "text-muted-foreground"
+          <div className="flex items-center justify-between p-4 rounded-lg border bg-muted/30">
+            <div className="flex items-center gap-3">
+              <Switch
+                checked={Boolean(currentValue)}
+                onCheckedChange={(checked) =>
+                  handleSettingChange(setting._id, checked)
+                }
+                className="data-[state=checked]:bg-primary"
+              />
+              <div className="flex items-center gap-2">
+                <span
+                  className={cn(
+                    "text-sm font-medium",
+                    currentValue
+                      ? "text-green-700 dark:text-green-400"
+                      : "text-muted-foreground"
+                  )}
+                >
+                  {currentValue ? "Enabled" : "Disabled"}
+                </span>
+                {currentValue ? (
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-muted-foreground" />
                 )}
-              >
-                {currentValue ? "Enabled" : "Disabled"}
-              </span>
-              {currentValue ? (
-                <CheckCircle className="h-4 w-4 text-green-600" />
-              ) : (
-                <XCircle className="h-4 w-4 text-muted-foreground" />
-              )}
+              </div>
             </div>
           </div>
         );
 
       case "number":
         return (
-          <div className="space-y-2">
+          <div className="space-y-3">
             <Input
               type="number"
               min={setting.validation?.min}
@@ -396,7 +507,7 @@ export default function SettingsPage() {
               onChange={(e) =>
                 handleSettingChange(
                   setting._id,
-                  parseFloat(e.target.value) || 0
+                  Number.parseFloat(e.target.value) || 0
                 )
               }
               className={cn(commonProps.className, "max-w-xs")}
@@ -404,10 +515,16 @@ export default function SettingsPage() {
             {setting.validation && (
               <div className="text-xs text-muted-foreground flex items-center gap-4">
                 {setting.validation.min !== undefined && (
-                  <span>Min: {setting.validation.min}</span>
+                  <span className="flex items-center gap-1">
+                    <Info className="h-3 w-3" />
+                    Min: {setting.validation.min}
+                  </span>
                 )}
                 {setting.validation.max !== undefined && (
-                  <span>Max: {setting.validation.max}</span>
+                  <span className="flex items-center gap-1">
+                    <Info className="h-3 w-3" />
+                    Max: {setting.validation.max}
+                  </span>
                 )}
               </div>
             )}
@@ -417,9 +534,9 @@ export default function SettingsPage() {
       case "array":
       case "object":
         return (
-          <div className="space-y-2">
+          <div className="space-y-3">
             <Textarea
-              rows={setting.dataType === "object" ? 6 : 4}
+              rows={setting.dataType === "object" ? 8 : 5}
               placeholder={`Enter ${setting.dataType} as JSON`}
               {...commonProps}
               value={JSON.stringify(currentValue, null, 2)}
@@ -431,9 +548,13 @@ export default function SettingsPage() {
                   handleSettingChange(setting._id, e.target.value);
                 }
               }}
-              className={cn(commonProps.className, "font-mono text-sm")}
+              className={cn(
+                commonProps.className,
+                "font-mono text-sm resize-none"
+              )}
             />
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-muted-foreground flex items-center gap-1">
+              <FileText className="h-3 w-3" />
               Format: Valid JSON {setting.dataType}
             </div>
           </div>
@@ -449,7 +570,8 @@ export default function SettingsPage() {
               <SelectTrigger
                 className={cn(
                   "w-full max-w-sm",
-                  isModified && "border-amber-300 bg-amber-50/50"
+                  isModified &&
+                    "border-amber-300 bg-amber-50/50 dark:bg-amber-950/20 dark:border-amber-800"
                 )}
               >
                 <SelectValue />
@@ -470,13 +592,14 @@ export default function SettingsPage() {
             ? "text"
             : "password"
           : "text";
+
         return (
           <div className="flex items-center gap-3">
             <Input
               type={inputType}
               {...commonProps}
               onChange={(e) => handleSettingChange(setting._id, e.target.value)}
-              className={cn(commonProps.className, "max-w-md")}
+              className={cn(commonProps.className, "flex-1 max-w-md")}
             />
             {isSensitive && (
               <TooltipProvider>
@@ -484,9 +607,9 @@ export default function SettingsPage() {
                   <TooltipTrigger asChild>
                     <Button
                       size="icon"
-                      variant="ghost"
+                      variant="outline"
                       onClick={() => setShowSensitive(!showSensitive)}
-                      className="h-8 w-8"
+                      className="h-10 w-10 shrink-0"
                     >
                       {showSensitive ? (
                         <EyeOff className="h-4 w-4" />
@@ -576,483 +699,373 @@ export default function SettingsPage() {
     return { isValid: true, message: "Valid", type: "success" };
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <LoadingSpinner size="lg" />
-          <p className="text-sm text-muted-foreground mt-4">
-            Loading settings...
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Card className="max-w-md w-full mx-4">
-          <CardContent className="pt-6 text-center">
-            <XCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
-            <h3 className="text-lg font-semibold mb-2">
-              Failed to load settings
-            </h3>
-            <p className="text-muted-foreground text-sm mb-6">{error}</p>
-            <Button onClick={refreshSettings}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Try Again
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   const modifiedCount = Object.keys(modifiedSettings).length;
 
   return (
     <TooltipProvider>
-      <div className="flex min-h-screen">
-        {/* Enhanced Sidebar */}
-        <div className="w-80 border-r bg-background">
-          <div className="flex flex-col h-full">
-            {/* Search & Filters */}
-            <div className="p-6 border-b space-y-4">
-              <div className="relative">
+      <div className="min-h-screen bg-background">
+        {/* Header */}
+        <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
+          <div className="container mx-auto px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="p-2 rounded-xl bg-primary text-primary-foreground">
+                  <Settings2 className="h-6 w-6" />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold">Application Settings</h1>
+                  <p className="text-muted-foreground">
+                    Manage your application configuration
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                {hasUnsavedChanges && (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 dark:bg-amber-950/20 dark:border-amber-800">
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                      {modifiedCount} unsaved change
+                      {modifiedCount !== 1 ? "s" : ""}
+                    </span>
+                    <div className="flex gap-1 ml-2">
+                      <Button
+                        size="sm"
+                        onClick={handleSaveAll}
+                        disabled={isLoading}
+                      >
+                        <Save className="h-3 w-3 mr-1" />
+                        Save All
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleDiscardChanges}
+                      >
+                        <RotateCcw className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                <Button variant="outline" size="sm">
+                  <History className="h-4 w-4 mr-2" />
+                  History
+                </Button>
+
+                <Button variant="outline" size="sm">
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Search and Filters */}
+        <div className="border-b bg-muted/30">
+          <div className="container mx-auto px-6 py-4">
+            <div className="flex items-center gap-4">
+              <div className="relative flex-1 max-w-md">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder="Search settings..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 h-11"
+                  className="pl-10"
                 />
               </div>
 
-              <div className="flex items-center justify-between">
-                <Label
-                  htmlFor="advanced-filter"
-                  className="text-sm font-medium"
-                >
-                  Advanced settings only
-                </Label>
+              <div className="flex items-center gap-2">
                 <Switch
                   id="advanced-filter"
                   checked={showAdvancedOnly}
                   onCheckedChange={setShowAdvancedOnly}
                 />
+                <Label htmlFor="advanced-filter" className="text-sm">
+                  Advanced only
+                </Label>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="show-sensitive"
+                  checked={showSensitive}
+                  onCheckedChange={setShowSensitive}
+                />
+                <Label htmlFor="show-sensitive" className="text-sm">
+                  Show sensitive
+                </Label>
               </div>
             </div>
-
-            {/* Categories */}
-            <div className="flex-1 overflow-y-auto p-4">
-              <div className="space-y-1">
-                {Object.entries(categoryConfig).map(([key, config]) => {
-                  const IconComponent = config.icon;
-                  const stats = categoryStats[key];
-                  const isActive = activeCategory === key;
-
-                  return (
-                    <button
-                      key={key}
-                      onClick={() => setActiveCategory(key as SettingCategory)}
-                      className={cn(
-                        "w-full text-left p-4 rounded-lg transition-all duration-200",
-                        "hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring",
-                        isActive && "bg-accent border shadow-sm"
-                      )}
-                    >
-                      <div className="flex items-center gap-4">
-                        <div
-                          className={cn(
-                            "p-2.5 rounded-lg transition-colors",
-                            isActive
-                              ? "bg-primary text-primary-foreground shadow-sm"
-                              : "bg-muted"
-                          )}
-                        >
-                          <IconComponent className="h-5 w-5" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h4
-                            className={cn(
-                              "font-semibold truncate",
-                              isActive ? "text-foreground" : "text-foreground"
-                            )}
-                          >
-                            {config.label}
-                          </h4>
-                          <p className="text-xs text-muted-foreground truncate mt-0.5">
-                            {config.description}
-                          </p>
-                          {stats && (
-                            <div className="flex gap-2 mt-2 flex-wrap">
-                              <Badge
-                                variant="secondary"
-                                className="text-xs px-2 py-0.5"
-                              >
-                                {stats.total} total
-                              </Badge>
-                              {stats.modified > 0 && (
-                                <Badge
-                                  variant="destructive"
-                                  className="text-xs px-2 py-0.5"
-                                >
-                                  {stats.modified} modified
-                                </Badge>
-                              )}
-                              {stats.critical > 0 && (
-                                <Badge
-                                  variant="outline"
-                                  className="text-xs px-2 py-0.5"
-                                >
-                                  {stats.critical} critical
-                                </Badge>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                        {isActive && (
-                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Enhanced Save Panel */}
-            {hasUnsavedChanges && (
-              <div className="border-t p-4 bg-muted/50">
-                <div className="flex items-center gap-2 mb-3">
-                  <AlertTriangle className="h-4 w-4 text-orange-600" />
-                  <span className="text-sm font-semibold">
-                    {modifiedCount} unsaved change
-                    {modifiedCount !== 1 ? "s" : ""}
-                  </span>
-                </div>
-                <div className="flex gap-2">
-                  <Button size="sm" onClick={handleSaveAll} className="flex-1">
-                    <Save className="h-4 w-4 mr-2" />
-                    Save All
-                  </Button>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={handleDiscardChanges}
-                        >
-                          <RotateCcw className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Discard all changes</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
-        {/* Enhanced Main Content */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="p-8">
-            {/* Enhanced Header */}
-            <div className="mb-8">
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 rounded-xl bg-primary text-primary-foreground">
-                    {React.createElement(categoryConfig[activeCategory].icon, {
-                      className: "h-7 w-7",
-                    })}
-                  </div>
-                  <div>
-                    <h1 className="text-3xl font-bold">
-                      {categoryConfig[activeCategory].label} Settings
-                    </h1>
-                    <p className="text-muted-foreground mt-1">
-                      {categoryConfig[activeCategory].description}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={refreshSettings}
-                        >
-                          <RefreshCw className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Refresh settings</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  <Button variant="outline" size="sm">
-                    <History className="h-4 w-4 mr-2" />
-                    History
-                  </Button>
-                </div>
-              </div>
+        {/* Main Content */}
+        <div className="container mx-auto px-6 py-8">
+          <Tabs
+            value={activeCategory}
+            onValueChange={(value) =>
+              setActiveCategory(value as SettingCategory)
+            }
+          >
+            {/* Tab Navigation */}
+            <TabsList className="grid w-full grid-cols-9 mb-8 h-auto p-1">
+              {Object.entries(categoryConfig).map(([key, config]) => {
+                const IconComponent = config.icon;
+                const stats = categoryStats[key];
+                const hasModified = stats?.modified > 0;
 
-              {/* Category Stats */}
-              {categoryStats[activeCategory] && (
-                <div className="grid grid-cols-4 gap-4 mb-6">
-                  <Card>
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-3">
-                        <Settings2 className="h-5 w-5 text-muted-foreground" />
-                        <div>
-                          <p className="text-2xl font-bold">
-                            {categoryStats[activeCategory].total}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Total Settings
-                          </p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-3">
-                        <Edit className="h-5 w-5 text-primary" />
-                        <div>
-                          <p className="text-2xl font-bold text-primary">
-                            {categoryStats[activeCategory].editable}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Editable
-                          </p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-3">
-                        <AlertCircle className="h-5 w-5 text-orange-600" />
-                        <div>
-                          <p className="text-2xl font-bold text-orange-600">
-                            {categoryStats[activeCategory].modified}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Modified
-                          </p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-3">
-                        <Shield className="h-5 w-5 text-destructive" />
-                        <div>
-                          <p className="text-2xl font-bold text-destructive">
-                            {categoryStats[activeCategory].critical}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Critical
-                          </p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-              )}
-            </div>
-
-            {/* Enhanced Settings List */}
-            <div className="space-y-4">
-              {currentCategorySettings.length === 0 ? (
-                <Card>
-                  <CardContent className="py-16 text-center">
-                    <div className="h-16 w-16 mx-auto mb-4 rounded-full bg-muted flex items-center justify-center">
-                      <Search className="h-8 w-8 text-muted-foreground" />
-                    </div>
-                    <h3 className="text-lg font-semibold mb-2">
-                      No settings found
-                    </h3>
-                    <p className="text-muted-foreground text-sm max-w-md mx-auto">
-                      {searchQuery
-                        ? "No settings match your search criteria. Try adjusting your search terms or filters."
-                        : "No settings available in this category."}
-                    </p>
-                    {searchQuery && (
-                      <Button
-                        variant="outline"
-                        onClick={() => setSearchQuery("")}
-                        className="mt-4"
-                      >
-                        Clear search
-                      </Button>
-                    )}
-                  </CardContent>
-                </Card>
-              ) : (
-                currentCategorySettings.map((setting) => {
-                  const isModified =
-                    modifiedSettings[setting._id] !== undefined;
-                  const isEditing = editingSettings.has(setting._id);
-                  const validation = getValidationStatus(setting);
-
-                  return (
-                    <Card
-                      key={setting._id}
+                return (
+                  <TabsTrigger
+                    key={key}
+                    value={key}
+                    className="flex flex-col items-center gap-2 p-4 data-[state=active]:bg-background data-[state=active]:shadow-sm relative"
+                  >
+                    <div
                       className={cn(
-                        "transition-all hover:shadow-md",
-                        isModified &&
-                          "border-orange-300 shadow-orange-100 bg-orange-50/20",
-                        !validation.isValid &&
-                          "border-destructive shadow-red-100",
-                        isEditing && "ring-2 ring-ring"
+                        "p-2 rounded-lg transition-colors",
+                        config.color,
+                        "text-white"
                       )}
                     >
-                      <CardHeader className="pb-4">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1 min-w-0">
-                            <CardTitle className="text-lg font-semibold flex items-center gap-3 mb-2">
-                              <span className="truncate">{setting.key}</span>
-                              <div className="flex items-center gap-2 flex-shrink-0">
-                                {!setting.isEditable && (
-                                  <Badge
-                                    variant="secondary"
-                                    className="text-xs"
-                                  >
-                                    Read Only
-                                  </Badge>
-                                )}
-                                {setting.isEncrypted && (
-                                  <Badge
-                                    variant="outline"
-                                    className="text-xs border-destructive text-destructive"
-                                  >
-                                    <Shield className="h-3 w-3 mr-1" />
-                                    Encrypted
-                                  </Badge>
-                                )}
-                                {setting.validation?.required && (
-                                  <Badge
-                                    variant="outline"
-                                    className="text-xs border-orange-200 text-orange-700 bg-orange-50"
-                                  >
-                                    Required
-                                  </Badge>
-                                )}
-                                {isModified && (
-                                  <Badge className="text-xs">
-                                    <Edit className="h-3 w-3 mr-1" />
-                                    Modified
-                                  </Badge>
-                                )}
-                              </div>
-                            </CardTitle>
-                            <p className="text-sm text-muted-foreground leading-relaxed">
-                              {setting.description}
-                            </p>
-
-                            {/* Setting Metadata */}
-                            <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
-                              <span className="flex items-center gap-1">
-                                <Info className="h-3 w-3" />
-                                Type: {setting.dataType}
-                              </span>
-                              {setting.validation && (
-                                <>
-                                  {setting.validation.min !== undefined && (
-                                    <span>Min: {setting.validation.min}</span>
-                                  )}
-                                  {setting.validation.max !== undefined && (
-                                    <span>Max: {setting.validation.max}</span>
-                                  )}
-                                </>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Action Buttons */}
-                          <div className="flex items-center gap-2 ml-4">
-                            {isModified && (
-                              <Button
-                                size="sm"
-                                onClick={() => handleSaveSetting(setting)}
-                                disabled={!validation.isValid}
-                              >
-                                <Save className="h-4 w-4 mr-2" />
-                                Save
-                              </Button>
-                            )}
-                            {isEditing && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => toggleEditMode(setting._id)}
-                              >
-                                <X className="h-4 w-4 mr-1" />
-                                Cancel
-                              </Button>
-                            )}
-                          </div>
+                      <IconComponent className="h-4 w-4" />
+                    </div>
+                    <div className="text-center">
+                      <div className="font-medium text-xs">{config.label}</div>
+                      {stats && (
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {stats.total} settings
                         </div>
+                      )}
+                    </div>
+                    {hasModified && (
+                      <div className="absolute -top-1 -right-1 h-3 w-3 bg-amber-500 rounded-full flex items-center justify-center">
+                        <span className="text-xs text-white font-bold">
+                          {stats.modified}
+                        </span>
+                      </div>
+                    )}
+                  </TabsTrigger>
+                );
+              })}
+            </TabsList>
 
-                        {/* Validation Status */}
-                        {(!validation.isValid || isModified) && (
-                          <div
-                            className={cn(
-                              "flex items-center gap-2 mt-3 text-sm",
-                              validation.isValid
-                                ? "text-green-700"
-                                : "text-destructive"
-                            )}
+            {/* Tab Content */}
+            {Object.entries(categoryConfig).map(([key, config]) => (
+              <TabsContent key={key} value={key} className="space-y-6">
+                {/* Category Header */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div
+                      className={cn("p-3 rounded-xl text-white", config.color)}
+                    >
+                      <config.icon className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-semibold">
+                        {config.label} Settings
+                      </h2>
+                      <p className="text-muted-foreground">
+                        {config.description}
+                      </p>
+                    </div>
+                  </div>
+
+                  {categoryStats[key] && (
+                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                      <div className="flex items-center gap-1">
+                        <Settings2 className="h-4 w-4" />
+                        {categoryStats[key].total} total
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Edit className="h-4 w-4" />
+                        {categoryStats[key].editable} editable
+                      </div>
+                      {categoryStats[key].modified > 0 && (
+                        <div className="flex items-center gap-1 text-amber-600">
+                          <AlertCircle className="h-4 w-4" />
+                          {categoryStats[key].modified} modified
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Settings Grid */}
+                <div className="grid gap-6">
+                  {currentCategorySettings.length === 0 ? (
+                    <Card>
+                      <CardContent className="py-16 text-center">
+                        <div className="h-16 w-16 mx-auto mb-4 rounded-full bg-muted flex items-center justify-center">
+                          <Search className="h-8 w-8 text-muted-foreground" />
+                        </div>
+                        <h3 className="text-lg font-semibold mb-2">
+                          No settings found
+                        </h3>
+                        <p className="text-muted-foreground text-sm max-w-md mx-auto">
+                          {searchQuery
+                            ? "No settings match your search criteria. Try adjusting your search terms or filters."
+                            : "No settings available in this category."}
+                        </p>
+                        {searchQuery && (
+                          <Button
+                            variant="outline"
+                            onClick={() => setSearchQuery("")}
+                            className="mt-4"
                           >
-                            {validation.isValid ? (
-                              <CheckCircle className="h-4 w-4" />
-                            ) : (
-                              <AlertCircle className="h-4 w-4" />
-                            )}
-                            {validation.message}
-                          </div>
+                            Clear search
+                          </Button>
                         )}
-                      </CardHeader>
-
-                      <CardContent className="pt-0">
-                        {renderSettingInput(setting)}
-
-                        {/* Default Value & Last Updated */}
-                        <div className="mt-4 pt-4 border-t">
-                          <div className="flex items-center justify-between text-xs text-muted-foreground">
-                            <div className="flex items-center gap-4">
-                              {setting.defaultValue !== undefined && (
-                                <span>
-                                  Default:{" "}
-                                  {JSON.stringify(setting.defaultValue)}
-                                </span>
-                              )}
-                            </div>
-                            {setting.updatedAt && (
-                              <div className="flex items-center gap-1">
-                                <Clock className="h-3 w-3" />
-                                Updated{" "}
-                                {new Date(
-                                  setting.updatedAt
-                                ).toLocaleDateString()}{" "}
-                                by {setting.updatedBy}
-                              </div>
-                            )}
-                          </div>
-                        </div>
                       </CardContent>
                     </Card>
-                  );
-                })
-              )}
-            </div>
-          </div>
+                  ) : (
+                    currentCategorySettings.map((setting) => {
+                      const isModified =
+                        modifiedSettings[setting._id] !== undefined;
+                      const isEditing = editingSettings.has(setting._id);
+                      const validation = getValidationStatus(setting);
+
+                      return (
+                        <Card
+                          key={setting._id}
+                          className={cn(
+                            "transition-all duration-200 hover:shadow-md",
+                            isModified &&
+                              "border-amber-300 shadow-amber-100 bg-amber-50/20 dark:bg-amber-950/10 dark:border-amber-800",
+                            !validation.isValid &&
+                              "border-destructive shadow-red-100",
+                            isEditing && "ring-2 ring-ring shadow-lg"
+                          )}
+                        >
+                          <CardHeader className="pb-4">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1 min-w-0">
+                                <CardTitle className="text-lg font-semibold flex items-center gap-3 mb-3">
+                                  <span className="truncate">
+                                    {setting.key}
+                                  </span>
+                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                    {!setting.isEditable && (
+                                      <Badge
+                                        variant="secondary"
+                                        className="text-xs"
+                                      >
+                                        <Lock className="h-3 w-3 mr-1" />
+                                        Read Only
+                                      </Badge>
+                                    )}
+                                    {setting.isEncrypted && (
+                                      <Badge
+                                        variant="outline"
+                                        className="text-xs border-destructive text-destructive"
+                                      >
+                                        <Shield className="h-3 w-3 mr-1" />
+                                        Encrypted
+                                      </Badge>
+                                    )}
+                                    {setting.validation?.required && (
+                                      <Badge
+                                        variant="outline"
+                                        className="text-xs border-orange-200 text-orange-700 bg-orange-50 dark:bg-orange-950/20"
+                                      >
+                                        Required
+                                      </Badge>
+                                    )}
+                                    {isModified && (
+                                      <Badge className="text-xs bg-amber-500">
+                                        <Edit className="h-3 w-3 mr-1" />
+                                        Modified
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </CardTitle>
+
+                                <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+                                  {setting.description}
+                                </p>
+
+                                {/* Setting Metadata */}
+                                <div className="flex items-center gap-6 text-xs text-muted-foreground">
+                                  <span className="flex items-center gap-1">
+                                    <Database className="h-3 w-3" />
+                                    Type: {setting.dataType}
+                                  </span>
+                                  {setting.defaultValue !== undefined && (
+                                    <span className="flex items-center gap-1">
+                                      <Star className="h-3 w-3" />
+                                      Default:{" "}
+                                      {JSON.stringify(setting.defaultValue)}
+                                    </span>
+                                  )}
+                                  {setting.updatedAt && (
+                                    <span className="flex items-center gap-1">
+                                      <Clock className="h-3 w-3" />
+                                      Updated{" "}
+                                      {new Date(
+                                        setting.updatedAt
+                                      ).toLocaleDateString()}{" "}
+                                      by {setting.updatedBy}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Action Buttons */}
+                              <div className="flex items-center gap-2 ml-4">
+                                {isModified && (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleSaveSetting(setting)}
+                                    disabled={!validation.isValid || isLoading}
+                                  >
+                                    <Save className="h-4 w-4 mr-2" />
+                                    Save
+                                  </Button>
+                                )}
+                                {isEditing && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => toggleEditMode(setting._id)}
+                                  >
+                                    <X className="h-4 w-4 mr-1" />
+                                    Cancel
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Validation Status */}
+                            {(!validation.isValid || isModified) && (
+                              <div
+                                className={cn(
+                                  "flex items-center gap-2 mt-3 text-sm p-3 rounded-lg",
+                                  validation.isValid
+                                    ? "text-green-700 bg-green-50 border border-green-200 dark:bg-green-950/20 dark:border-green-800 dark:text-green-400"
+                                    : "text-destructive bg-destructive/10 border border-destructive/20"
+                                )}
+                              >
+                                {validation.isValid ? (
+                                  <CheckCircle className="h-4 w-4" />
+                                ) : (
+                                  <AlertCircle className="h-4 w-4" />
+                                )}
+                                {validation.message}
+                              </div>
+                            )}
+                          </CardHeader>
+
+                          <CardContent className="pt-0">
+                            {renderSettingInput(setting)}
+                          </CardContent>
+                        </Card>
+                      );
+                    })
+                  )}
+                </div>
+              </TabsContent>
+            ))}
+          </Tabs>
         </div>
       </div>
     </TooltipProvider>

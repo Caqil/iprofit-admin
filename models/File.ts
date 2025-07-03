@@ -50,7 +50,7 @@ const FileSchema = new Schema<IFile>({
   fileName: {
     type: String,
     required: true,
-    unique: true,
+    unique: true, // This automatically creates an index
     maxlength: 255
   },
   filePath: {
@@ -117,8 +117,8 @@ const FileSchema = new Schema<IFile>({
   },
   expiresAt: {
     type: Date,
-    default: null,
-    index: true
+    default: null
+    // Removed index: true since we're creating it manually below with sparse option
   },
   isPublic: {
     type: Boolean,
@@ -133,11 +133,10 @@ const FileSchema = new Schema<IFile>({
   collection: 'files'
 });
 
-// Indexes for performance
+// Create compound and specialized indexes manually
+// Note: fileName already has an index from unique: true, so we don't create another one
 FileSchema.index({ userId: 1, fileType: 1 });
 FileSchema.index({ status: 1, createdAt: -1 });
-FileSchema.index({ expiresAt: 1 }, { sparse: true });
-FileSchema.index({ fileName: 1 }, { unique: true });
+FileSchema.index({ expiresAt: 1 }, { sparse: true }); // sparse for optional field
 
 export const File = mongoose.models.File || mongoose.model<IFile>('File', FileSchema);
-

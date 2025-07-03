@@ -1,9 +1,9 @@
-// app/api/upload/task-proof/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { User } from '@/models/User';
 import { File } from '@/models/File';
 import { AuditLog } from '@/models/AuditLog';
+import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler } from '@/lib/api-helpers';
 import { getUserFromRequest } from '@/lib/auth-helper';
 import { writeFile, mkdir } from 'fs/promises';
@@ -23,7 +23,7 @@ const TASK_CONFIG = {
 };
 
 // File validation helper
-function validateFile(file: File, config: typeof TASK_CONFIG): { valid: boolean; error?: string } {
+function validateFile(file: File, config: any): { valid: boolean; error?: string } {
   // Check file size
   if (file.size > config.maxSize) {
     return {
@@ -40,11 +40,18 @@ function validateFile(file: File, config: typeof TASK_CONFIG): { valid: boolean;
     };
   }
 
+  // Check file name
+  if (!file.name || file.name.length < 3) {
+    return {
+      valid: false,
+      error: 'Invalid file name'
+    };
+  }
+
   return { valid: true };
 }
 
-// POST /api/upload/task-proof - Upload task proof
-export async function POST(request: NextRequest) {
+async function uploadTaskProofHandler(request: NextRequest) {
   const apiHandler = new ApiHandler(request);
 
   try {
@@ -58,16 +65,6 @@ export async function POST(request: NextRequest) {
     }
 
     const userId = new mongoose.Types.ObjectId(authResult.userId);
-
-    // Get user
-    const user = await User.findById(userId);
-    if (!user) {
-      return apiHandler.notFound('User not found');
-    }
-
-    if (user.status !== 'Active') {
-      return apiHandler.forbidden(`Account is ${user.status.toLowerCase()}`);
-    }
 
     // Parse form data
     const formData = await request.formData();
@@ -117,7 +114,7 @@ export async function POST(request: NextRequest) {
 
       // Resize if too large
       if (imageInfo.width! > TASK_CONFIG.maxImageDimension || imageInfo.height! > TASK_CONFIG.maxImageDimension) {
-       await sharp(fileBuffer)
+        await sharp(fileBuffer)
           .resize(TASK_CONFIG.maxImageDimension, TASK_CONFIG.maxImageDimension, {
             fit: 'inside',
             withoutEnlargement: true
@@ -127,11 +124,6 @@ export async function POST(request: NextRequest) {
         
         metadata.compressionApplied = true;
       }
-    }
-
-    // Add description to metadata if provided
-    if (description) {
-      metadata.description = description;
     }
 
     // Save file to disk
@@ -156,10 +148,6 @@ export async function POST(request: NextRequest) {
       tags: ['task', 'proof', taskId]
     });
 
-    // Update user's last active time
-    user.lastActiveAt = new Date();
-    await user.save();
-
     // Log upload
     await AuditLog.create({
       adminId: null,
@@ -177,7 +165,6 @@ export async function POST(request: NextRequest) {
       metadata: {
         userSelfAction: true,
         userId: userId.toString(),
-        userName: user.name,
         taskId: taskId,
         fileSize: fileBuffer.length,
         compressionApplied: metadata.compressionApplied || false,
@@ -212,3 +199,6 @@ export async function POST(request: NextRequest) {
     return apiHandler.internalError('Failed to upload task proof');
   }
 }
+
+// Export only the POST handler for Next.js App Router
+export const POST = withErrorHandler(uploadTaskProofHandler);

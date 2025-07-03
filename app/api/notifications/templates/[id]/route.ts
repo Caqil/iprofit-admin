@@ -9,8 +9,16 @@ import { AuditLog } from '@/models/AuditLog';
 import { emailTemplates } from '@/config/email';
 import mongoose from 'mongoose';
 
+// Next.js 15 Route Handler with proper params typing
+interface RouteContext {
+  params: Promise<{ id: string }>;
+}
+
 // GET /api/notifications/templates/[id] - Get single template
-async function getTemplateHandler(request: NextRequest, { params }: { params: { id: string } }): Promise<NextResponse> {
+async function getTemplateHandler(
+  request: NextRequest, 
+  context: RouteContext
+): Promise<NextResponse> {
   const apiHandler = ApiHandler.create(request);
 
   // Apply middleware
@@ -27,7 +35,9 @@ async function getTemplateHandler(request: NextRequest, { params }: { params: { 
   try {
     await connectToDatabase();
 
-    const templateId = params.id;
+    // Await the params Promise (Next.js 15 requirement)
+    const { id } = await context.params;
+    const templateId = id;
 
     // Check if it's a config template first
     if (emailTemplates[templateId]) {
@@ -94,7 +104,10 @@ async function getTemplateHandler(request: NextRequest, { params }: { params: { 
 }
 
 // PUT /api/notifications/templates/[id] - Update template
-async function updateTemplateHandler(request: NextRequest, { params }: { params: { id: string } }): Promise<NextResponse> {
+async function updateTemplateHandler(
+  request: NextRequest, 
+  context: RouteContext
+): Promise<NextResponse> {
   const apiHandler = ApiHandler.create(request);
 
   // Apply middleware
@@ -110,7 +123,10 @@ async function updateTemplateHandler(request: NextRequest, { params }: { params:
 
     const adminId = request.headers.get('x-user-id');
     const body = await request.json();
-    const templateId = params.id;
+    
+    // Await the params Promise (Next.js 15 requirement)
+    const { id } = await context.params;
+    const templateId = id;
 
     // Check if it's a config template (can't be updated)
     if (emailTemplates[templateId]) {
@@ -180,7 +196,10 @@ async function updateTemplateHandler(request: NextRequest, { params }: { params:
 }
 
 // DELETE /api/notifications/templates/[id] - Delete template
-async function deleteTemplateHandler(request: NextRequest, { params }: { params: { id: string } }): Promise<NextResponse> {
+async function deleteTemplateHandler(
+  request: NextRequest, 
+  context: RouteContext
+): Promise<NextResponse> {
   const apiHandler = ApiHandler.create(request);
 
   // Apply middleware
@@ -195,7 +214,10 @@ async function deleteTemplateHandler(request: NextRequest, { params }: { params:
     await connectToDatabase();
 
     const adminId = request.headers.get('x-user-id');
-    const templateId = params.id;
+    
+    // Await the params Promise (Next.js 15 requirement)
+    const { id } = await context.params;
+    const templateId = id;
 
     // Check if it's a config template (can't be deleted)
     if (emailTemplates[templateId]) {
@@ -254,15 +276,24 @@ async function deleteTemplateHandler(request: NextRequest, { params }: { params:
   }
 }
 
-// Main route handlers
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
-  return withErrorHandler(getTemplateHandler)(request, { params });
+// Main route handlers with proper Next.js 15 typing
+export async function GET(
+  request: NextRequest, 
+  context: RouteContext
+): Promise<NextResponse> {
+  return withErrorHandler(getTemplateHandler)(request, context);
 }
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  return withErrorHandler(updateTemplateHandler)(request, { params });
+export async function PUT(
+  request: NextRequest, 
+  context: RouteContext
+): Promise<NextResponse> {
+  return withErrorHandler(updateTemplateHandler)(request, context);
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  return withErrorHandler(deleteTemplateHandler)(request, { params });
+export async function DELETE(
+  request: NextRequest, 
+  context: RouteContext
+): Promise<NextResponse> {
+  return withErrorHandler(deleteTemplateHandler)(request, context);
 }

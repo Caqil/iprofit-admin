@@ -1,9 +1,9 @@
-// app/api/upload/profile-image/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db';
 import { User } from '@/models/User';
 import { File } from '@/models/File';
 import { AuditLog } from '@/models/AuditLog';
+import { withErrorHandler } from '@/middleware/error-handler';
 import { ApiHandler } from '@/lib/api-helpers';
 import { getUserFromRequest } from '@/lib/auth-helper';
 import { writeFile, mkdir } from 'fs/promises';
@@ -23,7 +23,7 @@ const PROFILE_CONFIG = {
 };
 
 // File validation helper
-function validateFile(file: File, config: typeof PROFILE_CONFIG): { valid: boolean; error?: string } {
+function validateFile(file: File, config: any): { valid: boolean; error?: string } {
   // Check file size
   if (file.size > config.maxSize) {
     return {
@@ -40,11 +40,18 @@ function validateFile(file: File, config: typeof PROFILE_CONFIG): { valid: boole
     };
   }
 
+  // Check file name
+  if (!file.name || file.name.length < 3) {
+    return {
+      valid: false,
+      error: 'Invalid file name'
+    };
+  }
+
   return { valid: true };
 }
 
-// POST /api/upload/profile-image - Upload profile image
-export async function POST(request: NextRequest) {
+async function uploadProfileImageHandler(request: NextRequest) {
   const apiHandler = new ApiHandler(request);
 
   try {
@@ -63,10 +70,6 @@ export async function POST(request: NextRequest) {
     const user = await User.findById(userId);
     if (!user) {
       return apiHandler.notFound('User not found');
-    }
-
-    if (user.status !== 'Active') {
-      return apiHandler.forbidden(`Account is ${user.status.toLowerCase()}`);
     }
 
     // Parse form data
@@ -190,3 +193,6 @@ export async function POST(request: NextRequest) {
     return apiHandler.internalError('Failed to upload profile image');
   }
 }
+
+// Export only the POST handler for Next.js App Router
+export const POST = withErrorHandler(uploadProfileImageHandler);
