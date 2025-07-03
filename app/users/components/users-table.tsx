@@ -56,6 +56,7 @@ import { useUsers } from "@/hooks/use-users"; // ✅ NOW USING THE HOOK
 import { hasPermission } from "@/lib/permissions";
 import { toast } from "sonner";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
+import { CurrencyDisplay } from "@/components/ui/currency-display";
 
 interface UsersTableProps {
   users: User[];
@@ -108,6 +109,12 @@ export function UsersTable({
     currentUser?.role || "Moderator",
     "users.kyc.approve"
   );
+  const getTransactionCurrency = (transaction: any): "BDT" | "USD" => {
+    return transaction.originalCurrency || transaction.currency || "BDT";
+  };
+  const getDisplayAmount = (transaction: any): number => {
+    return transaction.originalAmount || transaction.amount;
+  };
 
   const getStatusBadge = (status: string) => {
     const variants = {
@@ -296,7 +303,15 @@ export function UsersTable({
       header: "Balance",
       cell: ({ row }) => {
         const balance = row.getValue("balance") as number;
-        return <div className="font-medium">${balance.toLocaleString()}</div>;
+        const currency = getTransactionCurrency(balance);
+        const displayAmount = getDisplayAmount(balance);
+        return (
+          <CurrencyDisplay
+            amount={displayAmount}
+            originalCurrency={currency}
+            showConverter={false}
+          />
+        );
       },
     },
     {

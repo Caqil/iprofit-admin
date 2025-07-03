@@ -54,7 +54,9 @@ import { RoleGuard } from "@/components/auth/role-guard";
 // Import components
 import { TransactionsTable } from "./components/transactions-table";
 import { TransactionFilters } from "./components/transaction-filters";
-import { TransactionSummaryCards } from "./components/transactions-summary-cards";
+import {
+  TransactionSummaryCards,
+} from "./components/transactions-summary-cards";
 import { DatePickerWithRange } from "@/components/ui/date-range-picker";
 
 export default function TransactionsPage() {
@@ -148,9 +150,15 @@ export default function TransactionsPage() {
   };
 
   // Permission checks
-  const canApprove: boolean | undefined = !!(user && hasPermission(user.role, "transactions.approve"));
-  const canReject: boolean | undefined = !!(user && hasPermission(user.role, "transactions.reject"));
-  const canExport: boolean | undefined = !!(user && hasPermission(user.role, "transactions.export"));
+  const canApprove: boolean | undefined = !!(
+    user && hasPermission(user.role, "transactions.approve")
+  );
+  const canReject: boolean | undefined = !!(
+    user && hasPermission(user.role, "transactions.reject")
+  );
+  const canExport: boolean | undefined = !!(
+    user && hasPermission(user.role, "transactions.export")
+  );
 
   return (
     <div className="flex-1 space-y-6 p-8 pt-6">
@@ -199,7 +207,6 @@ export default function TransactionsPage() {
 
       {/* Summary Cards */}
       <TransactionSummaryCards summary={summary} isLoading={isLoading} />
-
       {/* Filters and Search */}
       <Card>
         <CardHeader>

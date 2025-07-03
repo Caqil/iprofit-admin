@@ -189,6 +189,16 @@ export function TransactionsTable({
     }
   };
 
+  // Get transaction currency - with fallback handling
+  const getTransactionCurrency = (transaction: any): "BDT" | "USD" => {
+    return transaction.originalCurrency || transaction.currency || "BDT";
+  };
+
+  // Get display amount - prefer originalAmount if available
+  const getDisplayAmount = (transaction: any): number => {
+    return transaction.originalAmount || transaction.amount;
+  };
+
   // Handle approval action
   const handleApprovalAction = (
     transaction: Transaction,
@@ -342,6 +352,9 @@ export function TransactionsTable({
                   transaction._id
                 );
 
+                const currency = getTransactionCurrency(transaction);
+                const displayAmount = getDisplayAmount(transaction);
+
                 return (
                   <TableRow
                     key={transaction._id}
@@ -421,17 +434,17 @@ export function TransactionsTable({
                       <div className="space-y-1">
                         <div className="font-medium">
                           <CurrencyDisplay
-                            amount={transaction.amount}
-                            originalCurrency="BDT"
-                            showConverter={false}
+                            amount={displayAmount}
+                            originalCurrency={currency}
+                            showConverter={true}
                           />
                         </div>
                         {transaction.fees > 0 && (
                           <div className="text-xs text-muted-foreground">
                             Fee:{" "}
                             <CurrencyDisplay
-                              amount={transaction.amount}
-                              originalCurrency="BDT"
+                              amount={transaction.fees}
+                              originalCurrency={currency}
                               showConverter={false}
                             />
                           </div>
@@ -439,8 +452,8 @@ export function TransactionsTable({
                         <div className="text-xs font-medium text-green-600">
                           Net:{" "}
                           <CurrencyDisplay
-                            amount={transaction.amount}
-                            originalCurrency="BDT"
+                            amount={transaction.netAmount}
+                            originalCurrency={currency}
                             showConverter={false}
                           />
                         </div>

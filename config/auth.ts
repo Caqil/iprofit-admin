@@ -7,10 +7,10 @@ import { connectToDatabase } from '@/lib/db';
 import { Admin } from '@/models/Admin';
 import { User } from '@/models/User';
 import { AuditLog } from '@/models/AuditLog';
-import { verifyPassword } from '@/lib/encryption';
 import { checkDeviceLimit } from '@/lib/device-detection';
 import speakeasy from 'speakeasy';
 import { AdminRole } from '@/types';
+import { verifyPassword } from '@/lib/encryption';
 
 
 declare module "next-auth" {
