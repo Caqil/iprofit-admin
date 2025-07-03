@@ -3,6 +3,8 @@ import { ITransaction } from '@/models/Transaction';
 import { PaymentGateway, TransactionType } from '@/types/transaction';
 import { Plan } from '@/types/plan';
 import { Currency } from '@/types';
+import { BusinessRules } from '@/lib/settings-helper';
+import { getSetting } from '../lib/settings-helper';
 
 export interface ValidationResult {
   isValid: boolean;
@@ -99,25 +101,71 @@ export class TransactionUtils {
       netAmount: Math.max(0, netAmount)
     };
   }
+static async calculateDepositFees(
+  amount: number,
+  gateway: PaymentGateway,
+  isUrgent = false
+): Promise<FeeCalculation> {
+  // ✅ You can add deposit fee settings later if needed
+  // For now, keep the existing logic but make it async
+  
+  let baseFee = 0;
+  let percentageFee = 0;
 
+  switch (gateway) {
+    case 'CoinGate':
+      percentageFee = 0.025; // 2.5%
+      baseFee = 0;
+      break;
+    case 'UddoktaPay':
+      percentageFee = 0.035; // 3.5%
+      baseFee = 2; // $2 base fee
+      break;
+    case 'Manual':
+    case 'System':
+      percentageFee = 0;
+      baseFee = 0;
+      break;
+  }
+
+  const calculatedPercentageFee = amount * percentageFee;
+  const urgentFee = isUrgent ? amount * 0.005 : 0; // 0.5% for urgent
+  const totalFee = baseFee + calculatedPercentageFee + urgentFee;
+  const netAmount = amount - totalFee;
+
+  return {
+    baseFee,
+    percentageFee: calculatedPercentageFee + urgentFee,
+    totalFee,
+    netAmount: Math.max(0, netAmount)
+  };
+}
   /**
    * Calculate withdrawal processing fees by method
    */
-  static calculateWithdrawalFees(
-    amount: number,
-    withdrawalMethod: string,
-    isUrgent = false
-  ): FeeCalculation {
+static async calculateWithdrawalFees(
+  amount: number,
+  withdrawalMethod: string,
+  isUrgent = false
+): Promise<FeeCalculation> {
+  try {
+    // ✅ GET DYNAMIC SETTINGS FROM DATABASE (like other APIs do)
+    const financialConfig = await BusinessRules.getFinancialConfig();
+    
     let baseFee = 0;
     let percentageFee = 0;
 
     switch (withdrawalMethod) {
       case 'bank_transfer':
-        percentageFee = 0.02; // 2%
-        baseFee = Math.max(5, amount * 0.02); // Minimum $5
+        // ✅ BEFORE: percentageFee = 0.02; // ❌ HARDCODED
+        // ✅ AFTER: Use database setting
+        percentageFee = financialConfig.withdrawalBankFeePercentage / 100;
+        baseFee = Math.max(5, amount * percentageFee);
         break;
       case 'mobile_banking':
-        percentageFee = 0.015; // 1.5%
+        // ✅ BEFORE: percentageFee = 0.015; // ❌ HARDCODED
+        // ✅ AFTER: Use database setting  
+        percentageFee = financialConfig.withdrawalMobileFeePercentage / 100;
         baseFee = 0;
         break;
       case 'crypto_wallet':
@@ -129,7 +177,8 @@ export class TransactionUtils {
         baseFee = 10; // Flat $10 fee
         break;
       default:
-        percentageFee = 0.02;
+        // ✅ Use database setting for default
+        percentageFee = financialConfig.withdrawalBankFeePercentage / 100;
         baseFee = 5;
     }
 
@@ -144,20 +193,33 @@ export class TransactionUtils {
       totalFee,
       netAmount: Math.max(0, netAmount)
     };
+  } catch (error) {
+    console.error('Error calculating withdrawal fees:', error);
+    // Fallback to prevent API breakage
+    const totalFee = amount * 0.02; // 2% fallback
+    return {
+      baseFee: 0,
+      percentageFee: totalFee,
+      totalFee,
+      netAmount: Math.max(0, amount - totalFee)
+    };
   }
-
+}
   /**
    * Validate transaction against user limits and plan restrictions
    */
-  static async validateTransactionLimits(
-    user: IUser,
-    amount: number,
-    type: TransactionType,
-    existingTransactions: ITransaction[]
-  ): Promise<ValidationResult> {
-    const errors: string[] = [];
-    const warnings: string[] = [];
+static async validateTransactionLimits(
+  user: IUser,
+  amount: number,
+  type: TransactionType,
+  existingTransactions: ITransaction[]
+): Promise<ValidationResult> {
+  const errors: string[] = [];
+  const warnings: string[] = [];
 
+  try {
+    // ✅ GET DYNAMIC SETTINGS FROM DATABASE (like other APIs do)
+    const financialConfig = await BusinessRules.getFinancialConfig();
     const plan = user.planId as any; // Assume populated
 
     if (!plan) {
@@ -170,31 +232,39 @@ export class TransactionUtils {
       errors.push('Amount must be greater than 0');
     }
 
-    // Plan-specific limits
+    // ✅ UPDATE Plan-specific limits with database settings
     switch (type) {
       case 'deposit':
-        if (amount < plan.minimumDeposit) {
-          errors.push(`Minimum deposit amount is ${plan.minimumDeposit}`);
+        // ✅ BEFORE: if (amount < plan.minimumDeposit) // Only plan limit
+        // ✅ AFTER: Use both plan limit AND database setting
+        const minDeposit = Math.max(plan.minimumDeposit || 0, financialConfig.minDeposit);
+        if (amount < minDeposit) {
+          errors.push(`Minimum deposit amount is ${minDeposit} BDT`);
         }
-        if (amount > plan.depositLimit) {
-          errors.push(`Maximum deposit amount is ${plan.depositLimit}`);
+        if (amount > (plan.depositLimit || 1000000)) {
+          errors.push(`Maximum deposit amount is ${plan.depositLimit || 1000000} BDT`);
         }
         break;
 
       case 'withdrawal':
-        if (amount < plan.minimumWithdrawal) {
-          errors.push(`Minimum withdrawal amount is ${plan.minimumWithdrawal}`);
+        // ✅ BEFORE: if (amount < plan.minimumWithdrawal) // Only plan limit
+        // ✅ AFTER: Use database settings for withdrawal limits
+        const minWithdrawal = await getSetting('min_withdrawal_amount', 100);
+        const maxWithdrawal = await getSetting('max_withdrawal_amount', 100000);
+        
+        if (amount < Math.max(plan.minimumWithdrawal || 0, minWithdrawal)) {
+          errors.push(`Minimum withdrawal amount is ${minWithdrawal} BDT`);
         }
-        if (amount > plan.withdrawalLimit) {
-          errors.push(`Maximum withdrawal amount is ${plan.withdrawalLimit}`);
+        if (amount > Math.min(plan.withdrawalLimit || maxWithdrawal, maxWithdrawal)) {
+          errors.push(`Maximum withdrawal amount is ${maxWithdrawal} BDT`);
         }
         if (amount > user.balance) {
-          errors.push(`Insufficient balance. Available: ${user.balance}`);
+          errors.push(`Insufficient balance. Available: ${user.balance} BDT`);
         }
         break;
     }
 
-    // Daily and monthly limits
+    // ✅ KEEP existing daily/monthly logic but enhance with database limits
     const today = new Date();
     const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -214,8 +284,18 @@ export class TransactionUtils {
     const todayTotal = todayTransactions.reduce((sum, t) => sum + t.amount, 0);
     const monthTotal = monthTransactions.reduce((sum, t) => sum + t.amount, 0);
 
-    const dailyLimit = type === 'deposit' ? plan.dailyDepositLimit : plan.dailyWithdrawalLimit;
-    const monthlyLimit = type === 'deposit' ? plan.monthlyDepositLimit : plan.monthlyWithdrawalLimit;
+    // ✅ GET SYSTEM-WIDE LIMITS FROM DATABASE
+    const maxDailyWithdrawal = await getSetting('max_daily_withdrawal', 50000);
+    const maxMonthlyWithdrawal = await getSetting('max_monthly_withdrawal', 500000);
+
+    // ✅ COMBINE plan limits with system limits (use the LOWER of the two)
+    const dailyLimit = type === 'deposit' 
+      ? (plan.dailyDepositLimit || plan.depositLimit) 
+      : Math.min(plan.dailyWithdrawalLimit || maxDailyWithdrawal, maxDailyWithdrawal);
+      
+    const monthlyLimit = type === 'deposit' 
+      ? (plan.monthlyDepositLimit || plan.depositLimit) 
+      : Math.min(plan.monthlyWithdrawalLimit || maxMonthlyWithdrawal, maxMonthlyWithdrawal);
 
     if (dailyLimit && (todayTotal + amount) > dailyLimit) {
       errors.push(`Daily ${type} limit exceeded. Current: ${todayTotal}, Limit: ${dailyLimit}`);
@@ -239,7 +319,17 @@ export class TransactionUtils {
       errors,
       warnings
     };
+
+  } catch (error) {
+    console.error('Error validating transaction limits:', error);
+    // ✅ Fallback to prevent API breakage
+    return {
+      isValid: false,
+      errors: ['Unable to validate transaction limits. Please try again.'],
+      warnings: []
+    };
   }
+}
 
   /**
    * Generate unique transaction ID

@@ -1,6 +1,6 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { CURRENCY, LOAN_CONFIG, REFERRAL_CONFIG } from './constants';
+import {REFERRAL_CONFIG } from './constants';
 import { Currency } from '@/types';
 import { User } from '@/models/User';
 
@@ -77,27 +77,6 @@ export function throttle<T extends (...args: any[]) => any>(
       setTimeout(() => inThrottle = false, limit);
     }
   };
-}
-
-/**
- * Currency conversion
- */
-export function convertCurrency(
-  amount: number,
-  from: Currency,
-  to: Currency
-): number {
-  if (from === to) return amount;
-  
-  if (from === 'USD' && to === 'BDT') {
-    return amount * CURRENCY.EXCHANGE_RATE.USD_TO_BDT;
-  }
-  
-  if (from === 'BDT' && to === 'USD') {
-    return amount * CURRENCY.EXCHANGE_RATE.BDT_TO_USD;
-  }
-  
-  return amount;
 }
 
 /**

@@ -46,6 +46,7 @@ import { cn } from "@/lib/utils";
 import { TransactionDetailDialog } from "./transaction-detail-dialog";
 import { TransactionApprovalDialog } from "./transaction-approve-dialog";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
+import { CurrencyDisplay } from "@/components/ui/currency-display";
 
 interface TransactionsTableProps {
   transactions: Transaction[];
@@ -124,14 +125,6 @@ export function TransactionsTable({
     ) : (
       <ArrowDown className="ml-2 h-4 w-4" />
     );
-  };
-
-  // Format currency
-  const formatCurrency = (amount: number, currency: string) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: currency,
-    }).format(amount);
   };
 
   // Get status badge variant
@@ -427,26 +420,29 @@ export function TransactionsTable({
                     <TableCell>
                       <div className="space-y-1">
                         <div className="font-medium">
-                          {formatCurrency(
-                            transaction.amount,
-                            transaction.currency
-                          )}
+                          <CurrencyDisplay
+                            amount={transaction.amount}
+                            originalCurrency="BDT"
+                            showConverter={false}
+                          />
                         </div>
                         {transaction.fees > 0 && (
                           <div className="text-xs text-muted-foreground">
                             Fee:{" "}
-                            {formatCurrency(
-                              transaction.fees,
-                              transaction.currency
-                            )}
+                            <CurrencyDisplay
+                              amount={transaction.amount}
+                              originalCurrency="BDT"
+                              showConverter={false}
+                            />
                           </div>
                         )}
                         <div className="text-xs font-medium text-green-600">
                           Net:{" "}
-                          {formatCurrency(
-                            transaction.netAmount,
-                            transaction.currency
-                          )}
+                          <CurrencyDisplay
+                            amount={transaction.amount}
+                            originalCurrency="BDT"
+                            showConverter={false}
+                          />
                         </div>
                       </div>
                     </TableCell>

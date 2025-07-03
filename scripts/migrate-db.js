@@ -476,86 +476,230 @@ class CompleteDatabaseMigrator {
       },
 
       // Financial Settings
-      {
-        category: 'financial',
-        key: 'default_currency',
-        value: 'BDT',
-        dataType: 'string',
-        description: 'Default currency for the platform',
-        isEditable: true,
-        isEncrypted: false,
-        validation: { required: true },
-        updatedBy: sampleAdminId,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      },
-      {
-        category: 'financial',
-        key: 'min_withdrawal_amount',
-        value: 100,
-        dataType: 'number',
-        description: 'Minimum withdrawal amount',
-        isEditable: true,
-        isEncrypted: false,
-        validation: { required: true, min: 1 },
-        updatedBy: sampleAdminId,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      },
-      {
-        category: 'financial',
-        key: 'max_withdrawal_amount',
-        value: 100000,
-        dataType: 'number',
-        description: 'Maximum withdrawal amount',
-        isEditable: true,
-        isEncrypted: false,
-        validation: { required: true, min: 1 },
-        updatedBy: sampleAdminId,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      },
-      {
-        category: 'financial',
-        key: 'withdrawal_fee_percentage',
-        value: 0,
-        dataType: 'number',
-        description: 'Withdrawal fee percentage',
-        isEditable: true,
-        isEncrypted: false,
-        validation: { required: true, min: 0, max: 100 },
-        updatedBy: sampleAdminId,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      },
-
-      // Business Settings
-      {
-        category: 'business',
-        key: 'referral_bonus_amount',
-        value: 100,
-        dataType: 'number',
-        description: 'Referral signup bonus amount',
-        isEditable: true,
-        isEncrypted: false,
-        validation: { required: true, min: 0 },
-        updatedBy: sampleAdminId,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      },
-      {
-        category: 'business',
-        key: 'enable_referral_system',
-        value: true,
-        dataType: 'boolean',
-        description: 'Enable referral bonus system',
-        isEditable: true,
-        isEncrypted: false,
-        defaultValue: true,
-        updatedBy: sampleAdminId,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      },
+     {
+  category: 'financial',
+  key: 'primary_currency',  // ✅ FIXED: Changed from 'default_currency' 
+  value: 'BDT',
+  dataType: 'string',
+  description: 'Primary platform currency',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 'BDT',
+  validation: { required: true, enum: ['BDT', 'USD', 'EUR'] },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'financial',
+  key: 'secondary_currency',  // ✅ NEW: Secondary currency support
+  value: 'USD',
+  dataType: 'string',
+  description: 'Secondary platform currency',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 'USD',
+  validation: { required: true, enum: ['BDT', 'USD', 'EUR'] },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'financial',
+  key: 'usd_to_bdt_rate',  // ✅ CRITICAL: Required for currency conversion
+  value: 110.50,
+  dataType: 'number',
+  description: 'USD to BDT exchange rate',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 110.50,
+  validation: { required: true, min: 1, max: 200 },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'financial',
+  key: 'bdt_to_usd_rate',  // ✅ NEW: Reverse conversion rate
+  value: 0.009091,  // 1/110
+  dataType: 'number',
+  description: 'BDT to USD exchange rate',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 0.009091,
+  validation: { required: true, min: 0.001, max: 1 },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'financial',
+  key: 'min_deposit',  // ✅ CRITICAL: Required for deposit validation
+  value: 100,
+  dataType: 'number',
+  description: 'Minimum deposit amount in primary currency (BDT)',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 100,
+  validation: { required: true, min: 1, max: 10000 },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'financial',
+  key: 'max_deposit',  // ✅ NEW: Maximum deposit limit
+  value: 1000000,
+  dataType: 'number',
+  description: 'Maximum deposit amount in primary currency (BDT)',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 1000000,
+  validation: { required: true, min: 1000, max: 10000000 },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'financial',
+  key: 'min_withdrawal_amount',  // ✅ KEEP: Your existing setting
+  value: 100,
+  dataType: 'number',
+  description: 'Minimum withdrawal amount in primary currency (BDT)',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 100,
+  validation: { required: true, min: 1, max: 10000 },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'financial',
+  key: 'max_withdrawal_amount',  // ✅ KEEP: Your existing setting
+  value: 100000,
+  dataType: 'number',
+  description: 'Maximum withdrawal amount in primary currency (BDT)',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 100000,
+  validation: { required: true, min: 1000, max: 10000000 },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'financial',
+  key: 'signup_bonus',  // ✅ CRITICAL: Required for user registration
+  value: 100,
+  dataType: 'number',
+  description: 'New user signup bonus amount in primary currency (BDT)',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 100,
+  validation: { required: true, min: 0, max: 10000 },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'financial',
+  key: 'profit_share_percentage',  // ✅ NEW: Profit sharing rate
+  value: 10,
+  dataType: 'number',
+  description: 'Profit share percentage for referrals',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 10,
+  validation: { required: true, min: 0, max: 100 },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'financial',
+  key: 'min_referee_deposit',  // ✅ NEW: Minimum deposit for referral bonus
+  value: 50,
+  dataType: 'number',
+  description: 'Minimum deposit amount for referee to trigger referral bonus',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 50,
+  validation: { required: true, min: 1, max: 1000 },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'financial',
+  key: 'withdrawal_fee_percentage',  // ✅ KEEP: Your existing setting
+  value: 0,
+  dataType: 'number',
+  description: 'Default withdrawal fee percentage',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 0,
+  validation: { required: true, min: 0, max: 100 },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'financial',
+  key: 'withdrawal_bank_fee_percentage',  // ✅ CRITICAL: Required for fee calculation
+  value: 2.0,
+  dataType: 'number',
+  description: 'Bank withdrawal fee percentage',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 2.0,
+  validation: { required: true, min: 0, max: 10 },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'financial',
+  key: 'withdrawal_mobile_fee_percentage',  // ✅ CRITICAL: Required for fee calculation
+  value: 1.5,
+  dataType: 'number',
+  description: 'Mobile withdrawal fee percentage',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 1.5,
+  validation: { required: true, min: 0, max: 10 },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'financial',
+  key: 'max_daily_withdrawal',  // ✅ NEW: Daily withdrawal limit
+  value: 50000,
+  dataType: 'number',
+  description: 'Maximum daily withdrawal amount in primary currency (BDT)',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 50000,
+  validation: { required: true, min: 1000, max: 1000000 },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'financial',
+  key: 'max_monthly_withdrawal',  // ✅ NEW: Monthly withdrawal limit
+  value: 500000,
+  dataType: 'number',
+  description: 'Maximum monthly withdrawal amount in primary currency (BDT)',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 500000,
+  validation: { required: true, min: 10000, max: 10000000 },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
       {
   category: 'business',
   key: 'auto_bonus_approval',
@@ -837,73 +981,158 @@ class CompleteDatabaseMigrator {
         createdAt: new Date(),
         updatedAt: new Date()
       },
-
+{
+  category: 'security',
+  key: 'login_rate_limit_per_minute',  // ✅ NEW - Login rate limiting
+  value: 5,
+  dataType: 'number',
+  description: 'Maximum login attempts per minute',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 5,
+  validation: { required: true, min: 1, max: 20 },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'security',
+  key: 'api_rate_limit_per_minute',  // ✅ NEW - API rate limiting
+  value: 100,
+  dataType: 'number',
+  description: 'Maximum API requests per minute per user',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 100,
+  validation: { required: true, min: 10, max: 1000 },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'security',
+  key: 'account_lockout_duration_minutes',  // ✅ NEW - Account lockout
+  value: 30,
+  dataType: 'number',
+  description: 'Account lockout duration in minutes after max failed attempts',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 30,
+  validation: { required: true, min: 5, max: 1440 },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'security',
+  key: 'max_failed_login_attempts',  // ✅ NEW - Failed login limit
+  value: 5,
+  dataType: 'number',
+  description: 'Maximum failed login attempts before account lockout',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 5,
+  validation: { required: true, min: 3, max: 10 },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
       // Email Settings
-      {
-        category: 'email',
-        key: 'smtp_host',
-        value: process.env.SMTP_HOST || 'smtp.gmail.com',
-        dataType: 'string',
-        description: 'SMTP server hostname',
-        isEditable: true,
-        isEncrypted: false,
-        validation: { required: true },
-        updatedBy: sampleAdminId,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      },
-      {
-        category: 'email',
-        key: 'smtp_port',
-        value: process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT) : 587,
-        dataType: 'number',
-        description: 'SMTP server port',
-        isEditable: true,
-        isEncrypted: false,
-        validation: { required: true, min: 1, max: 65535 },
-        updatedBy: sampleAdminId,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      },
-      {
-        category: 'email',
-        key: 'smtp_user',
-        value: process.env.SMTP_USER || '',
-        dataType: 'string',
-        description: 'SMTP username',
-        isEditable: true,
-        isEncrypted: false,
-        validation: { required: true },
-        updatedBy: sampleAdminId,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      },
-      {
-        category: 'email',
-        key: 'smtp_from_name',
-        value: process.env.EMAIL_FROM_NAME || 'IProfit',
-        dataType: 'string',
-        description: 'Email sender name',
-        isEditable: true,
-        isEncrypted: false,
-        validation: { required: true },
-        updatedBy: sampleAdminId,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      },
-      {
-        category: 'email',
-        key: 'smtp_from_email',
-        value: process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@iprofit.com',
-        dataType: 'string',
-        description: 'Email sender address',
-        isEditable: true,
-        isEncrypted: false,
-        validation: { required: true },
-        updatedBy: sampleAdminId,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      },
+{
+  category: 'email',
+  key: 'smtp_pass',  // ❌ MISSING - Required for SMTP authentication
+  value: process.env.SMTP_PASS || '',
+  dataType: 'string',
+  description: 'SMTP password (encrypted)',
+  isEditable: true,
+  isEncrypted: true,  // ✅ IMPORTANT: Encrypt sensitive data
+  validation: { required: true },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'email',
+  key: 'email_from_address',  // ❌ MISSING - API expects this key name
+  value: process.env.EMAIL_FROM_ADDRESS || process.env.SMTP_USER || 'noreply@iprofit.com',
+  dataType: 'string',
+  description: 'Email sender address',
+  isEditable: true,
+  isEncrypted: false,
+  validation: { required: true },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'email',
+  key: 'smtp_secure',  // ❌ MISSING - Required for SMTP SSL/TLS
+  value: process.env.SMTP_SECURE === 'true',
+  dataType: 'boolean',
+  description: 'Enable SMTP secure connection (SSL/TLS)',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: false,
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'email',
+  key: 'smtp_max_connections',  // ❌ MISSING - For connection pooling
+  value: parseInt(process.env.SMTP_MAX_CONNECTIONS || '5'),
+  dataType: 'number',
+  description: 'Maximum SMTP connections in pool',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 5,
+  validation: { required: true, min: 1, max: 50 },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'email',
+  key: 'smtp_max_messages',  // ❌ MISSING - For message limiting
+  value: parseInt(process.env.SMTP_MAX_MESSAGES || '100'),
+  dataType: 'number',
+  description: 'Maximum messages per SMTP connection',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 100,
+  validation: { required: true, min: 1, max: 1000 },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'email',
+  key: 'email_max_retries',  // ❌ MISSING - For retry logic
+  value: parseInt(process.env.EMAIL_MAX_RETRIES || '3'),
+  dataType: 'number',
+  description: 'Maximum email send retry attempts',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 3,
+  validation: { required: true, min: 1, max: 10 },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'email',
+  key: 'email_retry_delay',  // ❌ MISSING - For retry timing
+  value: parseInt(process.env.EMAIL_RETRY_DELAY || '5000'),
+  dataType: 'number',
+  description: 'Email retry delay in milliseconds',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 5000,
+  validation: { required: true, min: 1000, max: 60000 },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
 
       // Notification Settings
       {
@@ -959,7 +1188,48 @@ class CompleteDatabaseMigrator {
         createdAt: new Date(),
         updatedAt: new Date()
       },
-      
+      {
+  category: 'notifications',
+  key: 'email_rate_limit_per_hour',  // ✅ NEW - Email rate limiting
+  value: 100,
+  dataType: 'number',
+  description: 'Maximum emails per hour per user',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 100,
+  validation: { required: true, min: 10, max: 1000 },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'notifications',
+  key: 'sms_rate_limit_per_day',  // ✅ NEW - SMS rate limiting
+  value: 10,
+  dataType: 'number',
+  description: 'Maximum SMS per day per user',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 10,
+  validation: { required: true, min: 1, max: 50 },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
+{
+  category: 'notifications',
+  key: 'push_notification_batch_size',  // ✅ NEW - Push notification batching
+  value: 1000,
+  dataType: 'number',
+  description: 'Batch size for push notifications',
+  isEditable: true,
+  isEncrypted: false,
+  defaultValue: 1000,
+  validation: { required: true, min: 100, max: 5000 },
+  updatedBy: sampleAdminId,
+  createdAt: new Date(),
+  updatedAt: new Date()
+},
       // Push Notification Settings
       {
         key: 'push_notification_settings',

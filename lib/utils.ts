@@ -136,23 +136,6 @@ export function generateRepaymentSchedule(
   return schedule;
 }
 
-export function convertCurrency(amount: number, from: Currency, to: Currency): number {
-  // Fixed exchange rate: 1 USD = 120 BDT
-  const USD_TO_BDT = 120;
-  
-  if (from === to) return amount;
-  
-  if (from === 'USD' && to === 'BDT') {
-    return amount * USD_TO_BDT;
-  }
-  
-  if (from === 'BDT' && to === 'USD') {
-    return amount / USD_TO_BDT;
-  }
-  
-  return amount;
-}
-
 export function validateEmail(email: string): boolean {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);

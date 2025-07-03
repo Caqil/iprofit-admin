@@ -398,11 +398,11 @@ async function createMobileWithdrawalHandler(request: NextRequest): Promise<Next
     }
 
     // Calculate withdrawal fees
-    const feeCalculation = TransactionUtils.calculateWithdrawalFees(
-      amount,
-      withdrawalMethod,
-      urgentWithdrawal
-    );
+const feeCalculation = await TransactionUtils.calculateWithdrawalFees(
+  amount,
+  withdrawalMethod,
+  urgentWithdrawal
+);
 
     // Check if user has enough balance after fees
     const totalDeduction = feeCalculation.totalFee;

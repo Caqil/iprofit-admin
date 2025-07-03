@@ -19,24 +19,6 @@ export const ENV = {
   IS_DEVELOPMENT: process.env.NODE_ENV === 'development',
 } as const;
 
-// Currency Configuration
-export const CURRENCY = {
-  PRIMARY: 'BDT' as const,
-  SECONDARY: 'USD' as const,
-  EXCHANGE_RATE: {
-    USD_TO_BDT: 120,
-    BDT_TO_USD: 1/120
-  },
-  SYMBOLS: {
-    BDT: '৳',
-    USD: '$'
-  },
-  DECIMALS: {
-    BDT: 0,
-    USD: 2
-  }
-} as const;
-
 // Plan Configuration
 export const PLANS = {
   FREE: {

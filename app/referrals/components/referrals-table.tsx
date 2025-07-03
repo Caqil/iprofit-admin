@@ -47,9 +47,11 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { Referral, PaginationParams } from "@/types";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { CurrencyDisplay } from "@/components/ui/currency-display";
+import { useCurrencyConverter } from "@/hooks/use-currency-converter";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatDate } from "@/lib/utils";
 
 interface ReferralsTableProps {
   referrals: Referral[];
@@ -230,12 +232,27 @@ export function ReferralsTable({
         return (
           <div>
             <div className="font-medium">
-              {formatCurrency(totalBonus, "BDT")}
+              <CurrencyDisplay
+                amount={totalBonus}
+                originalCurrency="BDT"
+                showConverter={true} // Shows mini currency switcher
+              />
             </div>
             {profitBonus > 0 && (
               <div className="text-sm text-muted-foreground">
-                Base: {formatCurrency(amount, "BDT")} + Profit:{" "}
-                {formatCurrency(profitBonus, "BDT")}
+                Base:{" "}
+                <CurrencyDisplay
+                  amount={amount}
+                  originalCurrency="BDT"
+                  showConverter={false}
+                />
+                {" + "}
+                Profit:{" "}
+                <CurrencyDisplay
+                  amount={profitBonus}
+                  originalCurrency="BDT"
+                  showConverter={false}
+                />
               </div>
             )}
           </div>

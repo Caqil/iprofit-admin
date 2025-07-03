@@ -7,11 +7,6 @@ export const APP_CONFIG = {
   supportEmail: process.env.SUPPORT_EMAIL || 'support@example.com'
 } as const;
 
-export const CURRENCY_RATES = {
-  USD_TO_BDT: 120,
-  BDT_TO_USD: 1/120
-} as const;
-
 export const PLAN_NAMES = {
   FREE: 'Free',
   SILVER: 'Silver', 

@@ -1,46 +1,80 @@
-import React, { useEffect, useState } from "react";
-import { Currency, formatCurrency, getSystemCurrency } from "@/utils/currency";
+import React, { useState, useEffect } from "react";
+import { useCurrencyConverter, Currency } from "@/hooks/use-currency-converter";
+import { LoadingSpinner } from "@/components/shared/loading-spinner";
+import { CurrencySwitcher } from "./currency-switcher";
 
 interface CurrencyDisplayProps {
   amount: number;
-  currency?: Currency;
+  originalCurrency: Currency;
+  showConverter?: boolean;
   className?: string;
 }
 
 export function CurrencyDisplay({
   amount,
-  currency,
+  originalCurrency,
+  showConverter = false,
   className,
 }: CurrencyDisplayProps) {
-  const [systemCurrency, setSystemCurrency] = useState<Currency>("BDT");
-  const [loading, setLoading] = useState(true);
+  const {
+    selectedCurrency,
+    convertAmount,
+    formatAmount,
+    switchCurrency,
+    isLoading,
+    exchangeRate,
+  } = useCurrencyConverter(originalCurrency);
 
+  const [convertedAmount, setConvertedAmount] = useState<number>(amount);
+  const [converting, setConverting] = useState(false);
+
+  // Convert amount when currency changes
   useEffect(() => {
-    async function loadSystemCurrency() {
+    async function convert() {
+      if (originalCurrency === selectedCurrency) {
+        setConvertedAmount(amount);
+        return;
+      }
+
+      setConverting(true);
       try {
-        const curr = await getSystemCurrency();
-        setSystemCurrency(curr);
+        const converted = await convertAmount(
+          amount,
+          originalCurrency,
+          selectedCurrency
+        );
+        setConvertedAmount(converted);
       } catch (error) {
-        console.error("Error loading system currency:", error);
-        setSystemCurrency("BDT");
+        console.error("Conversion error:", error);
+        setConvertedAmount(amount);
       } finally {
-        setLoading(false);
+        setConverting(false);
       }
     }
 
-    if (!currency) {
-      loadSystemCurrency();
-    } else {
-      setLoading(false);
-    }
-  }, [currency]);
+    convert();
+  }, [amount, originalCurrency, selectedCurrency, convertAmount]);
 
-  if (loading && !currency) {
-    return <span className={className}>Loading...</span>;
+  if (isLoading) {
+    return <LoadingSpinner size="sm" />;
   }
 
-  const displayCurrency = currency || systemCurrency;
-  const formatted = formatCurrency(amount, displayCurrency);
+  return (
+    <div className={`flex items-center gap-2 ${className}`}>
+      <span className={converting ? "opacity-50" : ""}>
+        {formatAmount(convertedAmount, selectedCurrency)}
+      </span>
 
-  return <span className={className}>{formatted}</span>;
+      {showConverter && (
+        <CurrencySwitcher
+          selectedCurrency={selectedCurrency}
+          onCurrencyChange={switchCurrency}
+          exchangeRate={exchangeRate}
+          className="ml-2"
+        />
+      )}
+
+      {converting && <LoadingSpinner />}
+    </div>
+  );
 }

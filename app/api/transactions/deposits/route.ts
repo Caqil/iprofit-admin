@@ -180,10 +180,10 @@ async function createDepositHandler(request: NextRequest): Promise<NextResponse>
     }
 
     // Convert amount to BDT if needed using settings
-    let finalAmount = amount;
-    if (currency === 'USD') {
-      finalAmount = amount * usdToBdtRate;
-    }
+let finalAmount = amount;
+if (currency === 'USD') {
+  finalAmount = await BusinessRules.convertCurrency(amount, 'USD', 'BDT');  // ✅ DYNAMIC
+}
 
     // Use settings-based minimum deposit validation
     const depositValidation = await BusinessRules.validateDeposit(finalAmount);

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { VALIDATION_RULES, LOAN_CONFIG, TRANSACTION_CONFIG } from './constants';
 import { dateRangeSchema, paginationSchema } from '@/lib/validation';
+import { BusinessRules, getSetting } from '@/lib/settings-helper';
 
 // Basic validation functions
 export function isValidEmail(email: string): boolean {
@@ -45,13 +46,23 @@ export function isValidTicketNumber(ticketNumber: string): boolean {
 }
 
 // Business logic validators
-export function isValidLoanAmount(amount: number, currency: 'USD' | 'BDT' = 'USD'): boolean {
+export async function isValidLoanAmount(amount: number, currency: 'USD' | 'BDT' = 'USD'): Promise<boolean> {
   if (currency === 'USD') {
     return amount >= LOAN_CONFIG.AMOUNTS.MINIMUM && amount <= LOAN_CONFIG.AMOUNTS.MAXIMUM;
   }
-  // Convert BDT to USD for validation
-  const usdAmount = amount / 120;
-  return usdAmount >= LOAN_CONFIG.AMOUNTS.MINIMUM && usdAmount <= LOAN_CONFIG.AMOUNTS.MAXIMUM;
+  
+  try {
+    // ✅ DYNAMIC: Use database exchange rate
+    const exchangeRate = await BusinessRules.getExchangeRate();
+    const usdAmount = amount / exchangeRate;  // ✅ DYNAMIC RATE!
+    return usdAmount >= LOAN_CONFIG.AMOUNTS.MINIMUM && usdAmount <= LOAN_CONFIG.AMOUNTS.MAXIMUM;
+  } catch (error) {
+    console.error('Error validating loan amount:', error);
+    // Fallback validation
+    const fallbackRate = 110;
+    const usdAmount = amount / fallbackRate;
+    return usdAmount >= LOAN_CONFIG.AMOUNTS.MINIMUM && usdAmount <= LOAN_CONFIG.AMOUNTS.MAXIMUM;
+  }
 }
 
 export function isValidInterestRate(rate: number): boolean {
@@ -62,14 +73,24 @@ export function isValidLoanTenure(tenure: number): boolean {
   return tenure >= LOAN_CONFIG.TENURE.MINIMUM_MONTHS && tenure <= LOAN_CONFIG.TENURE.MAXIMUM_MONTHS;
 }
 
-export function isValidWithdrawalAmount(amount: number): boolean {
-  return amount >= TRANSACTION_CONFIG.MINIMUM_AMOUNTS.WITHDRAWAL;
+export async function isValidWithdrawalAmount(amount: number): Promise<boolean> {
+  try {
+    const minWithdrawal = await getSetting('min_withdrawal_amount', 100);
+    return amount >= minWithdrawal;
+  } catch (error) {
+    return amount >= 100; // fallback
+  }
 }
 
-export function isValidDepositAmount(amount: number): boolean {
-  return amount >= TRANSACTION_CONFIG.MINIMUM_AMOUNTS.DEPOSIT;
-}
 
+export async function isValidDepositAmount(amount: number): Promise<boolean> {
+  try {
+    const minDeposit = await getSetting('min_deposit', 100);
+    return amount >= minDeposit;
+  } catch (error) {
+    return amount >= 10; // fallback
+  }
+}
 // File validation
 export function isValidFileSize(size: number, maxSize: number = 10 * 1024 * 1024): boolean {
   return size > 0 && size <= maxSize;
