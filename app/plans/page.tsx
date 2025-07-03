@@ -11,13 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Plus,
-  Search,
-  Filter,
-  RefreshCw,
-  Settings,
-} from "lucide-react";
+import { Plus, Search, Filter, RefreshCw, Settings } from "lucide-react";
 import { PlansTable } from "./components/plans-table";
 import { PlanForm } from "./components/plan-form";
 import { usePlans } from "@/hooks/use-plans";
@@ -56,26 +50,28 @@ export default function PlansPage() {
 
   const handleSearch = (value: string) => {
     setSearchTerm(value);
-    setFilters(prev => ({ ...prev, search: value || undefined }));
-    setPagination(prev => ({ ...prev, page: 1 }));
+    setFilters((prev) => ({ ...prev, search: value || undefined }));
+    setPagination((prev) => ({ ...prev, page: 1 }));
   };
 
   const handleFilterChange = (key: keyof PlanFilter, value: any) => {
-    setFilters(prev => ({ ...prev, [key]: value }));
-    setPagination(prev => ({ ...prev, page: 1 }));
+    setFilters((prev) => ({ ...prev, [key]: value }));
+    setPagination((prev) => ({ ...prev, page: 1 }));
   };
 
   const clearFilters = () => {
     setFilters({});
     setSearchTerm("");
-    setPagination(prev => ({ ...prev, page: 1 }));
+    setPagination((prev) => ({ ...prev, page: 1 }));
   };
 
   if (error) {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
-          <p className="text-lg font-semibold text-destructive">Error loading plans</p>
+          <p className="text-lg font-semibold text-destructive">
+            Error loading plans
+          </p>
           <p className="text-sm text-muted-foreground mt-2">{error}</p>
           <Button onClick={refreshPlans} className="mt-4">
             <RefreshCw className="mr-2 h-4 w-4" />
@@ -97,15 +93,16 @@ export default function PlansPage() {
           </p>
         </div>
         <div className="flex items-center space-x-2">
-          <Button
-            variant="outline"
-            onClick={refreshPlans}
-            disabled={isLoading}
-          >
-            <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+          <Button variant="outline" onClick={refreshPlans} disabled={isLoading}>
+            <RefreshCw
+              className={`mr-2 h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
+            />
             Refresh
           </Button>
-          <Dialog open={showAssignmentDialog} onOpenChange={setShowAssignmentDialog}>
+          <Dialog
+            open={showAssignmentDialog}
+            onOpenChange={setShowAssignmentDialog}
+          >
             <DialogTrigger asChild>
               <Button variant="outline">
                 <Settings className="mr-2 h-4 w-4" />
@@ -174,7 +171,8 @@ export default function PlansPage() {
               <Select
                 value={filters.isActive?.toString() || "all"}
                 onValueChange={(value) =>
-                  handleFilterChange("isActive", 
+                  handleFilterChange(
+                    "isActive",
                     value === "all" ? undefined : value === "true"
                   )
                 }
@@ -195,7 +193,7 @@ export default function PlansPage() {
               <Select
                 value={pagination.sortBy}
                 onValueChange={(value) =>
-                  setPagination(prev => ({ ...prev, sortBy: value }))
+                  setPagination((prev) => ({ ...prev, sortBy: value }))
                 }
               >
                 <SelectTrigger>

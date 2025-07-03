@@ -306,7 +306,6 @@ export function UsersTable({
             <CurrencyDisplay
               amount={balanceAmount}
               originalCurrency={currency}
-              showConverter={true}
             />
           </div>
         );

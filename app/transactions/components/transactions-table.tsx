@@ -436,7 +436,6 @@ export function TransactionsTable({
                           <CurrencyDisplay
                             amount={displayAmount}
                             originalCurrency={currency}
-                            showConverter={true}
                           />
                         </div>
                         {transaction.fees > 0 && (
@@ -445,7 +444,6 @@ export function TransactionsTable({
                             <CurrencyDisplay
                               amount={transaction.fees}
                               originalCurrency={currency}
-                              showConverter={false}
                             />
                           </div>
                         )}
@@ -454,7 +452,6 @@ export function TransactionsTable({
                           <CurrencyDisplay
                             amount={transaction.netAmount}
                             originalCurrency={currency}
-                            showConverter={false}
                           />
                         </div>
                       </div>

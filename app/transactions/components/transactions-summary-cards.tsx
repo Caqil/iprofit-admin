@@ -145,7 +145,6 @@ export function TransactionSummaryCards({
         <CurrencyDisplay
           amount={normalizedSummary.approvedAmount}
           originalCurrency="BDT"
-          showConverter={false}
         />
       ),
       icon: CheckCircle,
@@ -160,7 +159,6 @@ export function TransactionSummaryCards({
         <CurrencyDisplay
           amount={normalizedSummary.rejectedAmount}
           originalCurrency="BDT"
-          showConverter={false}
         />
       ),
       icon: XCircle,
@@ -174,7 +172,6 @@ export function TransactionSummaryCards({
         <CurrencyDisplay
           amount={normalizedSummary.totalAmount}
           originalCurrency="BDT"
-          showConverter={true}
         />
       ),
       description: `Deposits: ${normalizedSummary.totalDeposits.toLocaleString()} BDT`,

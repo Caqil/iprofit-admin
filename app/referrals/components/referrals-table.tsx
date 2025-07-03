@@ -124,7 +124,9 @@ export function ReferralsTable({
       setProcessingAction(false);
     }
   };
-
+  const getTransactionCurrency = (transaction: any): "BDT" | "USD" => {
+    return transaction.originalCurrency || transaction.currency || "BDT";
+  };
   const columns: ColumnDef<Referral>[] = [
     {
       id: "select",
@@ -228,30 +230,24 @@ export function ReferralsTable({
         const amount = row.getValue("bonusAmount") as number;
         const profitBonus = row.original.profitBonus || 0;
         const totalBonus = amount + profitBonus;
-
+        const currency = getTransactionCurrency(amount);
         return (
           <div>
             <div className="font-medium">
               <CurrencyDisplay
                 amount={totalBonus}
-                originalCurrency="BDT"
-                showConverter={true} // Shows mini currency switcher
+                originalCurrency={currency}
               />
             </div>
             {profitBonus > 0 && (
               <div className="text-sm text-muted-foreground">
                 Base:{" "}
-                <CurrencyDisplay
-                  amount={amount}
-                  originalCurrency="BDT"
-                  showConverter={false}
-                />
+                <CurrencyDisplay amount={amount} originalCurrency={currency} />
                 {" + "}
                 Profit:{" "}
                 <CurrencyDisplay
                   amount={profitBonus}
-                  originalCurrency="BDT"
-                  showConverter={false}
+                  originalCurrency={currency}
                 />
               </div>
             )}

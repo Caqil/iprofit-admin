@@ -1,137 +1,92 @@
 "use client";
 
-import React from "react";
 import { useDatabaseSettings } from "@/hooks/use-database-settings";
 
 interface CurrencyDisplayProps {
   amount: number;
-  originalCurrency?: string;
-  showConverter?: boolean;
-  className?: string;
+  originalCurrency?: string; // Currency transaction was made in
+  originalAmount?: number; // Original amount before conversion
+  exchangeRate?: number; // Rate used during transaction
+  showOriginal?: boolean; // Show "USD $100 (BDT ৳11,050)" format
 }
 
 export function CurrencyDisplay({
   amount,
   originalCurrency,
-  showConverter = false,
-  className,
+  originalAmount,
+  exchangeRate,
+  showOriginal = false,
 }: CurrencyDisplayProps) {
-  const { settings, isLoading, error, validateCurrency } =
-    useDatabaseSettings();
+  const { settings, isLoading, error } = useDatabaseSettings();
 
-  // Show loading
-  if (isLoading) return <span className={className}>Loading...</span>;
+  if (isLoading) return <span>Loading...</span>;
+  if (error || !settings) return <span className="text-red-600">Error</span>;
 
-  // Show error if settings not loaded
-  if (error || !settings) {
-    return <span className={`text-red-600 ${className}`}>Settings error</span>;
-  }
+  const primaryCurrency = settings.primaryCurrency;
+  const currentRate = settings.usdToBdtRate;
 
-  // Use database primary currency if no original currency provided
-  const currency = originalCurrency || settings.primaryCurrency;
+  // ✅ SMART LOGIC: Convert to primary currency for display
+  const displayAmount = convertToPrimaryCurrency(
+    amount,
+    originalCurrency || "BDT",
+    primaryCurrency,
+    currentRate
+  );
 
-  // Validate currency against database
-  if (!validateCurrency(currency)) {
+  const formattedAmount = formatCurrency(displayAmount, primaryCurrency);
+
+  // Show dual currency format if requested and currencies differ
+  if (
+    showOriginal &&
+    originalCurrency &&
+    originalCurrency !== primaryCurrency &&
+    originalAmount
+  ) {
+    const originalFormatted = formatCurrency(originalAmount, originalCurrency);
     return (
-      <span className={`text-red-600 ${className}`}>Invalid: {currency}</span>
+      <span className="space-x-2">
+        <span className="font-medium">{formattedAmount}</span>
+        <span className="text-sm text-gray-500">
+          (originally {originalFormatted})
+        </span>
+      </span>
     );
   }
 
-  // Format using DATABASE settings (not hardcoded)
-  const formatAmount = (amt: number, curr: string) => {
-    // Get decimals and symbol from database settings
-    const decimals = getCurrencyDecimals(curr);
-    const symbol = getCurrencySymbol(curr, settings);
-
-    const formatted = new Intl.NumberFormat("en-US", {
-      minimumFractionDigits: decimals,
-      maximumFractionDigits: decimals,
-    }).format(amt);
-
-    // Symbol placement based on currency
-    return getFormattedCurrency(formatted, symbol, curr);
-  };
-
-  const primaryAmount = formatAmount(amount, currency);
-
-  if (!showConverter || currency === settings.primaryCurrency) {
-    return <span className={className}>{primaryAmount}</span>;
-  }
-
-  // Convert using database exchange rate
-  const convertedAmount = convertCurrency(amount, currency, settings);
-  const convertedCurrency = currency === "BDT" ? "USD" : "BDT";
-  const secondaryAmount = formatAmount(convertedAmount, convertedCurrency);
-
-  return (
-    <div className={className}>
-      <div className="font-medium">{primaryAmount}</div>
-      <div className="text-sm text-gray-600">≈ {secondaryAmount}</div>
-    </div>
-  );
+  return <span>{formattedAmount}</span>;
 }
 
-// Helper functions using database settings
-function getCurrencyDecimals(currency: string): number {
-  switch (currency) {
-    case "BDT":
-      return 0;
-    case "USD":
-      return 2;
-    case "EUR":
-      return 2;
-    case "GBP":
-      return 2;
-    default:
-      return 2;
-  }
-}
-
-function getCurrencySymbol(currency: string, settings: any): string {
-  switch (currency) {
-    case "BDT":
-      return "৳";
-    case "USD":
-      return "$";
-    case "EUR":
-      return "€";
-    case "GBP":
-      return "£";
-    default:
-      return currency;
-  }
-}
-
-function getFormattedCurrency(
-  formatted: string,
-  symbol: string,
-  currency: string
-): string {
-  // Different currencies have different symbol placement
-  switch (currency) {
-    case "BDT":
-      return `${formatted} ${symbol}`;
-    case "USD":
-    case "EUR":
-    case "GBP":
-      return `${symbol}${formatted}`;
-    default:
-      return `${formatted} ${currency}`;
-  }
-}
-
-function convertCurrency(
+// ✅ CONVERSION HELPER
+function convertToPrimaryCurrency(
   amount: number,
   fromCurrency: string,
-  settings: any
+  toCurrency: string,
+  exchangeRate: number
 ): number {
-  const rate = settings.usdToBdtRate || 110.5;
+  if (fromCurrency === toCurrency) return amount;
 
-  if (fromCurrency === "BDT") {
-    return amount / rate; // BDT to USD
-  } else if (fromCurrency === "USD") {
-    return amount * rate; // USD to BDT
+  // Convert from USD to BDT
+  if (fromCurrency === "USD" && toCurrency === "BDT") {
+    return amount * exchangeRate;
   }
 
-  return amount; // No conversion for same currency
+  // Convert from BDT to USD
+  if (fromCurrency === "BDT" && toCurrency === "USD") {
+    return amount / exchangeRate;
+  }
+
+  return amount; // Fallback
+}
+
+// ✅ FORMATTING HELPER
+function formatCurrency(amount: number, currency: string): string {
+  if (currency === "USD") {
+    return `$${amount.toFixed(2)}`;
+  }
+
+  if (currency === "BDT") {
+    return `৳${Math.round(amount).toLocaleString()}`;
+  }
+
+  return `${amount} ${currency}`;
 }

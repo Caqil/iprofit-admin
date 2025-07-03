@@ -1604,152 +1604,94 @@ class CompleteDatabaseMigrator {
 
     const db = mongoose.connection.db;
     const plans = [
-      {
-        name: 'Free Plan',
-        description: 'Perfect for beginners to start their financial journey.',
-        price: 0,
-        currency: 'BDT',
-        limits: {
-          depositLimit: 10000,
-          withdrawalLimit: 5000,
-          profitLimit: 1000,
-          minimumDeposit: 100,
-          minimumWithdrawal: 100,
-          dailyWithdrawalLimit: 1000,
-          monthlyWithdrawalLimit: 10000
-        },
-        features: [
-          'Basic Support',
-          'Mobile App Access',
-          'Referral System',
-          'Basic Tasks',
-          'Email Notifications'
-        ],
-        color: '#6b7280',
-        priority: 0,
-        status: 'Active',
-        isActive: true,
-        isDefault: true,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      },
-      {
-        name: 'Silver Plan',
-        description: 'Enhanced features for growing investors.',
-        price: 1000,
-        currency: 'BDT',
-        limits: {
-          depositLimit: 50000,
-          withdrawalLimit: 25000,
-          profitLimit: 5000,
-          minimumDeposit: 500,
-          minimumWithdrawal: 100,
-          dailyWithdrawalLimit: 5000,
-          monthlyWithdrawalLimit: 50000
-        },
-        features: [
-          'Priority Support',
-          'Higher Limits',
-          'Advanced Tasks',
-          'SMS Notifications',
-          'Investment Insights'
-        ],
-        color: '#9ca3af',
-        priority: 1,
-        status: 'Active',
-        isActive: true,
-        isDefault: false,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      },
-      {
-        name: 'Gold Plan',
-        description: 'Premium experience with maximum benefits.',
-        price: 5000,
-        currency: 'BDT',
-        limits: {
-          depositLimit: 200000,
-          withdrawalLimit: 100000,
-          profitLimit: 20000,
-          minimumDeposit: 1000,
-          minimumWithdrawal: 100,
-          dailyWithdrawalLimit: 20000,
-          monthlyWithdrawalLimit: 200000
-        },
-        features: [
-          'VIP Support',
-          'Maximum Limits',
-          'Exclusive Tasks',
-          'Real-time Alerts',
-          'Personal Advisor'
-        ],
-        color: '#f59e0b',
-        priority: 2,
-        status: 'Active',
-        isActive: true,
-        isDefault: false,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      },
-      {
-        name: 'Platinum Plan',
-        description: 'Enterprise-grade features for serious investors.',
-        price: 15000,
-        currency: 'BDT',
-        limits: {
-          depositLimit: 500000,
-          withdrawalLimit: 250000,
-          profitLimit: 50000,
-          minimumDeposit: 2000,
-          minimumWithdrawal: 100,
-          dailyWithdrawalLimit: 50000,
-          monthlyWithdrawalLimit: 500000
-        },
-        features: [
-          '24/7 Support',
-          'Priority Processing',
-          'Dedicated Manager',
-          'Advanced Analytics',
-          'Custom Solutions'
-        ],
-        color: '#8b5cf6',
-        priority: 3,
-        status: 'Active',
-        isActive: true,
-        isDefault: false,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      },
-      {
-        name: 'Diamond Plan',
-        description: 'Ultimate plan with unlimited potential.',
-        price: 25000,
-        currency: 'BDT',
-        limits: {
-          depositLimit: 1000000,
-          withdrawalLimit: 500000,
-          profitLimit: 100000,
-          minimumDeposit: 5000,
-          minimumWithdrawal: 100,
-          dailyWithdrawalLimit: 100000,
-          monthlyWithdrawalLimit: 1000000
-        },
-        features: [
-          'White-glove Service',
-          'Unlimited Access',
-          'Private Investment Access',
-          'Quarterly Reviews',
-          'Global Support'
-        ],
-        color: '#06b6d4',
-        priority: 4,
-        status: 'Active',
-        isActive: true,
-        isDefault: false,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      }
-    ];
+  {
+    name: 'Free Plan',
+    description: 'Perfect for beginners to start their financial journey.',
+    price: 0,
+    currency: 'BDT',
+    // ✅ FIX: Ensure all numeric fields are properly set
+    depositLimit: 10000,
+    withdrawalLimit: 5000,
+    profitLimit: 1000,
+    minimumDeposit: 100,
+    minimumWithdrawal: 100,
+    dailyWithdrawalLimit: 1000,
+    monthlyWithdrawalLimit: 10000,
+    features: ['Basic Support', 'Mobile App Access', 'Referral System'],
+    color: '#6b7280',
+    priority: 0,
+    isActive: true
+  },
+  {
+    name: 'Silver Plan',
+    description: 'Enhanced features for growing investors.',
+    price: 1000,
+    currency: 'BDT',
+    // ✅ FIX: All numeric fields properly defined
+    depositLimit: 50000,
+    withdrawalLimit: 25000,
+    profitLimit: 5000,
+    minimumDeposit: 500,
+    minimumWithdrawal: 100,
+    dailyWithdrawalLimit: 5000,
+    monthlyWithdrawalLimit: 50000,
+    features: ['Priority Support', 'Higher Limits', 'Advanced Tasks'],
+    color: '#9ca3af',
+    priority: 1,
+    isActive: true
+  },
+  {
+    name: 'Gold Plan',
+    description: 'Premium experience with maximum benefits.',
+    price: 5000,
+    currency: 'BDT',
+    depositLimit: 200000,
+    withdrawalLimit: 100000,
+    profitLimit: 20000,
+    minimumDeposit: 1000,
+    minimumWithdrawal: 100,
+    dailyWithdrawalLimit: 20000,
+    monthlyWithdrawalLimit: 200000,
+    features: ['VIP Support', 'Maximum Limits', 'Exclusive Tasks'],
+    color: '#f59e0b',
+    priority: 2,
+    isActive: true
+  },
+  {
+    name: 'Platinum Plan',
+    description: 'Enterprise-grade features for serious investors.',
+    price: 15000,
+    currency: 'BDT',
+    depositLimit: 500000,
+    withdrawalLimit: 250000,
+    profitLimit: 50000,
+    minimumDeposit: 2000,
+    minimumWithdrawal: 100,
+    dailyWithdrawalLimit: 50000,
+    monthlyWithdrawalLimit: 500000,
+    features: ['24/7 Support', 'Priority Processing', 'Dedicated Manager'],
+    color: '#8b5cf6',
+    priority: 3,
+    isActive: true
+  },
+  {
+    name: 'Diamond Plan',
+    description: 'Ultimate plan with unlimited potential.',
+    price: 25000,
+    currency: 'BDT',
+    depositLimit: 1000000,
+    withdrawalLimit: 500000,
+    profitLimit: 100000,
+    minimumDeposit: 5000,
+    minimumWithdrawal: 100,
+    dailyWithdrawalLimit: 100000,
+    monthlyWithdrawalLimit: 1000000,
+    features: ['White-glove Service', 'Unlimited Access', 'Personal Advisor'],
+    color: '#ec4899',
+    priority: 4,
+    isActive: true
+  }
+];
 
     for (const plan of plans) {
       try {
